@@ -23,51 +23,60 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	clientIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
 
 	blocked := false
-	rcode := dns.RcodeToString[dns.RcodeSuccess]
+	//rcode := dns.RcodeSuccess
 
-	// Разбираем все вопросы
 	for _, q := range r.Question {
-		fmt.Println("Запрос:", q.Name)
+		fmt.Println("Запрос:", q.Name, "Тип:", dns.TypeToString[q.Qtype])
+
 		qtype := dns.TypeToString[q.Qtype]
 		qname := q.Name
 
 		if blackList.Test([]byte(qname)) {
-			// Если в блоклисте → возвращаем NXDOMAIN
+			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
 			blocked = true
-			rcode = dns.RcodeToString[m.Rcode]
+			//rcode = dns.RcodeNameError
+			fmt.Println("Заблокирован:", q.Name)
 		} else {
-			// Иначе → пересылаем на апстрим (Google DNS)
-			resp, err := dns.Exchange(r, "8.8.8.8:53")
+			// Если не в блоклисте → ходим на апстрим
+			resp, err := dns.Exchange(&dns.Msg{
+				MsgHdr:   dns.MsgHdr{Id: r.Id, RecursionDesired: true},
+				Question: []dns.Question{q},
+			}, "8.8.8.8:53")
+
 			if err != nil {
 				log.Println("Ошибка апстрима:", err)
 				m.Rcode = dns.RcodeServerFailure
-				rcode = dns.RcodeToString[m.Rcode]
+				//rcode = dns.RcodeServerFailure
 			} else {
+				// Добавляем все ответы из апстрима в общий ответ
+				m.Answer = append(m.Answer, resp.Answer...)
+				m.Ns = append(m.Ns, resp.Ns...)
+				m.Extra = append(m.Extra, resp.Extra...)
+
 				// метрики для успешного апстрима
 				duration := time.Since(start)
 				respSize := resp.Len()
 				metric.HandleDNSRequest(clientIP, qtype, dns.RcodeToString[resp.Rcode], respSize, duration, false)
-
-				w.WriteMsg(resp)
-				return
 			}
 		}
-
-		duration := time.Since(start)
-		respSize := m.Len()
-		// 👉 вот здесь вызов нашей метрики
-		metric.HandleDNSRequest(clientIP, qtype, rcode, respSize, duration, blocked)
 	}
 
-	// отправляем ответ
-	err := w.WriteMsg(m)
-	if err != nil {
+	// В конце отправляем общий ответ клиенту
+	duration := time.Since(start)
+	respSize := m.Len()
+	metric.HandleDNSRequest(clientIP, "multi", dns.RcodeToString[m.Rcode], respSize, duration, blocked)
+
+	if err := w.WriteMsg(m); err != nil {
 		log.Println("Ошибка отправки:", err)
 	}
 }
 
 func main() {
+	//err := use_cases.LoadFromFile()
+	//if err != nil {
+	//	fmt.Println(err)
+	//}
 	err := use_cases.GetFromDb()
 	blackList = filter.GetFilter()
 	use_cases.StartMetric()

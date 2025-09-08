@@ -8,16 +8,8 @@ import (
 
 func Sync() error {
 	list := blacklists.LoadAll()
-	err := db.CreateRows(getKeys(list))
+	err := db.CreateRows(list)
 
-	filter.UpdateFilter(getKeys(list))
+	filter.UpdateFilter(list)
 	return err
-}
-
-func getKeys(list map[string]bool) []string {
-	result := make([]string, 0, len(list))
-	for k := range list {
-		result = append(result, k)
-	}
-	return result
 }

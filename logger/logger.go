@@ -71,30 +71,28 @@ func (l *ChanLogger) Error(msg error) {
 }
 
 func traceError(err error) string {
+	if err == nil {
+		return ""
+	}
+
 	var lines []string
 	prefix := ""
 
 	for err != nil {
-		lines = append(lines, fmt.Sprintf("%s└── %s", prefix, err.Error()))
+		// выводим только текущий уровень ошибки
+		lines = append(lines, fmt.Sprintf("%s└── %v", prefix, err))
 		prefix += "    " // добавляем отступ для следующего уровня
 		err = errors.Unwrap(err)
 	}
 
-	return fmt.Sprintln(linesToString(lines))
+	return strings.Join(lines, "\n") + "\n"
 }
 
-func linesToString(lines []string) string {
-	result := ""
-	for _, l := range lines {
-		result += l + "\n"
-	}
-	return result
-}
-
-func (l *ChanLogger) Debug(msg string) {
+func (l *ChanLogger) Debug(a ...any) {
+	str := fmt.Sprintln(a...)
 	l.logChan <- log.LogStruct{
 		Level:   "DEBUG",
-		Message: strings.TrimSpace(msg),
+		Message: strings.TrimSpace(str),
 		Time:    time.Now(),
 	}
 }

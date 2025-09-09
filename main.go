@@ -15,7 +15,8 @@ import (
 )
 
 var blackList *bloom.BloomFilter = nil
-var cacheInstance *cache.LRUCache = nil
+var cacheInstance = cache.GetCache()
+var l = logger.GetLogger()
 
 func GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, err error) {
 	qtype := dns.TypeToString[question.Qtype]
@@ -25,7 +26,7 @@ func GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, 
 	// Сначала проверяем кэш
 	fromCache, found := cacheInstance.Get(cacheKey)
 	if found {
-		fmt.Println("Из кэша:", name, "Тип:", qtype)
+		l.Info("Из кэша:", name, "Тип:", qtype)
 		// Возвращаем кэшированный ответ
 		return fromCache, nil
 	}
@@ -59,8 +60,6 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 		qtype := dns.TypeToString[q.Qtype]
 		qname := q.Name
 
-		l.Info("Запрос:", qname, "Тип:", qtype)
-
 		if blackList.Test([]byte(qname)) {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
@@ -68,7 +67,7 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			l.Warn("Заблокирован:", qname)
 		} else {
 			resp, err := GetFromCacheOrCreateRequest(q, r.Id)
-
+			l.Debug("Запрос:", qname, "Тип:", qtype)
 			if err != nil {
 				l.Error(fmt.Errorf("ошибка апстрима для %s: %w", qname, err))
 				m.Rcode = dns.RcodeServerFailure
@@ -92,17 +91,13 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func main() {
-	l := logger.GetLogger()
 	filter, err := usecases.GetFromDb()
 	if err != nil {
 		l.Error(err)
 		panic(err)
 	}
 	blackList = filter
-
-	cacheInstance = cache.GetCache()
 	usecases.StartMetric()
-
 	dns.HandleFunc(".", handleDNS)
 
 	server := &dns.Server{Addr: ":53", Net: "udp"}

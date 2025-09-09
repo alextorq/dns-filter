@@ -25,7 +25,7 @@
 ![DNS Filter Screenshot](docs/screenshot.png)  
 *Пример заблокированных запросов и метрик Prometheus.*
 
-![Prometheus Grafana](docs/grafana.gif)  
+![Prometheus Grafana](docs/grafana.png)  
 *Визуализация метрик в Grafana.*
 
 ---

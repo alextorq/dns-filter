@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"dns-filter/logger/handlers/console"
+	"github.com/alextorq/dns-filter/logger/handlers/console"
 	"sync"
 )
 

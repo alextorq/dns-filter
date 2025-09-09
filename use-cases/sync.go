@@ -1,9 +1,9 @@
 package use_cases
 
 import (
-	blacklists "dns-filter/black-lists"
-	"dns-filter/db"
-	"dns-filter/filter"
+	blacklists "github.com/alextorq/dns-filter/black-lists"
+	"github.com/alextorq/dns-filter/db"
+	"github.com/alextorq/dns-filter/filter"
 )
 
 func Sync() error {

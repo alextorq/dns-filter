@@ -1,8 +1,9 @@
 package console
 
 import (
-	"dns-filter/logger/log"
 	"fmt"
+
+	"github.com/alextorq/dns-filter/logger/log"
 )
 
 var colors = map[string]string{

@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/alextorq/dns-filter/config"
 	_ "github.com/mattn/go-sqlite3" // драйвер SQLite для Go
 )
+
+var conf = config.GetConfig()
 
 const tableName = "black_list"
 
 func GetDBConnectionString() string {
-	return "./filter.sqlite"
+	return conf.DbPath
 }
 
 var db *sql.DB = nil

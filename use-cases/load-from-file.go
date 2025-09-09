@@ -1,9 +1,10 @@
 package use_cases
 
 import (
-	blacklists "dns-filter/black-lists"
-	"dns-filter/db"
 	"fmt"
+
+	blacklists "github.com/alextorq/dns-filter/black-lists"
+	"github.com/alextorq/dns-filter/db"
 )
 
 func LoadFromFile() error {

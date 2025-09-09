@@ -1,11 +1,12 @@
 package use_cases
 
 import (
-	"dns-filter/db"
-	"dns-filter/filter"
-	"dns-filter/logger"
 	"fmt"
 	"strconv"
+
+	"github.com/alextorq/dns-filter/db"
+	"github.com/alextorq/dns-filter/filter"
+	"github.com/alextorq/dns-filter/logger"
 
 	"github.com/bits-and-blooms/bloom/v3"
 )

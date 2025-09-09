@@ -1,9 +1,9 @@
 package logger
 
 import (
-	"dns-filter/logger/log"
 	"errors"
 	"fmt"
+	"github.com/alextorq/dns-filter/logger/log"
 	"strings"
 	"time"
 )

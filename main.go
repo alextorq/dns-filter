@@ -1,14 +1,16 @@
 package main
 
 import (
-	"dns-filter/cache"
-	"dns-filter/logger"
-	"dns-filter/metric"
-	usecases "dns-filter/use-cases"
 	"fmt"
 	"log"
 	"net"
 	"time"
+
+	"github.com/alextorq/dns-filter/cache"
+	"github.com/alextorq/dns-filter/config"
+	"github.com/alextorq/dns-filter/logger"
+	"github.com/alextorq/dns-filter/metric"
+	usecases "github.com/alextorq/dns-filter/use-cases"
 
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/miekg/dns"
@@ -17,6 +19,7 @@ import (
 var blackList *bloom.BloomFilter = nil
 var cacheInstance = cache.GetCache()
 var l = logger.GetLogger()
+var conf = config.GetConfig()
 
 func GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, err error) {
 	qtype := dns.TypeToString[question.Qtype]
@@ -35,7 +38,7 @@ func GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, 
 	resp, err := dns.Exchange(&dns.Msg{
 		MsgHdr:   dns.MsgHdr{Id: id, RecursionDesired: true},
 		Question: []dns.Question{question},
-	}, "8.8.8.8:53")
+	}, conf.Upstream)
 
 	if err != nil {
 		return nil, err

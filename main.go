@@ -89,7 +89,7 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	if err := w.WriteMsg(m); err != nil {
-		log.Println("Ошибка отправки:", err)
+		l.Error(fmt.Errorf("ошибка отправки ответа клиенту: %w", err))
 	}
 }
 
@@ -100,7 +100,9 @@ func main() {
 		panic(err)
 	}
 	blackList = filter
-	usecases.StartMetric()
+	if conf.MetricEnable {
+		usecases.StartMetric(conf.MetricPort)
+	}
 	dns.HandleFunc(".", handleDNS)
 
 	server := &dns.Server{Addr: ":53", Net: "udp"}

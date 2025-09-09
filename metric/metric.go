@@ -4,9 +4,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alextorq/dns-filter/logger"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+var l = logger.GetLogger()
 
 var (
 	totalRequests = prometheus.NewCounter(
@@ -72,14 +75,20 @@ func init() {
 	)
 }
 
-func Serve() {
+func Serve(port string) {
+	pathListen := ":" + port
+
+	l.Info("Метрики Prometheus доступны на", pathListen+"/metrics")
+	// Запускаем HTTP сервер для метрик в отдельной горутине
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":2112", nil)
+		err := http.ListenAndServe(pathListen, nil)
+		if err != nil {
+			l.Error(err)
+		}
 	}()
 }
 
-// пример обновления метрик в хэндлере DNS:
 func HandleDNSRequest(clientIP, qtype, rcode string, respSize int, duration time.Duration, blocked bool) {
 	totalRequests.Inc()
 	requestsByType.WithLabelValues(qtype).Inc()

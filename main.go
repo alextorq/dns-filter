@@ -1,9 +1,10 @@
 package main
 
 import (
+	"dns-filter/cache"
 	"dns-filter/filter"
 	"dns-filter/metric"
-	use_cases "dns-filter/use-cases"
+	usecases "dns-filter/use-cases"
 	"fmt"
 	"log"
 	"net"
@@ -14,6 +15,35 @@ import (
 )
 
 var blackList *bloom.BloomFilter = nil
+var cacheInstance *cache.LRUCache = nil
+
+func GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, err error) {
+	qtype := dns.TypeToString[question.Qtype]
+	name := question.Name
+	cacheKey := name + ":" + qtype
+
+	// Сначала проверяем кэш
+	fromCache, found := cacheInstance.Get(cacheKey)
+	if found {
+		fmt.Println("Из кэша:", name, "Тип:", qtype)
+		// Возвращаем кэшированный ответ
+		return fromCache, nil
+	}
+
+	// Если не в блоклисте → ходим на апстрим
+	resp, err := dns.Exchange(&dns.Msg{
+		MsgHdr:   dns.MsgHdr{Id: id, RecursionDesired: true},
+		Question: []dns.Question{question},
+	}, "8.8.8.8:53")
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Кладем в кэш
+	cacheInstance.Add(cacheKey, resp.Copy())
+	return resp, nil
+}
 
 func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
@@ -23,49 +53,37 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	clientIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
 
 	blocked := false
-	//rcode := dns.RcodeSuccess
 
 	for _, q := range r.Question {
-		fmt.Println("Запрос:", q.Name, "Тип:", dns.TypeToString[q.Qtype])
-
 		qtype := dns.TypeToString[q.Qtype]
 		qname := q.Name
+
+		fmt.Println("Запрос:", qname, "Тип:", qtype)
 
 		if blackList.Test([]byte(qname)) {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
 			blocked = true
-			//rcode = dns.RcodeNameError
-			fmt.Println("Заблокирован:", q.Name)
+			fmt.Println("Заблокирован:", qname)
 		} else {
-			// Если не в блоклисте → ходим на апстрим
-			resp, err := dns.Exchange(&dns.Msg{
-				MsgHdr:   dns.MsgHdr{Id: r.Id, RecursionDesired: true},
-				Question: []dns.Question{q},
-			}, "8.8.8.8:53")
+			resp, err := GetFromCacheOrCreateRequest(q, r.Id)
 
 			if err != nil {
 				log.Println("Ошибка апстрима:", err)
 				m.Rcode = dns.RcodeServerFailure
-				//rcode = dns.RcodeServerFailure
 			} else {
 				// Добавляем все ответы из апстрима в общий ответ
 				m.Answer = append(m.Answer, resp.Answer...)
 				m.Ns = append(m.Ns, resp.Ns...)
 				m.Extra = append(m.Extra, resp.Extra...)
-
-				// метрики для успешного апстрима
-				duration := time.Since(start)
-				respSize := resp.Len()
-				metric.HandleDNSRequest(clientIP, qtype, dns.RcodeToString[resp.Rcode], respSize, duration, false)
 			}
 		}
-	}
 
-	// В конце отправляем общий ответ клиенту
-	duration := time.Since(start)
-	respSize := m.Len()
-	metric.HandleDNSRequest(clientIP, "multi", dns.RcodeToString[m.Rcode], respSize, duration, blocked)
+		// В конце отправляем общий ответ клиенту
+		duration := time.Since(start)
+		respSize := m.Len()
+		metric.HandleDNSRequest(clientIP, qtype, dns.RcodeToString[m.Rcode], respSize, duration, blocked)
+	}
 
 	if err := w.WriteMsg(m); err != nil {
 		log.Println("Ошибка отправки:", err)
@@ -73,13 +91,10 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func main() {
-	//err := use_cases.LoadFromFile()
-	//if err != nil {
-	//	fmt.Println(err)
-	//}
-	err := use_cases.GetFromDb()
+	err := usecases.GetFromDb()
 	blackList = filter.GetFilter()
-	use_cases.StartMetric()
+	cacheInstance = cache.GetCache()
+	usecases.StartMetric()
 
 	if err != nil {
 		log.Fatal("Ошибка синхронизации блоклиста:", err)

@@ -2,7 +2,7 @@ package main
 
 import (
 	"dns-filter/cache"
-	"dns-filter/filter"
+	"dns-filter/logger"
 	"dns-filter/metric"
 	usecases "dns-filter/use-cases"
 	"fmt"
@@ -46,6 +46,7 @@ func GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, 
 }
 
 func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
+	l := logger.GetLogger()
 	m := new(dns.Msg)
 	m.SetReply(r)
 
@@ -58,18 +59,18 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 		qtype := dns.TypeToString[q.Qtype]
 		qname := q.Name
 
-		fmt.Println("Запрос:", qname, "Тип:", qtype)
+		l.Info("Запрос:", qname, "Тип:", qtype)
 
 		if blackList.Test([]byte(qname)) {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
 			blocked = true
-			fmt.Println("Заблокирован:", qname)
+			l.Warn("Заблокирован:", qname)
 		} else {
 			resp, err := GetFromCacheOrCreateRequest(q, r.Id)
 
 			if err != nil {
-				log.Println("Ошибка апстрима:", err)
+				l.Error(fmt.Errorf("ошибка апстрима для %s: %w", qname, err))
 				m.Rcode = dns.RcodeServerFailure
 			} else {
 				// Добавляем все ответы из апстрима в общий ответ
@@ -91,18 +92,20 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func main() {
-	err := usecases.GetFromDb()
-	blackList = filter.GetFilter()
+	l := logger.GetLogger()
+	filter, err := usecases.GetFromDb()
+	if err != nil {
+		l.Error(err)
+		panic(err)
+	}
+	blackList = filter
+
 	cacheInstance = cache.GetCache()
 	usecases.StartMetric()
-
-	if err != nil {
-		log.Fatal("Ошибка синхронизации блоклиста:", err)
-	}
 
 	dns.HandleFunc(".", handleDNS)
 
 	server := &dns.Server{Addr: ":53", Net: "udp"}
-	fmt.Println("DNS фильтр запущен на :53")
+	l.Info("DNS фильтр запущен на :53")
 	log.Fatal(server.ListenAndServe())
 }

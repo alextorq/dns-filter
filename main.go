@@ -20,6 +20,7 @@ var blackList *bloom.BloomFilter = nil
 var cacheInstance = cache.GetCache()
 var l = logger.GetLogger()
 var conf = config.GetConfig()
+var metricInstance = metric.CreateMetric(conf.MetricEnable, conf.MetricPort)
 
 func GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, err error) {
 	qtype := dns.TypeToString[question.Qtype]
@@ -85,7 +86,7 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 		// В конце отправляем общий ответ клиенту
 		duration := time.Since(start)
 		respSize := m.Len()
-		metric.HandleDNSRequest(clientIP, qtype, dns.RcodeToString[m.Rcode], respSize, duration, blocked)
+		metricInstance.HandleDNSRequest(clientIP, qtype, dns.RcodeToString[m.Rcode], respSize, duration, blocked)
 	}
 
 	if err := w.WriteMsg(m); err != nil {
@@ -100,11 +101,8 @@ func main() {
 		panic(err)
 	}
 	blackList = filter
-	if conf.MetricEnable {
-		usecases.StartMetric(conf.MetricPort)
-	}
-	dns.HandleFunc(".", handleDNS)
 
+	dns.HandleFunc(".", handleDNS)
 	server := &dns.Server{Addr: ":53", Net: "udp"}
 	l.Info("DNS фильтр запущен на :53")
 	log.Fatal(server.ListenAndServe())

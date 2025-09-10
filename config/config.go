@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -25,6 +26,7 @@ func getEnv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
+	fmt.Println("Используется значение по умолчанию для", key, ":", fallback)
 	return fallback
 }
 

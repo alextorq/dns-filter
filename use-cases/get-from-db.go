@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/alextorq/dns-filter/db"
+	black_lists "github.com/alextorq/dns-filter/black-lists"
 	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 
@@ -12,7 +12,7 @@ import (
 )
 
 func GetFromDb() (*bloom.BloomFilter, error) {
-	list, err := db.GetAllRowsWhereActive()
+	list, err := black_lists.GetAllActiveFilters()
 	if err != nil {
 		return nil, fmt.Errorf("ошибка получения данных из БД: %w", err)
 	}

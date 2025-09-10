@@ -81,7 +81,7 @@ func CreateMetric(enable bool, port string) *Metrics {
 	return metric
 }
 
-func (m *Metrics) Serve() {
+func (m *Metrics) Serve() *Metrics {
 	if m.Enable {
 		pathListen := ":" + m.Port
 
@@ -95,6 +95,7 @@ func (m *Metrics) Serve() {
 			}
 		}()
 	}
+	return m
 }
 
 func (m *Metrics) HandleDNSRequest(clientIP, qtype, rcode string, respSize int, duration time.Duration, blocked bool) {

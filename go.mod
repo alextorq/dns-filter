@@ -6,17 +6,21 @@ toolchain go1.24.6
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
-	github.com/mattn/go-sqlite3 v1.14.32
+	github.com/joho/godotenv v1.5.1
 	github.com/miekg/dns v1.1.68
 	github.com/prometheus/client_golang v1.23.2
+	gorm.io/driver/sqlite v1.6.0
+	gorm.io/gorm v1.30.5
 )
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.24.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
+	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/mattn/go-sqlite3 v1.14.32 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
@@ -26,6 +30,7 @@ require (
 	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/tools v0.36.0 // indirect
 	google.golang.org/protobuf v1.36.9 // indirect
 )

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	blacklists "github.com/alextorq/dns-filter/black-lists"
-	"github.com/alextorq/dns-filter/db"
 )
 
 func LoadFromFile() error {
@@ -12,7 +11,7 @@ func LoadFromFile() error {
 	if err != nil {
 		return fmt.Errorf("error load black list from file: %w", err)
 	}
-	err = db.CreateRows(data)
+	err = blacklists.CreateFilter(data)
 	if err != nil {
 		return fmt.Errorf("error create rows in db: %w", err)
 	}

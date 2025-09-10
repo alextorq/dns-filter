@@ -8,6 +8,7 @@ import (
 
 	"github.com/alextorq/dns-filter/cache"
 	"github.com/alextorq/dns-filter/config"
+	"github.com/alextorq/dns-filter/db/migrate"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/metric"
 	usecases "github.com/alextorq/dns-filter/use-cases"
@@ -20,7 +21,7 @@ var blackList *bloom.BloomFilter = nil
 var cacheInstance = cache.GetCache()
 var l = logger.GetLogger()
 var conf = config.GetConfig()
-var metricInstance = metric.CreateMetric(conf.MetricEnable, conf.MetricPort)
+var metricInstance = metric.CreateMetric(conf.MetricEnable, conf.MetricPort).Serve()
 
 func GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, err error) {
 	qtype := dns.TypeToString[question.Qtype]
@@ -51,7 +52,6 @@ func GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, 
 }
 
 func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
-	l := logger.GetLogger()
 	m := new(dns.Msg)
 	m.SetReply(r)
 
@@ -68,7 +68,10 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
 			blocked = true
-			l.Warn("Заблокирован:", qname)
+			err := usecases.BlockDomain(qname)
+			if err != nil {
+				l.Error(fmt.Errorf("ошибка блокировки домена %s: %w", qname, err))
+			}
 		} else {
 			resp, err := GetFromCacheOrCreateRequest(q, r.Id)
 			l.Debug("Запрос:", qname, "Тип:", qtype)
@@ -95,6 +98,8 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func main() {
+	migrate.Migrate()
+	usecases.StartCleanUpBlockDomain()
 	filter, err := usecases.GetFromDb()
 	if err != nil {
 		l.Error(err)

@@ -70,8 +70,8 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			blocked = true
 			usecases.BlockDomain(qname)
 		} else {
-			resp, err := GetFromCacheOrCreateRequest(q, r.Id)
 			l.Debug("Запрос:", qname, "Тип:", qtype)
+			resp, err := GetFromCacheOrCreateRequest(q, r.Id)
 			if err != nil {
 				l.Error(fmt.Errorf("ошибка апстрима для %s: %w", qname, err))
 				m.Rcode = dns.RcodeServerFailure
@@ -96,7 +96,6 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 func main() {
 	migrate.Migrate()
-	usecases.StartCleanUpBlockDomain()
 	filter, err := usecases.GetFromDb()
 	if err != nil {
 		l.Error(err)

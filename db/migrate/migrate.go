@@ -9,7 +9,6 @@ func Migrate() {
 	connect := db.GetConnection()
 	err := connect.AutoMigrate(
 		&blacklists.BlockList{},
-		&blacklists.BlockDomain{},
 	)
 	if err != nil {
 		panic(err)

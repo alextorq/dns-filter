@@ -68,10 +68,7 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
 			blocked = true
-			err := usecases.BlockDomain(qname)
-			if err != nil {
-				l.Error(fmt.Errorf("ошибка блокировки домена %s: %w", qname, err))
-			}
+			usecases.BlockDomain(qname)
 		} else {
 			resp, err := GetFromCacheOrCreateRequest(q, r.Id)
 			l.Debug("Запрос:", qname, "Тип:", qtype)

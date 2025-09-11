@@ -10,10 +10,11 @@ import (
 )
 
 type Config struct {
-	Upstream     string
-	DbPath       string
-	MetricEnable bool
-	MetricPort   string
+	Upstream      string
+	DbPath        string
+	MetricEnable  bool
+	MetricPort    string
+	InfluxdbToken string
 }
 
 var (
@@ -38,10 +39,11 @@ func GetConfig() *Config {
 		}
 
 		instance = &Config{
-			Upstream:     getEnv("DNS_FILTER_UPSTREAM", "8.8.8.8:53"),
-			DbPath:       getEnv("DNS_FILTER_DBPATH", "./filter.sqlite"),
-			MetricPort:   getEnv("DNS_FILTER_METRIC_PORT", "2112"),
-			MetricEnable: getEnv("DNS_FILTER_METRIC_ENABLE", "true") == "true",
+			Upstream:      getEnv("DNS_FILTER_UPSTREAM", "8.8.8.8:53"),
+			DbPath:        getEnv("DNS_FILTER_DBPATH", "./filter.sqlite"),
+			MetricPort:    getEnv("DNS_FILTER_METRIC_PORT", "2112"),
+			InfluxdbToken: getEnv("DNS_FILTER_INFLUXDB_TOKEN", ""),
+			MetricEnable:  getEnv("DNS_FILTER_METRIC_ENABLE", "true") == "true",
 		}
 	})
 

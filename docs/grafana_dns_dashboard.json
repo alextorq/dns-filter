@@ -1,0 +1,119 @@
+{
+  "id": null,
+  "title": "DNS Filter Metrics",
+  "tags": [
+    "dns",
+    "prometheus"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "5s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total DNS Requests",
+      "targets": [
+        {
+          "expr": "sum(dns_requests_total)"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Blocked DNS Requests",
+      "targets": [
+        {
+          "expr": "sum(dns_requests_blocked_total)"
+        }
+      ],
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DNS Errors by RCODE",
+      "targets": [
+        {
+          "expr": "sum by(rcode) (dns_errors_total)"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DNS Requests by Type",
+      "targets": [
+        {
+          "expr": "sum by(qtype) (dns_requests_by_type_total)"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "table",
+      "title": "Top Clients",
+      "targets": [
+        {
+          "expr": "topk(10, dns_requests_by_client_total)"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Request Duration (95th percentile)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(dns_request_duration_seconds_bucket[5m])) by (le))"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 6,
+        "h": 6
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Response Size (95th percentile)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(dns_response_size_bytes_bucket[5m])) by (le))"
+        }
+      ],
+      "gridPos": {
+        "x": 6,
+        "y": 22,
+        "w": 6,
+        "h": 6
+      }
+    }
+  ]
+}

@@ -3,8 +3,6 @@ package black_lists
 import (
 	"errors"
 	"fmt"
-	"log"
-	"time"
 
 	"github.com/alextorq/dns-filter/db"
 	"gorm.io/gorm"
@@ -12,9 +10,8 @@ import (
 
 type BlockList struct {
 	gorm.Model
-	Url         string        `gorm:"type:varchar(255);not null;uniqueIndex:idx_theme_host"`
-	Active      bool          `gorm:"default:true"`
-	BlockDomain []BlockDomain `gorm:"foreignKey:DomainId"`
+	Url    string `gorm:"type:varchar(255);not null;uniqueIndex:idx_theme_host"`
+	Active bool   `gorm:"default:true"`
 }
 
 func (u BlockList) String() string {
@@ -61,48 +58,4 @@ func CreateFilter(urls []string) error {
 		}
 	}
 	return nil
-}
-
-type BlockDomain struct {
-	gorm.Model
-	DomainId uint
-}
-
-func CreateBlockDomain(domainId uint) error {
-	conn := db.GetConnection()
-	newEntry := BlockDomain{
-		DomainId: domainId,
-	}
-	err := conn.Create(&newEntry).Error
-	return err
-}
-
-func cleanupTable[T any](db *gorm.DB, model T, max int) error {
-	stmt := &gorm.Statement{DB: db}
-	if err := stmt.Parse(model); err != nil {
-		return err
-	}
-	tableName := stmt.Schema.Table
-
-	return db.Exec(fmt.Sprintf(`
-        DELETE FROM %s
-        WHERE id NOT IN (
-            SELECT id FROM %s
-            ORDER BY created_at DESC
-            LIMIT ?
-        )
-    `, tableName, tableName), max).Error
-}
-
-func StartBlockDomainCleanup(db *gorm.DB, max int, interval time.Duration) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			if err := cleanupTable(db, &BlockDomain{}, max); err != nil {
-				log.Printf("failed to cleanup logs: %v", err)
-			}
-		}
-	}()
 }

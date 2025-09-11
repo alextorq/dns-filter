@@ -1,18 +1,19 @@
 package use_cases
 
 import (
-	blacklists "github.com/alextorq/dns-filter/black-lists"
+	"fmt"
+
+	"github.com/alextorq/dns-filter/events"
 	"github.com/alextorq/dns-filter/logger"
 )
 
-func BlockDomain(domain string) error {
-	l := logger.GetLogger()
-	l.Warn("Заблокирован:", domain)
-	domainE, err := blacklists.GetBlockListByDomain(domain)
-	if err != nil {
-		return err
-	}
-	err = blacklists.CreateBlockDomain(domainE.ID)
-
-	return err
+func BlockDomain(domain string) {
+	go func() {
+		l := logger.GetLogger()
+		l.Warn("Заблокирован:", domain)
+		err := events.SendEventAboutBlockDomain(domain)
+		if err != nil {
+			l.Error(fmt.Errorf("ошибка блокировки домена %s: %w", domain, err))
+		}
+	}()
 }

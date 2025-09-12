@@ -41,6 +41,7 @@ func (c *LRUCache) Add(key string, val *dns.Msg) {
 		val: val,
 	})
 	c.items[key] = first
+
 	if c.list.Len() > c.capacity {
 		last := c.list.Back()
 		c.list.Remove(last)
@@ -56,6 +57,12 @@ func (c *LRUCache) Get(key string) (*dns.Msg, bool) {
 		return item.Value.(*entry).val, true
 	}
 	return nil, false
+}
+
+func (c *LRUCache) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.list.Len()
 }
 
 var (

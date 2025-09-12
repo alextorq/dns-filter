@@ -1,13 +1,15 @@
 package logger
 
 import (
-	"github.com/alextorq/dns-filter/logger/handlers/console"
 	"sync"
+
+	"github.com/alextorq/dns-filter/logger/handlers/console"
 )
 
 var onceChan sync.Once
+var logChannel *ChanLogger = nil
 
-func GetLogger() ChanLogger {
+func GetLogger() *ChanLogger {
 	onceChan.Do(func() {
 		logChannel = NewChanLogger(1000)
 
@@ -20,5 +22,5 @@ func GetLogger() ChanLogger {
 		//logChannel.AddHandler(lokiHandler)
 		logChannel.AddHandler(consoleHandler)
 	})
-	return *logChannel
+	return logChannel
 }

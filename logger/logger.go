@@ -3,12 +3,11 @@ package logger
 import (
 	"errors"
 	"fmt"
-	"github.com/alextorq/dns-filter/logger/log"
 	"strings"
 	"time"
-)
 
-var logChannel *ChanLogger = nil
+	"github.com/alextorq/dns-filter/logger/log"
+)
 
 type ChanLogger struct {
 	logChan  chan log.LogStruct
@@ -30,9 +29,9 @@ func NewChanLogger(bufferSize int) *ChanLogger {
 	go func() {
 		for {
 			select {
-			case log := <-logger.logChan:
+			case logStruct := <-logger.logChan:
 				for _, handler := range logger.Handlers {
-					handler.Handle(log)
+					handler.Handle(logStruct)
 				}
 			case <-logger.quit:
 				return

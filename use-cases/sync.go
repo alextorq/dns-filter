@@ -9,6 +9,7 @@ func Sync() error {
 	list := blacklists.LoadAll()
 	err := blacklists.CreateFilter(list)
 
-	filter.UpdateFilter(list)
+	f := filter.GetFilter()
+	f.UpdateFilter(list)
 	return err
 }

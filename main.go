@@ -13,11 +13,9 @@ import (
 	"github.com/alextorq/dns-filter/metric"
 	usecases "github.com/alextorq/dns-filter/use-cases"
 
-	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/miekg/dns"
 )
 
-var blackList *bloom.BloomFilter = nil
 var cacheInstance = cache.GetCache()
 var l = logger.GetLogger()
 var conf = config.GetConfig()
@@ -64,7 +62,7 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 		qtype := dns.TypeToString[q.Qtype]
 		qname := q.Name
 
-		if blackList.Test([]byte(qname)) {
+		if usecases.CheckBlock(qname) {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
 			blocked = true
@@ -96,12 +94,11 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 func main() {
 	migrate.Migrate()
-	filter, err := usecases.GetFromDb()
+	err := usecases.GetFromDb()
 	if err != nil {
 		l.Error(err)
 		panic(err)
 	}
-	blackList = filter
 
 	dns.HandleFunc(".", handleDNS)
 	server := &dns.Server{Addr: ":53", Net: "udp"}

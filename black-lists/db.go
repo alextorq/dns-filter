@@ -33,11 +33,11 @@ func GetAllActiveFilters() ([]string, error) {
 	return urls, nil
 }
 
-func GetBlockListByDomain(domain string) (BlockList, error) {
+func DomainNotExist(domain string) bool {
 	conn := db.GetConnection()
 	var blockList BlockList
 	err := conn.Where("url = ?", domain).First(&blockList).Error
-	return blockList, err
+	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
 func CreateFilter(urls []string) error {

@@ -40,9 +40,8 @@ func (m *Metrics) Serve() *Metrics {
 	pathListen := ":" + m.Port
 
 	l.Info("Метрики Prometheus доступны на", pathListen+"/metrics")
-	// Запускаем HTTP сервер для метрик в отдельной горутине
 	go func() {
-		http.Handle("/metrics", promhttp.Handler())
+		http.Handle("/metrics", promhttp.HandlerFor(Registry, promhttp.HandlerOpts{}))
 		err := http.ListenAndServe(pathListen, nil)
 		if err != nil {
 			l.Error(err)

@@ -5,7 +5,7 @@ import (
 )
 
 func UpdateFilter(rows []string) *bloom.BloomFilter {
-	filter := bloom.NewWithEstimates(uint(len(rows)), 0.01)
+	filter := bloom.NewWithEstimates(uint(len(rows)), 0.001)
 
 	for _, item := range rows {
 		filter.Add([]byte(item))

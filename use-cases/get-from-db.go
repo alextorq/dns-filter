@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strconv"
 
-	black_lists "github.com/alextorq/dns-filter/black-lists"
+	blacklists "github.com/alextorq/dns-filter/black-lists"
 	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 )
 
 func GetFromDb() error {
-	list, err := black_lists.GetAllActiveFilters()
+	list, err := blacklists.GetAllActiveFilters()
 	if err != nil {
 		return fmt.Errorf("ошибка получения данных из БД: %w", err)
 	}

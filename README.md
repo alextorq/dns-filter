@@ -3,8 +3,6 @@
 [![Go](https://img.shields.io/badge/Go-1.21-blue?logo=go&logoColor=white)](https://golang.org/)
 [![Docker](https://img.shields.io/badge/Docker-Yes-blue?logo=docker&logoColor=white)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/alextorq/dns-filter)](https://github.com/alextorq/dns-filter/releases)
-[![Docker Pulls](https://img.shields.io/docker/pulls/alextorq/dns-filter?logo=docker)](https://hub.docker.com/r/alextorq/dns-filter)
 
 **DNS Filter** — простой и быстрый DNS-блокировщик рекламы на Go. Перенаправляет запросы к нежелательным доменам на недоступный IP, блокируя рекламу на уровне сети.
 

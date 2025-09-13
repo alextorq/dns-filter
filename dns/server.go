@@ -7,20 +7,20 @@ import (
 	"time"
 
 	"github.com/alextorq/dns-filter/config"
-	usecases "github.com/alextorq/dns-filter/use-cases"
 	"github.com/miekg/dns"
 )
 
 var conf = config.GetConfig()
 
 type DnsServer struct {
-	Address string
-	Port    int
-	server  *dns.Server
-	Logger  Logger
-	Cache   Cache
-	Filter  func(string2 string) bool
-	Metric  Metric
+	Address  string
+	Port     int
+	server   *dns.Server
+	Logger   Logger
+	Cache    Cache
+	Filter   func(string2 string) bool
+	Metric   Metric
+	Handlers DnsRequestHandlers
 }
 
 type Logger interface {
@@ -37,6 +37,11 @@ type Cache interface {
 
 type Metric interface {
 	HandleDNSRequest(clientIP, qtype, rcode string, respSize int, duration time.Duration)
+}
+
+type DnsRequestHandlers interface {
+	Allowed(w dns.ResponseWriter, r *dns.Msg)
+	Blocked(w dns.ResponseWriter, r *dns.Msg)
 }
 
 type Filter interface {
@@ -85,7 +90,7 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 		if s.Filter(qname) {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
-			usecases.BlockDomain(qname)
+			s.Handlers.Blocked(w, r)
 		} else {
 			s.Logger.Debug("Запрос:", qname, "Тип:", qtype)
 			resp, err := s.GetFromCacheOrCreateRequest(q, r.Id)
@@ -98,6 +103,7 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 				m.Ns = append(m.Ns, resp.Ns...)
 				m.Extra = append(m.Extra, resp.Extra...)
 			}
+			s.Handlers.Allowed(w, r)
 		}
 
 		// В конце отправляем общий ответ клиенту
@@ -120,11 +126,12 @@ func (s *DnsServer) Serve() {
 	log.Fatal(s.server.ListenAndServe())
 }
 
-func CreateServer(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric) *DnsServer {
+func CreateServer(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers) *DnsServer {
 	return &DnsServer{
-		Logger: logger,
-		Cache:  cache,
-		Filter: filter,
-		Metric: metric,
+		Logger:   logger,
+		Cache:    cache,
+		Filter:   filter,
+		Metric:   metric,
+		Handlers: handlers,
 	}
 }

@@ -15,7 +15,7 @@ func BlockDomain(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
 		l.Warn("Заблокирован:", domain)
 		err := SendEventAboutBlockDomain(domain)
 		if err != nil {
-			l.Error(fmt.Errorf("ошибка блокировки домена %s: %w", domain, err))
+			l.Error(fmt.Errorf("ошибка отправки события о блокировки %s: %w", domain, err))
 		}
 	}()
 }

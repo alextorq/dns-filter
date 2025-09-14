@@ -1,4 +1,14 @@
 services:
+  dns-filter:
+    build: .
+    container_name: dns-filter
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "2112:2112/tcp"
+    restart: unless-stopped
+    volumes:
+      - dns-filter-data:/data
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -33,6 +43,7 @@ services:
 
 volumes:
   prometheus-data:
+  dns-filter-data:
   influxdb-data:
   influxdb-config:
   grafana-data:

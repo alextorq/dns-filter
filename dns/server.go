@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/alextorq/dns-filter/config"
+	"github.com/alextorq/dns-filter/utils"
 	"github.com/miekg/dns"
 )
 
@@ -122,7 +123,10 @@ func (s *DnsServer) Serve() {
 		s.handleDNS(writer, msg)
 	})
 	s.server = &dns.Server{Addr: ":53", Net: "udp"}
-	s.Logger.Info("DNS фильтр запущен на :53")
+	ips := utils.GetIp()
+	for _, ip := range ips {
+		s.Logger.Info("DNS фильтр запущен на:", ip+":53")
+	}
 	log.Fatal(s.server.ListenAndServe())
 }
 

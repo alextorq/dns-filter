@@ -18,12 +18,6 @@ type Config struct {
 
 	MetricEnable bool
 	MetricPort   string
-
-	InfluxdbToken  string
-	UseInfluxdb    bool
-	InfluxdbUrl    string
-	InfluxdbOrg    string
-	InfluxdbBucket string
 }
 
 var (
@@ -53,12 +47,6 @@ func GetConfig() *Config {
 
 			MetricPort:   getEnv("DNS_FILTER_METRIC_PORT", "2112"),
 			MetricEnable: getEnv("DNS_FILTER_METRIC_ENABLE", "false") == "true",
-
-			InfluxdbToken:  getEnv("DNS_FILTER_INFLUXDB_TOKEN", ""),
-			UseInfluxdb:    getEnv("DNS_FILTER_USE_INFLUXDB", "false") == "true",
-			InfluxdbUrl:    getEnv("DNS_FILTER_INFLUXDB_URL", "http://localhost:8086"),
-			InfluxdbOrg:    getEnv("DNS_FILTER_INFLUXDB_ORG", "dns-filter"),
-			InfluxdbBucket: getEnv("DNS_FILTER_INFLUXDB_BUCKET", "events"),
 
 			LogLevel: getEnv("DNS_FILTER_LOG_LEVEL", ""),
 			Enabled:  true,

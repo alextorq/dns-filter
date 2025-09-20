@@ -61,6 +61,12 @@ export class Api {
         const {data} = await this.transport.post<FilterStatusResponse>(`/filter/change-status`);
         return data.status;
     }
+
+
+    async createDomain(domain: string) {
+        const {data} = await this.transport.post<DNSRecord>(`/dns-records/create`, {domain: domain});
+        return data;
+    }
 }
 
 

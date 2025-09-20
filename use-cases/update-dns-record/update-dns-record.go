@@ -31,6 +31,8 @@ func UpdateDnsRecord(update UpdateBlockList) (*blacklists.BlockList, error) {
 		wrap := fmt.Errorf("error update record when change record: %w", err)
 		l.Error(wrap)
 		return nil, wrap
+	} else {
+		l.Info("Record updated:", record)
 	}
 
 	err = use_cases.UpdateFilterFromDb()

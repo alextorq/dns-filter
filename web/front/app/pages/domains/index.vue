@@ -2,6 +2,7 @@
 import type { TableColumn } from '@nuxt/ui'
 import {api, type DNSRecord} from "~/api";
 import {USwitch} from "#components";
+import AddDomainModal from '~/add-new-domain/components/add-domain-modal.vue';
 
 const data = shallowRef<DNSRecord[]>([])
 const globalFilter = ref()
@@ -101,12 +102,13 @@ const columns: TableColumn<DNSRecord>[] = [
 <template>
   <UContainer>
     <div class="w-full space-y-4 pb-4">
-      <div class="flex px-4 py-3.5 border-b border-accented">
+      <div class="flex px-4 py-3.5 justify-between border-b border-accented">
         <UInput
             @change="changeFilter"
             v-model="globalFilter"
             class="max-w-sm"
             placeholder="Search" />
+        <AddDomainModal/>
       </div>
 
       <UTable

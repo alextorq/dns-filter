@@ -123,3 +123,12 @@ func CreateDNSRecordsByDomains(urls []string) error {
 	}
 	return nil
 }
+
+func CreateDomain(domain string) error {
+	conn := db.GetConnection()
+	newEntry := BlockList{
+		Url:    domain,
+		Active: true,
+	}
+	return conn.Create(&newEntry).Error
+}

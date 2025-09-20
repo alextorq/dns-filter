@@ -7,7 +7,7 @@ import (
 	dnsLib "github.com/miekg/dns"
 )
 
-func BlockDomain(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
+func BlockDomain(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
 	go func() {
 		first := r.Question[0]
 		domain := first.Name

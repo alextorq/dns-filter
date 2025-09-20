@@ -2,8 +2,13 @@
 import {api} from '~/api'
 import {isAxiosError} from "axios";
 import {useToggle} from "~~/composables/use-toggle";
+import {useComponentStatus} from "~~/composables/use-component-status";
+import {ComponentStatus} from "~~/utils/component-status";
+
 const toast = useToast()
 const {isActive, closeHandler, openHandler} = useToggle()
+const {status} = useComponentStatus()
+
 
 const state = reactive({
   domain: ''
@@ -11,15 +16,17 @@ const state = reactive({
 
 const onSubmit = async (e: Event) => {
   try {
+    status.value = ComponentStatus.LOADING
     e.preventDefault()
     await api.createDomain(state.domain)
     toast.add({
-      title: 'Form Submitted',
-      description: 'Check the console for details.',
+      title: 'Success',
+      description: 'New domain was added.',
       duration: 3000,
     })
     closeHandler()
   }catch (e) {
+    status.value = ComponentStatus.ERROR_LOADING
     if (isAxiosError(e)) {
       const response = e.response
       if (response && response.data && response.data.message) {
@@ -35,8 +42,6 @@ const onSubmit = async (e: Event) => {
   }
 }
 </script>
-
-
 
 <template>
   <UDrawer
@@ -57,13 +62,14 @@ const onSubmit = async (e: Event) => {
             style="width: 600px;"
             @submit="onSubmit"
             :state="state"
-            class="space-y-4">
+            >
 
           <UFormField
               label="Domain"
               name="domain"
               required>
             <UInput
+                size="xl"
                 v-model="state.domain"
                 placeholder="google.com."
                 required />
@@ -76,7 +82,7 @@ const onSubmit = async (e: Event) => {
 
     <template #footer>
       <div class="flex justify-start">
-        <UButton @click="onSubmit" label="Add" type="submit" />
+        <UButton @click="onSubmit" size="xl" label="Add domain" type="submit" />
       </div>
     </template>
 

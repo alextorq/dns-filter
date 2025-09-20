@@ -38,8 +38,8 @@ export class Api {
         })
     }
 
-    async getAllDnsRecords(payload: DnsRecordsRequest) {
-        const {data} = await this.transport.post<DNSRecordsResponse>(`/dns-records`, payload);
+    async getAllDnsRecords(payload: DnsRecordsRequest, abortSignal: AbortSignal) {
+        const {data} = await this.transport.post<DNSRecordsResponse>(`/dns-records`, payload, {signal: abortSignal});
         return data;
     }
 

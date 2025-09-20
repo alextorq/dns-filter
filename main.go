@@ -24,10 +24,15 @@ func (h Handlers) Blocked(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
 
 func main() {
 	migrate.Migrate()
-	err := usecases.UpdateFilterFromDb()
+	err := usecases.Sync()
 	if err != nil {
 		panic(err)
 	}
+	err = usecases.UpdateFilterFromDb()
+	if err != nil {
+		panic(err)
+	}
+
 	chanLogger := logger.GetLogger()
 	cacheWithMetric := cache.GetCacheWithMetric()
 	metricInstance := dns.CreateMetric()

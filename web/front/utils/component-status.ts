@@ -1,0 +1,8 @@
+export enum ComponentStatus {
+    INITIAL = 'INITIAL',
+    LOADING = 'LOADING',
+    ERROR_LOADING = 'ERROR_LOADING',
+    RESULT = 'RESULT',
+    SAVING = 'SAVING',
+    ERROR_SAVING = 'ERROR_SAVING',
+}

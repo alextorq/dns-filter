@@ -3,9 +3,14 @@ import type { TableColumn } from '@nuxt/ui'
 import {api, type DNSRecord} from "~/api";
 import {USwitch} from "#components";
 import AddDomainModal from '~/add-new-domain/components/add-domain-modal.vue';
+import {useComponentStatusWithLoading} from "~~/composables/use-component-status-with-loading";
+
+let lastFetchController: AbortController | null = null
 
 const data = shallowRef<DNSRecord[]>([])
-const globalFilter = ref()
+const globalFilter = ref('')
+
+const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
 
 const pagination = ref({
   pageIndex: 0,
@@ -15,11 +20,14 @@ const pagination = ref({
 
 const fetchData = async () => {
   try {
+    if (lastFetchController) lastFetchController.abort()
+    lastFetchController = new AbortController()
     const response = await api.getAllDnsRecords({
       limit: pagination.value.pageSize,
       offset: pagination.value.pageIndex * pagination.value.pageSize || 0,
       filter: globalFilter.value,
-    })
+    }, lastFetchController.signal)
+
     data.value = response.list
     pagination.value = {
       ...pagination.value,
@@ -31,17 +39,18 @@ const fetchData = async () => {
   }
 }
 
+const fetchWithLoading = createLoadingRequest(fetchData)
+
 const changeFilter = async () => {
-  await fetchData()
+  await fetchWithLoading()
 }
 
 const changePage = async (page: number) => {
   pagination.value.pageIndex = page - 1
-  await fetchData()
+  await fetchWithLoading()
 }
 
-onMounted(fetchData)
-
+onMounted(fetchWithLoading)
 
 const updateActiveStatus = async (id: number, newStatus: boolean) => {
   try {
@@ -96,7 +105,6 @@ const columns: TableColumn<DNSRecord>[] = [
   }
 ]
 
-
 </script>
 
 <template>
@@ -112,7 +120,9 @@ const columns: TableColumn<DNSRecord>[] = [
       </div>
 
       <UTable
+          :loading="isLoading"
           ref="table"
+          empty="No data"
           v-model:pagination="pagination"
           :data="data"
           :columns="columns"

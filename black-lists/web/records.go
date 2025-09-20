@@ -6,7 +6,7 @@ import (
 
 	blacklists "github.com/alextorq/dns-filter/black-lists"
 	"github.com/alextorq/dns-filter/logger"
-	create_domain "github.com/alextorq/dns-filter/use-cases/create-domain"
+	createdomain "github.com/alextorq/dns-filter/use-cases/create-domain"
 	"github.com/alextorq/dns-filter/use-cases/update-dns-record"
 	"github.com/gin-gonic/gin"
 )
@@ -50,7 +50,7 @@ func GetAllDnsRecords(c *gin.Context) {
 func CreateDnsRecords(c *gin.Context) {
 	l := logger.GetLogger()
 
-	var req create_domain.RequestBody
+	var req createdomain.RequestBody
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		l.Error(fmt.Errorf("error bind json when change record: %w", err))
@@ -60,7 +60,7 @@ func CreateDnsRecords(c *gin.Context) {
 		return
 	}
 
-	err := create_domain.CreateDomain(req)
+	err := createdomain.CreateDomain(req)
 
 	if err != nil {
 		l.Error(fmt.Errorf("error create new dns record: %w", err))

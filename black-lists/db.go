@@ -104,6 +104,13 @@ func DomainNotExist(domain string) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
+func GetAmountRecords() int64 {
+	conn := db.GetConnection()
+	var count int64
+	conn.Model(&BlockList{}).Count(&count)
+	return count
+}
+
 func CreateDNSRecordsByDomains(urls []string) error {
 	conn := db.GetConnection()
 	for _, url := range urls {

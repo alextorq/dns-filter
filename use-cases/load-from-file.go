@@ -11,7 +11,7 @@ func LoadFromFile() error {
 	if err != nil {
 		return fmt.Errorf("error load black list from file: %w", err)
 	}
-	err = blacklists.CreateFilter(data)
+	err = blacklists.CreateDNSRecordsByDomains(data)
 	if err != nil {
 		return fmt.Errorf("error create rows in db: %w", err)
 	}

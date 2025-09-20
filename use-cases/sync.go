@@ -7,7 +7,7 @@ import (
 
 func Sync() error {
 	list := blacklists.LoadAll()
-	err := blacklists.CreateFilter(list)
+	err := blacklists.CreateDNSRecordsByDomains(list)
 
 	f := filter.GetFilter()
 	f.UpdateFilter(list)

@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Upstream string
 	DbPath   string
+	Enabled  bool
 
 	LogLevel string
 
@@ -60,6 +61,7 @@ func GetConfig() *Config {
 			InfluxdbBucket: getEnv("DNS_FILTER_INFLUXDB_BUCKET", "events"),
 
 			LogLevel: getEnv("DNS_FILTER_LOG_LEVEL", ""),
+			Enabled:  true,
 		}
 	})
 

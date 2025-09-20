@@ -17,7 +17,7 @@ func GetFilter() *Filter {
 	once.Do(func() {
 		if filter == nil {
 			filter = &Filter{
-				Bloom: bloom.NewWithEstimates(1_000_000, 0.001),
+				Bloom: bloom.NewWithEstimates(10, 0.001),
 			}
 		}
 	})

@@ -9,7 +9,7 @@ import (
 	"github.com/alextorq/dns-filter/logger"
 )
 
-func GetFromDb() error {
+func UpdateFilterFromDb() error {
 	list, err := blacklists.GetAllActiveFilters()
 	if err != nil {
 		return fmt.Errorf("ошибка получения данных из БД: %w", err)

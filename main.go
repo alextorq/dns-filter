@@ -8,6 +8,7 @@ import (
 	usecases "github.com/alextorq/dns-filter/use-cases"
 	"github.com/alextorq/dns-filter/use-cases/allow-domain"
 	"github.com/alextorq/dns-filter/use-cases/block-domain"
+	"github.com/alextorq/dns-filter/web"
 	dnsLib "github.com/miekg/dns"
 )
 
@@ -23,7 +24,7 @@ func (h Handlers) Blocked(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
 
 func main() {
 	migrate.Migrate()
-	err := usecases.GetFromDb()
+	err := usecases.UpdateFilterFromDb()
 	if err != nil {
 		panic(err)
 	}
@@ -32,5 +33,6 @@ func main() {
 	metricInstance := dns.CreateMetric()
 	handlers := Handlers{}
 	s := dns.CreateServer(chanLogger, cacheWithMetric, usecases.CheckBlock, metricInstance, handlers)
+	web.CreateSever()
 	s.Serve()
 }

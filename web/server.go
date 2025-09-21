@@ -8,6 +8,7 @@ import (
 )
 
 func CreateSever() *gin.Engine {
+	gin.SetMode(gin.ReleaseMode) // или gin.DebugMode
 	r := gin.Default()
 	//TODO: configure CORS
 	r.Use(cors.Default())
@@ -20,7 +21,7 @@ func CreateSever() *gin.Engine {
 	r.POST("/api/filter/change-status", filterWeb.ChangeFilterStatus)
 
 	go func() {
-		r.Run()
+		r.Run(":8080")
 	}()
 
 	return r

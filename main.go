@@ -8,6 +8,7 @@ import (
 	usecases "github.com/alextorq/dns-filter/use-cases"
 	"github.com/alextorq/dns-filter/use-cases/allow-domain"
 	"github.com/alextorq/dns-filter/use-cases/block-domain"
+	clearevents "github.com/alextorq/dns-filter/use-cases/clear-events"
 	"github.com/alextorq/dns-filter/web"
 	dnsLib "github.com/miekg/dns"
 )
@@ -28,10 +29,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	err = usecases.UpdateFilterFromDb()
 	if err != nil {
 		panic(err)
 	}
+
+	go clearevents.ClearEvent()
 
 	chanLogger := logger.GetLogger()
 	cacheWithMetric := cache.GetCacheWithMetric()

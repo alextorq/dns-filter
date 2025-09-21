@@ -44,6 +44,8 @@ RUN apk add  ca-certificates
 
 # Копируем бинарник
 COPY --from=backend-builder /app/dns-filter /app/
+# Копируем .env
+COPY .env .env
 
 # Копируем собранный фронтенд
 COPY --from=frontend-builder /frontend/dist /app/frontend

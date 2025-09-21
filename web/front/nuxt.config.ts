@@ -5,4 +5,12 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   devServer: { port: 4000},
   modules: ['@nuxt/ui'],
+  nitro: {
+     preset: 'static'
+  },
+
+  // Указать, какие страницы нужно пререндерить
+  routeRules: {
+     '/**': { prerender: true }
+  }
 })

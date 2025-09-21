@@ -1,21 +1,5 @@
 # =========================
-# Stage 1: Сборка фронтенда
-# =========================
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /frontend
-
-# Скопируем package.json для установки зависимостей
-COPY web/front/package*.json ./
-RUN npm install --frozen-lockfile
-
-# Скопируем исходники и соберем проект
-COPY web/front/ .
-RUN npm run build
-
-
-# =========================
-# Stage 2: Сборка Go backend
+# Stage 1: Сборка Go backend
 # =========================
 FROM golang:1.24-alpine AS backend-builder
 
@@ -36,7 +20,7 @@ RUN CGO_ENABLED=1 go build -ldflags "-X main.BuildTime=$(date -u +'%Y-%m-%d_%H:%
 
 
 # =========================
-# Stage 3: Финальный образ
+# Stage 2: Финальный образ
 # =========================
 FROM alpine:latest
 
@@ -50,9 +34,6 @@ RUN mkdir -p /app/bin
 COPY --from=backend-builder /app/dns-filter /app/bin/
 # Копируем .env
 COPY .env .env
-
-# Копируем собранный фронтенд
-COPY --from=frontend-builder /frontend/dist /app/frontend
 
 # Открываем порты
 EXPOSE 53/udp

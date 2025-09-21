@@ -113,22 +113,32 @@ func GetAmountRecords() int64 {
 
 func CreateDNSRecordsByDomains(urls []string) error {
 	conn := db.GetConnection()
+	const chunkSize = 800 // чуть меньше лимита SQLite
 
-	// 1. Найти уже существующие записи
+	// --- 1. Собираем существующие записи чанками ---
 	var existing []string
-	if err := conn.Model(&BlockList{}).
-		Where("url IN ?", urls).
-		Pluck("url", &existing).Error; err != nil {
-		return err
+	for i := 0; i < len(urls); i += chunkSize {
+		end := i + chunkSize
+		if end > len(urls) {
+			end = len(urls)
+		}
+
+		var part []string
+		if err := conn.Model(&BlockList{}).
+			Where("url IN ?", urls[i:end]).
+			Pluck("url", &part).Error; err != nil {
+			return err
+		}
+		existing = append(existing, part...)
 	}
 
-	// 2. Сделать set для быстрого поиска
+	// --- 2. Делаем set для быстрого поиска ---
 	existingSet := make(map[string]struct{}, len(existing))
 	for _, e := range existing {
 		existingSet[e] = struct{}{}
 	}
 
-	// 3. Собрать только новые записи
+	// --- 3. Фильтруем только новые записи ---
 	var newEntries []BlockList
 	for _, url := range urls {
 		if _, found := existingSet[url]; !found {
@@ -139,9 +149,13 @@ func CreateDNSRecordsByDomains(urls []string) error {
 		}
 	}
 
-	// 4. Батч вставка (например, пачками по 1000)
-	if len(newEntries) > 0 {
-		if err := conn.CreateInBatches(newEntries, 800).Error; err != nil {
+	// --- 4. Вставляем чанками ---
+	for i := 0; i < len(newEntries); i += chunkSize {
+		end := i + chunkSize
+		if end > len(newEntries) {
+			end = len(newEntries)
+		}
+		if err := conn.CreateInBatches(newEntries[i:end], chunkSize).Error; err != nil {
 			return err
 		}
 	}

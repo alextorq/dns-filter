@@ -1,6 +1,8 @@
 services:
   dns-filter:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
     container_name: dns-filter
     ports:
       - "53:53/udp"
@@ -10,6 +12,16 @@ services:
     restart: unless-stopped
     volumes:
       - dns-filter-data:/app/data
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: frontend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    depends_on:
+      - dns-filter
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus

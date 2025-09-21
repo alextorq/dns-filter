@@ -29,7 +29,7 @@ RUN go mod download
 COPY . .
 
 # Соберем бинарник
-RUN go build -o dns-filter .
+RUN  CGO_ENABLED=1 go build -o dns-filter .
 
 
 # =========================

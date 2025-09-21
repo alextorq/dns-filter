@@ -12,12 +12,12 @@ func CreateSever() *gin.Engine {
 	//TODO: configure CORS
 	r.Use(cors.Default())
 
-	r.POST("/dns-records", web.GetAllDnsRecords)
-	r.POST("/dns-records/create", web.CreateDnsRecords)
-	r.POST("/dns-records/update", web.ChangeDnsRecordActive)
+	r.POST("/api/dns-records", web.GetAllDnsRecords)
+	r.POST("/api/dns-records/create", web.CreateDnsRecords)
+	r.POST("/api/dns-records/update", web.ChangeDnsRecordActive)
 
-	r.GET("/filter/status", filterWeb.GetFilterStatus)
-	r.POST("/filter/change-status", filterWeb.ChangeFilterStatus)
+	r.GET("/api/filter/status", filterWeb.GetFilterStatus)
+	r.POST("/api/filter/change-status", filterWeb.ChangeFilterStatus)
 
 	go func() {
 		r.Run()

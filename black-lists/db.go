@@ -141,7 +141,7 @@ func CreateDNSRecordsByDomains(urls []string) error {
 
 	// 4. Батч вставка (например, пачками по 1000)
 	if len(newEntries) > 0 {
-		if err := conn.CreateInBatches(newEntries, 1000).Error; err != nil {
+		if err := conn.CreateInBatches(newEntries, 800).Error; err != nil {
 			return err
 		}
 	}

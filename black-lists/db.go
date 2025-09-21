@@ -113,21 +113,39 @@ func GetAmountRecords() int64 {
 
 func CreateDNSRecordsByDomains(urls []string) error {
 	conn := db.GetConnection()
+
+	// 1. Найти уже существующие записи
+	var existing []string
+	if err := conn.Model(&BlockList{}).
+		Where("url IN ?", urls).
+		Pluck("url", &existing).Error; err != nil {
+		return err
+	}
+
+	// 2. Сделать set для быстрого поиска
+	existingSet := make(map[string]struct{}, len(existing))
+	for _, e := range existing {
+		existingSet[e] = struct{}{}
+	}
+
+	// 3. Собрать только новые записи
+	var newEntries []BlockList
 	for _, url := range urls {
-		var existing BlockList
-		err := conn.Where("url = ?", url).First(&existing).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			newEntry := BlockList{
+		if _, found := existingSet[url]; !found {
+			newEntries = append(newEntries, BlockList{
 				Url:    url,
 				Active: true,
-			}
-			if err := conn.Create(&newEntry).Error; err != nil {
-				return err
-			}
-		} else if err != nil {
+			})
+		}
+	}
+
+	// 4. Батч вставка (например, пачками по 1000)
+	if len(newEntries) > 0 {
+		if err := conn.CreateInBatches(newEntries, 1000).Error; err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 

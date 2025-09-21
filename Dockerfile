@@ -40,7 +40,7 @@ FROM alpine:latest
 WORKDIR /app
 
 # Установим сертификаты (если нужно делать запросы из Go)
-RUN apk add --no-cache ca-certificates
+RUN apk add  ca-certificates
 
 # Копируем бинарник
 COPY --from=backend-builder /app/dns-filter /app/

@@ -9,6 +9,7 @@ import (
 
 func CreateSever() *gin.Engine {
 	r := gin.Default()
+	//TODO: configure CORS
 	r.Use(cors.Default())
 
 	r.POST("/dns-records", web.GetAllDnsRecords)

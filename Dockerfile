@@ -28,7 +28,7 @@ COPY --from=builder /app/dns-filter .
 # Порт, который слушает приложение
 EXPOSE 53/udp
 EXPOSE 53/tcp
-EXPOSE 8080/tcp # если есть веб-интерфейс
+EXPOSE 8080/tcp
 
 # Команда запуска
 CMD ["./dns-filter"]

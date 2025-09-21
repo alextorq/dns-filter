@@ -32,7 +32,7 @@ RUN go mod download
 COPY . .
 
 # Соберем бинарник
-RUN  CGO_ENABLED=1 go build -o dns-filter .
+RUN CGO_ENABLED=1 go build -ldflags "-X main.BuildTime=$(date -u +'%Y-%m-%d_%H:%M:%S')" -o dns-filter .
 
 
 # =========================
@@ -46,7 +46,7 @@ WORKDIR /app
 RUN apk add  ca-certificates
 
 # Копируем бинарник
-COPY --from=backend-builder /app/dns-filter /app/
+COPY --from=backend-builder /app/dns-filter /app/bin
 # Копируем .env
 COPY .env .env
 
@@ -59,4 +59,4 @@ EXPOSE 53/tcp
 EXPOSE 8080/tcp
 
 # Запуск
-CMD ["/app/dns-filter"]
+CMD ["/app/bin/dns-filter"]

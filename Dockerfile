@@ -21,8 +21,8 @@ FROM golang:1.24-alpine AS backend-builder
 
 WORKDIR /app
 
-# Устанавливаем gcc для CGO
-RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev
+# Устанавливаем зависимости для CGO и SQLite
+RUN apk add --no-cache gcc musl-dev
 
 # Скопируем go.mod и go.sum для кеширования зависимостей
 COPY go.mod go.sum ./

@@ -29,7 +29,7 @@ RUN go mod download
 COPY . .
 
 # Соберем бинарник
-RUN go build -o dns-filter ./cmd/dnsfilter
+RUN go build -o dns-filter .
 
 
 # =========================

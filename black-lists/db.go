@@ -113,43 +113,54 @@ func GetAmountRecords() int64 {
 
 func CreateDNSRecordsByDomains(urls []string) error {
 	conn := db.GetConnection()
-	const chunkSize = 800 // чуть меньше лимита SQLite
+	const chunkSize = 800 // безопасный размер для SQLite (лимит 999)
 
-	// --- 1. Собираем существующие записи чанками ---
+	// --- 0. Убираем дубликаты в urls ---
+	uniqueUrls := make(map[string]struct{}, len(urls))
+	for _, u := range urls {
+		uniqueUrls[u] = struct{}{}
+	}
+
+	dedupedUrls := make([]string, 0, len(uniqueUrls))
+	for u := range uniqueUrls {
+		dedupedUrls = append(dedupedUrls, u)
+	}
+
+	// --- 1. Находим уже существующие записи чанками ---
 	var existing []string
-	for i := 0; i < len(urls); i += chunkSize {
+	for i := 0; i < len(dedupedUrls); i += chunkSize {
 		end := i + chunkSize
-		if end > len(urls) {
-			end = len(urls)
+		if end > len(dedupedUrls) {
+			end = len(dedupedUrls)
 		}
 
 		var part []string
 		if err := conn.Model(&BlockList{}).
-			Where("url IN ?", urls[i:end]).
+			Where("url IN ?", dedupedUrls[i:end]).
 			Pluck("url", &part).Error; err != nil {
 			return err
 		}
 		existing = append(existing, part...)
 	}
 
-	// --- 2. Делаем set для быстрого поиска ---
+	// --- 2. Делаем set из существующих ---
 	existingSet := make(map[string]struct{}, len(existing))
 	for _, e := range existing {
 		existingSet[e] = struct{}{}
 	}
 
-	// --- 3. Фильтруем только новые записи ---
+	// --- 3. Собираем только новые записи ---
 	var newEntries []BlockList
-	for _, url := range urls {
-		if _, found := existingSet[url]; !found {
+	for _, u := range dedupedUrls {
+		if _, found := existingSet[u]; !found {
 			newEntries = append(newEntries, BlockList{
-				Url:    url,
+				Url:    u,
 				Active: true,
 			})
 		}
 	}
 
-	// --- 4. Вставляем чанками ---
+	// --- 4. Вставляем новые записи чанками ---
 	for i := 0; i < len(newEntries); i += chunkSize {
 		end := i + chunkSize
 		if end > len(newEntries) {

@@ -19,6 +19,14 @@ func CreateSever() *gin.Engine {
 	r.GET("/filter/status", filterWeb.GetFilterStatus)
 	r.POST("/filter/change-status", filterWeb.ChangeFilterStatus)
 
+	// Отдача статических файлов из /app/frontend
+	r.Static("/", "./frontend")
+
+	// Если нужен SPA fallback (Vue/React/Angular)
+	r.NoRoute(func(c *gin.Context) {
+		c.File("./frontend/index.html")
+	})
+
 	go func() {
 		r.Run()
 	}()

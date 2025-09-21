@@ -1,34 +1,57 @@
-# Этап сборки
-FROM golang:1.21-alpine AS builder
+# =========================
+# Stage 1: Сборка фронтенда
+# =========================
+FROM node:20-alpine AS frontend-builder
 
-# Установка git и зависимостей
-RUN apk add --no-cache git
+WORKDIR /frontend
+
+# Скопируем package.json для установки зависимостей
+COPY web/front/package*.json ./
+RUN npm install --frozen-lockfile
+
+# Скопируем исходники и соберем проект
+COPY web/front/ .
+RUN npm run build
+
+
+# =========================
+# Stage 2: Сборка Go backend
+# =========================
+FROM golang:1.24-alpine AS backend-builder
 
 WORKDIR /app
 
-# Копируем модули
+# Скопируем go.mod и go.sum для кеширования зависимостей
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Копируем исходники
+# Скопируем исходники
 COPY . .
 
-# Собираем бинарник
-RUN go build -o dns-filter ./cmd/dns-filter
+# Соберем бинарник
+RUN go build -o dns-filter ./cmd/dnsfilter
 
-# Минимальный образ для запуска
+
+# =========================
+# Stage 3: Финальный образ
+# =========================
 FROM alpine:latest
-RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
-# Копируем бинарник из builder
-COPY --from=builder /app/dns-filter .
+# Установим сертификаты (если нужно делать запросы из Go)
+RUN apk add --no-cache ca-certificates
 
-# Порт, который слушает приложение
+# Копируем бинарник
+COPY --from=backend-builder /app/dns-filter /app/
+
+# Копируем собранный фронтенд
+COPY --from=frontend-builder /frontend/dist /app/frontend
+
+# Открываем порты
 EXPOSE 53/udp
 EXPOSE 53/tcp
 EXPOSE 8080/tcp
 
-# Команда запуска
-CMD ["./dns-filter"]
+# Запуск
+CMD ["/app/dns-filter"]

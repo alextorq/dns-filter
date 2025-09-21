@@ -45,8 +45,9 @@ WORKDIR /app
 # Установим сертификаты (если нужно делать запросы из Go)
 RUN apk add  ca-certificates
 
+RUN mkdir -p /app/bin
 # Копируем бинарник
-COPY --from=backend-builder /app/dns-filter /app/bin
+COPY --from=backend-builder /app/dns-filter /app/bin/
 # Копируем .env
 COPY .env .env
 

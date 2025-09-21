@@ -9,7 +9,7 @@ services:
       - "8080:8080/tcp"
     restart: unless-stopped
     volumes:
-      - dns-filter-data:/data
+      - dns-filter-data:/app
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus

@@ -5,4 +5,4 @@ global:
 scrape_configs:
   - job_name: "dns-filter"
     static_configs:
-      - targets: ["host.docker.internal:2112"]
+      - targets: ["dns-filter:2112"]

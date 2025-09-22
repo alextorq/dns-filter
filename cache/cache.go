@@ -28,13 +28,24 @@ func CreateCache(capacity int) *LRUCache {
 	return &storage
 }
 
-func (c *LRUCache) Add(key string, val *dns.Msg) {
+type AddReturn struct {
+	Evicted bool
+	Size    int
+}
+
+func (c *LRUCache) Add(key string, val *dns.Msg) AddReturn {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	res := AddReturn{
+		Evicted: false,
+		Size:    0,
+	}
+
 	if el, ok := c.items[key]; ok {
 		c.list.MoveToFront(el)
 		el.Value.(*entry).val = val // обновляем значение
-		return
+		res.Size = c.list.Len()
+		return res
 	}
 	first := c.list.PushFront(&entry{
 		key: key,
@@ -46,7 +57,11 @@ func (c *LRUCache) Add(key string, val *dns.Msg) {
 		last := c.list.Back()
 		c.list.Remove(last)
 		delete(c.items, last.Value.(*entry).key)
+		res.Evicted = true
 	}
+
+	res.Size = c.list.Len()
+	return res
 }
 
 func (c *LRUCache) Get(key string) (*dns.Msg, bool) {
@@ -57,12 +72,6 @@ func (c *LRUCache) Get(key string) (*dns.Msg, bool) {
 		return item.Value.(*entry).val, true
 	}
 	return nil, false
-}
-
-func (c *LRUCache) Len() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.list.Len()
 }
 
 var (

@@ -49,15 +49,12 @@ func NewCacheWithMetrics(cap int) *CacheWithMetrics {
 }
 
 func (c *CacheWithMetrics) Add(key string, val *dns.Msg) {
-	before := c.inner.Len()
-	c.inner.Add(key, val)
-	after := c.inner.Len()
+	res := c.inner.Add(key, val)
 
-	// если размер уменьшился → был eviction
-	if after < before {
+	if res.Evicted {
 		cacheEvictions.Inc()
 	}
-	cacheSize.Set(float64(after))
+	cacheSize.Set(float64(res.Size))
 }
 
 func (c *CacheWithMetrics) Get(key string) (*dns.Msg, bool) {

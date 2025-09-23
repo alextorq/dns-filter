@@ -12,11 +12,12 @@ const items = ref([
   <UApp>
     <UHeader title="DNS FILTER">
       <UNavigationMenu :items="items" />
+      <template #body>
+        <UNavigationMenu :items="items" />
+      </template>
     </UHeader>
     <UMain>
-      <NuxtLayout>
-        <NuxtPage />
-      </NuxtLayout>
+       <NuxtPage />
     </UMain>
   </UApp>
 </template>

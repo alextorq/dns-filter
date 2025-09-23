@@ -2,6 +2,7 @@ package web
 
 import (
 	"github.com/alextorq/dns-filter/black-lists/web"
+	eventsWeb "github.com/alextorq/dns-filter/events/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,9 @@ func CreateSever() *gin.Engine {
 
 	r.GET("/api/filter/status", filterWeb.GetFilterStatus)
 	r.POST("/api/filter/change-status", filterWeb.ChangeFilterStatus)
+
+	r.POST("/api/events/block/amount", eventsWeb.GetAmount)
+	r.POST("/api/events/block/amount-by-group", eventsWeb.GetAmountByDomain)
 
 	go func() {
 		r.Run(":8080")

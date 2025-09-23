@@ -36,3 +36,25 @@ func DeleteOlderThan(days int) error {
 	}
 	return nil
 }
+
+func GetAmountRows() int64 {
+	conn := db.GetConnection()
+	var count int64
+	conn.Model(&BlockDomainEvent{}).Count(&count)
+	return count
+}
+
+type DomainCount struct {
+	Domain string
+	Count  int64
+}
+
+func GetRowsByDomains() ([]DomainCount, error) {
+	conn := db.GetConnection()
+	var results []DomainCount
+	err := conn.Model(&BlockDomainEvent{}).
+		Select("domain, COUNT(*) as count").
+		Group("domain").
+		Scan(&results).Error
+	return results, err
+}

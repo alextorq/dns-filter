@@ -73,17 +73,22 @@ func shouldLog(msgLevel string, minLevel LogLevel) bool {
 
 // LogLevelFromString — сопоставление строки уровня с LogLevel
 func LogLevelFromString(level string) LogLevel {
+	l, _ := LogLevelFromStringOrError(level)
+	return l
+}
+
+func LogLevelFromStringOrError(level string) (LogLevel, error) {
 	switch strings.ToUpper(level) {
 	case "DEBUG":
-		return DEBUG
+		return DEBUG, nil
 	case "INFO":
-		return INFO
+		return INFO, nil
 	case "WARN":
-		return WARN
+		return WARN, nil
 	case "ERROR":
-		return ERROR
+		return ERROR, nil
 	default:
-		return INFO
+		return ERROR, fmt.Errorf("unknown log level: %s", level)
 	}
 }
 
@@ -137,4 +142,8 @@ func traceError(err error) string {
 func (l *ChanLogger) Close() {
 	close(l.quit)
 	close(l.logChan)
+}
+
+func (l *ChanLogger) UpdateLogLevel(level string) {
+	l.level = LogLevelFromString(level)
 }

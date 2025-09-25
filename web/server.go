@@ -2,6 +2,7 @@ package web
 
 import (
 	"github.com/alextorq/dns-filter/black-lists/web"
+	configWeb "github.com/alextorq/dns-filter/config/web"
 	eventsWeb "github.com/alextorq/dns-filter/events/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	"github.com/gin-contrib/cors"
@@ -23,6 +24,8 @@ func CreateSever() *gin.Engine {
 
 	r.POST("/api/events/block/amount", eventsWeb.GetAmount)
 	r.POST("/api/events/block/amount-by-group", eventsWeb.GetAmountByDomain)
+
+	r.POST("/api/config/logger/change-level", configWeb.ChangeLogLevel)
 
 	go func() {
 		r.Run(":8080")

@@ -29,6 +29,15 @@ type FilterStatusResponse = {
     status: boolean;
 }
 
+export type DomainBlockWithCount = {
+    Domain: string;
+    Count: number;
+}
+
+export type DomainsBlockGroup = {
+    groups: DomainBlockWithCount[];
+}
+
 export class Api {
     private transport: AxiosInstance;
 
@@ -65,6 +74,11 @@ export class Api {
 
     async createDomain(domain: string) {
         const {data} = await this.transport.post<DNSRecord>(`/dns-records/create`, {domain: domain});
+        return data;
+    }
+
+    async getBlockDomainsGroups() {
+        const {data} = await this.transport.post<DomainsBlockGroup>(`/events/block/amount-by-group`);
         return data;
     }
 }

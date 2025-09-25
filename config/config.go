@@ -20,6 +20,10 @@ type Config struct {
 	MetricPort   string
 }
 
+func (c *Config) UpdateLogLevel(l string) {
+	c.LogLevel = l
+}
+
 var (
 	instance *Config
 	once     sync.Once

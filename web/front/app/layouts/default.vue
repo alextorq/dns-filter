@@ -5,6 +5,11 @@ const items = ref([
     icon: 'i-lucide-book-open',
     to: '/domains',
   },
+  {
+    label: 'Statistic',
+    icon: 'i-lucide-pie-chart',
+    to: '/statistic',
+  }
 ])
 </script>
 

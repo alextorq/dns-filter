@@ -69,7 +69,7 @@ func (c *CacheWithMetrics) Get(key string) (*dns.Msg, bool) {
 
 func GetCacheWithMetric() *CacheWithMetrics {
 	onceM.Do(func() {
-		globalCacheWithM = NewCacheWithMetrics(10000)
+		globalCacheWithM = NewCacheWithMetrics(1500)
 	})
 	return globalCacheWithM
 }

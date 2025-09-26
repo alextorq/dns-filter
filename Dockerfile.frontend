@@ -5,7 +5,8 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /frontend
 
-COPY web/front/package*.json ./
+COPY web/front/package.json ./
+COPY web/front/package-lock.json ./
 RUN npm install --frozen-lockfile
 
 COPY web/front/ .

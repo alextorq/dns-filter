@@ -7,7 +7,7 @@ WORKDIR /frontend
 
 COPY web/front/package.json ./
 COPY web/front/package-lock.json ./
-RUN npm install --frozen-lockfile
+RUN npm install
 
 COPY web/front/ .
 RUN npm run build

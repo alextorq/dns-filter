@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {api} from "~/api";
-import Char from "~/domain/cher-by-domains/char.vue";
+import Char from "~/domain/char-by-domains/char.vue";
 
 const status = ref(false)
 

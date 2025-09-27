@@ -1,54 +1,89 @@
-# DNS Filter 🚫🌐
+# DNS Filter
 
-[![Go](https://img.shields.io/badge/Go-1.21-blue?logo=go&logoColor=white)](https://golang.org/)
-[![Docker](https://img.shields.io/badge/Docker-Yes-blue?logo=docker&logoColor=white)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+A comprehensive DNS filtering solution with web management, logging, metrics, and event tracking.
 
-**DNS Filter** — простой и быстрый DNS-блокировщик рекламы на Go. Перенаправляет запросы к нежелательным доменам на недоступный IP, блокируя рекламу на уровне сети.
+## Features
+
+- DNS filtering with block/allow lists
+- Web-based management interface (Vue.js frontend)
+- RESTful API (Go backend)
+- Event metrics (Prometheus)
+- Configurable logging levels
+- SQLite database for persistent storage
+- Dockerized deployment
+
+## Project Structure
+
+- `main.go` — Entry point for the Go backend
+- `black-lists/` — Blocklist management
+- `cache/` — DNS cache and metrics
+- `config/` — Configuration management
+- `db/` — Database connection and migrations
+- `dns/` — DNS server logic
+- `events/` — Event tracking and web API
+- `filter/` — Filtering logic and web API
+- `logger/` — Logging (console, Loki)
+- `metric/` — Metrics collection
+- `use-cases/` — Business logic (block/allow domains, sync, etc.)
+- `utils/` — Utility functions
+- `web/server.go` — Backend web server
+- `web/front/` — Vue.js frontend app
+- `Dockerfile.*` — Docker build files
+- `prometheus.yml` — Prometheus config
+- `nginx.conf` — Nginx config for frontend
+
+## Getting Started
+
+### Prerequisites
+- Go 1.20+
+- Node.js & npm (for frontend)
+- Docker (optional)
+
+### Backend Setup
+1. Install Go dependencies:
+   ```sh
+   go mod tidy
+   ```
+2. Run the backend server:
+   ```sh
+   go run main.go
+   ```
+
+### Frontend Setup
+1. Navigate to the frontend directory:
+   ```sh
+   cd web/front
+   ```
+2. Install dependencies:
+   ```sh
+   npm install
+   ```
+3. Start the frontend server:
+   ```sh
+   npm run dev
+   ```
+
+### Docker Deployment
+1. Build and start all services:
+   ```sh
+   docker-compose up --build
+   ```
+
+## API Overview
+
+- **Change Log Level:** `POST /api/update-log-level`
+- **Block/Allow Domain:** `POST /api/block-domain`, `POST /api/allow-domain`
+- **Event Listing:** `GET /api/events`
+- **DNS Metrics:** `GET /api/metrics`
+
+## Monitoring & Logging
+- Prometheus metrics endpoint
+- Loki logging integration
+- Grafana dashboards in `docs/`
+
+## License
+
+MIT
 
 ---
-
-## 🔹 Возможности
-
-- Блокировка рекламы и трекеров на уровне DNS
-- Поддержка кастомных черных списков доменов
-- Кэширование запросов для ускорения работы
-- Метрики для Prometheus
-- Docker и Docker Compose для быстрого развёртывания
-
----
-
-## 📸 Демонстрация работы
-
-![DNS Filter Screenshot](docs/screenshot.png)  
-*Пример заблокированных запросов и метрик Prometheus.*
-
-![Prometheus Grafana](docs/grafana.png)  
-*Визуализация метрик в Grafana.*
-
----
-
-## 📂 Структура проекта
-
-- `black-lists/` — списки блокируемых доменов
-- `cache/` — кэширование запросов
-- `db/` — база данных
-- `filter/` — логика фильтрации
-- `logger/` — логирование запросов
-- `metric/` — сбор метрик
-- `use-cases/` — примеры использования
-- `main.go` — основной исполняемый файл
-- `docker-compose.yml` — для запуска через Docker
-- `prometheus.yml` — для интеграции с Prometheus
-
----
-
-## ⚡ Быстрый старт
-
-### Локально
-
-```bash
-git clone https://github.com/alextorq/dns-filter.git
-cd dns-filter
-go build -o dns-filter
-./dns-filter
+*Generated on September 26, 2025*

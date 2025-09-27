@@ -81,6 +81,11 @@ export class Api {
         const {data} = await this.transport.post<DomainsBlockGroup>(`/events/block/amount-by-group`);
         return data;
     }
+
+    async getBlockDomainsAmount() {
+        const {data} = await this.transport.post<{amount: number}>(`/events/block/amount`);
+        return data;
+    }
 }
 
 

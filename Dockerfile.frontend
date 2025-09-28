@@ -7,7 +7,7 @@ WORKDIR /frontend
 
 COPY web/front/package.json ./
 COPY web/front/package-lock.json ./
-RUN RUN npm install --registry=https://registry.npmmirror.com
+RUN npm install --registry=https://registry.npmmirror.com
 
 COPY web/front/ .
 RUN npm run build

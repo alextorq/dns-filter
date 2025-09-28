@@ -49,25 +49,6 @@ type DomainCount struct {
 	Count  int64
 }
 
-func ResetBlockDomainEventsTable() error {
-	conn := db.GetConnection()
-	// Удаляем таблицу
-	if err := conn.Migrator().DropTable(&BlockDomainEvent{}); err != nil {
-		return err
-	}
-
-	// Создаём заново по модели
-	if err := conn.AutoMigrate(&BlockDomainEvent{}); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func init() {
-	ResetBlockDomainEventsTable()
-}
-
 func GetRowsByDomains() ([]DomainCount, error) {
 	conn := db.GetConnection()
 	var results []DomainCount

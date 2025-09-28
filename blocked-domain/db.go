@@ -49,13 +49,23 @@ type DomainCount struct {
 	Count  int64
 }
 
-func DeleteOrphanEvents() error {
+func ResetBlockDomainEventsTable() error {
 	conn := db.GetConnection()
-	return conn.Unscoped().Where("domain_id IS NULL").Delete(&BlockDomainEvent{}).Error
+	// Удаляем таблицу
+	if err := conn.Migrator().DropTable(&BlockDomainEvent{}); err != nil {
+		return err
+	}
+
+	// Создаём заново по модели
+	if err := conn.AutoMigrate(&BlockDomainEvent{}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func init() {
-	DeleteOrphanEvents()
+	ResetBlockDomainEventsTable()
 }
 
 func GetRowsByDomains() ([]DomainCount, error) {

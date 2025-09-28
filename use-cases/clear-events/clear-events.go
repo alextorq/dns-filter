@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alextorq/dns-filter/events"
+	"github.com/alextorq/dns-filter/blocked-domain"
 	"github.com/alextorq/dns-filter/logger"
 )
 
@@ -15,14 +15,14 @@ func ClearEvent() {
 	defer ticker.Stop()
 
 	// first run
-	if err := events.DeleteOlderThan(DAYS); err != nil {
-		l.Error(fmt.Errorf("error when delete old events: %w", err))
+	if err := blocked_domain.DeleteOlderThan(DAYS); err != nil {
+		l.Error(fmt.Errorf("error when delete old blocked-domain: %w", err))
 	}
 
 	for range ticker.C {
-		err := events.DeleteOlderThan(DAYS)
+		err := blocked_domain.DeleteOlderThan(DAYS)
 		if err != nil {
-			l.Error(fmt.Errorf("error when delete old events: %w", err))
+			l.Error(fmt.Errorf("error when delete old blocked-domain: %w", err))
 		}
 	}
 }

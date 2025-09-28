@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/alextorq/dns-filter/events"
+	"github.com/alextorq/dns-filter/blocked-domain"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/gin-gonic/gin"
 )
 
 func GetAmount(c *gin.Context) {
-	amount := events.GetAmountRows()
+	amount := blocked_domain.GetAmountRows()
 
 	c.JSON(http.StatusOK, gin.H{
 		"amount": amount,
@@ -19,7 +19,7 @@ func GetAmount(c *gin.Context) {
 
 func GetAmountByDomain(c *gin.Context) {
 	l := logger.GetLogger()
-	groups, err := events.GetRowsByDomains()
+	groups, err := blocked_domain.GetRowsByDomains()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to retrieve data",

@@ -2,8 +2,8 @@ package web
 
 import (
 	"github.com/alextorq/dns-filter/black-lists/web"
+	eventsWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	configWeb "github.com/alextorq/dns-filter/config/web"
-	eventsWeb "github.com/alextorq/dns-filter/events/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"

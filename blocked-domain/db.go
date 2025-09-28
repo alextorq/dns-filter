@@ -1,4 +1,4 @@
-package events
+package blocked_domain
 
 import (
 	"time"
@@ -12,14 +12,14 @@ type BlockDomainEvent struct {
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
-	Domain    string         `gorm:"type:varchar(255);not null; index" json:"domain"`
+	DomainId  uint           `gorm:"index"`
 }
 
-func CreateBlockDomainEvent(domain string) error {
+func CreateBlockDomainEvent(domainId uint) error {
 	conn := db.GetConnection()
 
 	event := BlockDomainEvent{
-		Domain: domain,
+		DomainId: domainId,
 	}
 
 	if err := conn.Create(&event).Error; err != nil {
@@ -49,12 +49,23 @@ type DomainCount struct {
 	Count  int64
 }
 
+func DeleteOrphanEvents() error {
+	conn := db.GetConnection()
+	return conn.Unscoped().Where("domain_id IS NULL").Delete(&BlockDomainEvent{}).Error
+}
+
+func init() {
+	DeleteOrphanEvents()
+}
+
 func GetRowsByDomains() ([]DomainCount, error) {
 	conn := db.GetConnection()
 	var results []DomainCount
 	err := conn.Model(&BlockDomainEvent{}).
-		Select("domain, COUNT(*) as count").
-		Group("domain").
+		Select("block_lists.url as url, COUNT(block_domain_events.id) as count").
+		Joins("left join block_lists on block_lists.id = block_domain_events.domain_id").
+		Group("block_lists.url").
 		Scan(&results).Error
+
 	return results, err
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	blocked_domain "github.com/alextorq/dns-filter/blocked-domain"
 	"github.com/alextorq/dns-filter/db"
 	"gorm.io/gorm"
 )
@@ -16,6 +17,8 @@ type BlockList struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 	Url       string         `gorm:"type:varchar(255);not null;uniqueIndex:idx_theme_host" json:"url"`
 	Active    bool           `gorm:"default:true" json:"active"`
+	// One-to-Many
+	BlockedEvents []blocked_domain.BlockDomainEvent `gorm:"foreignKey:DomainId" json:"blocked-events"`
 }
 
 func (r *BlockList) String() string {
@@ -102,6 +105,13 @@ func DomainNotExist(domain string) bool {
 	var blockList BlockList
 	err := conn.Where("url = ?", domain).First(&blockList).Error
 	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+func GetDomainByName(domain string) (BlockList, error) {
+	conn := db.GetConnection()
+	var blockList BlockList
+	err := conn.Where("url = ?", domain).First(&blockList).Error
+	return blockList, err
 }
 
 func GetAmountRecords() int64 {

@@ -1,7 +1,8 @@
 # DNS Filter
 
-A comprehensive DNS filtering solution with web management, logging, metrics, and event tracking.
+it is simple advertisement and malicious site blocking DNS server with web management interface.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ## Features
 
 - DNS filtering with block/allow lists

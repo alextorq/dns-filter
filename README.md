@@ -81,6 +81,9 @@ A comprehensive DNS filtering solution with web management, logging, metrics, an
 - Loki logging integration
 - Grafana dashboards in `docs/`
 
+![img](docs/grafana-dashboard.png)
+
+
 ## License
 
 MIT

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {api, type DomainBlockWithCount} from '~/api';
+import {api} from '~/api';
 import {onMounted, ref} from 'vue';
 
 const allAmount = ref(0)

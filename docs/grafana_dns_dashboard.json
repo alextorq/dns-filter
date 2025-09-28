@@ -17,11 +17,14 @@
   },
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
+  "graphTooltip": 1,
   "id": 2,
   "links": [],
   "panels": [
     {
+      "datasource": {
+        "type": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -31,10 +34,6 @@
               {
                 "color": "green",
                 "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           }
@@ -76,6 +75,10 @@
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "beyr898w9zf28c"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -143,7 +146,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -162,6 +165,10 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "beyr898w9zf28c"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -229,7 +236,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -336,62 +343,6 @@
     {
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 6
-      },
-      "id": 5,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true
-      },
-      "pluginVersion": "12.1.1",
-      "targets": [
-        {
-          "expr": "topk(10, dns_requests_by_client_total)",
-          "refId": "A"
-        }
-      ],
-      "title": "Top Clients",
-      "type": "table"
-    },
-    {
-      "fieldConfig": {
-        "defaults": {
           "color": {
             "mode": "palette-classic"
           },
@@ -449,7 +400,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 6
       },
       "id": 4,
       "options": {
@@ -476,27 +427,14 @@
       "type": "timeseries"
     },
     {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 18
-      },
-      "id": 9,
-      "panels": [],
-      "title": "Cache",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "bexonvizfb6dce"
-      },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
           },
           "mappings": [],
           "thresholds": {
@@ -512,6 +450,72 @@
               }
             ]
           }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 5,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "12.1.1",
+      "targets": [
+        {
+          "expr": "topk(10, dns_requests_by_client_total)",
+          "refId": "A"
+        }
+      ],
+      "title": "Top Clients",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 9,
+      "panels": [],
+      "title": "Cache",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "beyr898w9zf28c"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "percent"
         },
         "overrides": []
       },
@@ -543,7 +547,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(dns_cache_hits_total[5m]) / (rate(dns_cache_hits_total[5m]) + rate(dns_cache_misses_total[5m]))",
+          "expr": "(rate(dns_cache_hits_total[5m]) / (rate(dns_cache_hits_total[5m]) + rate(dns_cache_misses_total[5m]))) * 100",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -555,7 +559,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "bexonvizfb6dce"
+        "uid": "beyr898w9zf28c"
       },
       "fieldConfig": {
         "defaults": {
@@ -624,7 +628,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -636,7 +640,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(dns_cache_hits_total[5m]) / (rate(dns_cache_hits_total[5m]) + rate(dns_cache_misses_total[5m]))",
+          "expr": "dns_cache_size{} ",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -648,7 +652,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "bexonvizfb6dce"
+        "uid": "beyr898w9zf28c"
       },
       "fieldConfig": {
         "defaults": {
@@ -729,8 +733,10 @@
       "targets": [
         {
           "editorMode": "code",
+          "exemplar": true,
           "expr": "rate(dns_cache_hits_total[5m])",
-          "legendFormat": "__auto",
+          "interval": "",
+          "legendFormat": "hit",
           "range": true,
           "refId": "A"
         },
@@ -743,7 +749,7 @@
           "expr": "rate(dns_cache_misses_total[5m])",
           "hide": false,
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "miss",
           "range": true,
           "refId": "B"
         }
@@ -754,7 +760,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "bexonvizfb6dce"
+        "uid": "beyr898w9zf28c"
       },
       "fieldConfig": {
         "defaults": {
@@ -823,7 +829,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -856,12 +862,12 @@
     "list": []
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "DNS Filter",
   "uid": "5e4db19c-cddd-46b6-a570-22b02ebf2b4e",
-  "version": 18
+  "version": 14
 }

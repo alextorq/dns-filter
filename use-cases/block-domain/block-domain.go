@@ -22,6 +22,8 @@ func BlockDomain(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
 			return
 		}
 
+		fmt.Println(record)
+
 		err = blocked_domain.CreateBlockDomainEvent(record.ID)
 		if err != nil {
 			l.Error(fmt.Errorf("ошибка отправки события о блокировки %s: %w", domain, err))

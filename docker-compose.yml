@@ -9,6 +9,7 @@ services:
       - "53:53/tcp"
       - "2112:2112/tcp"
       - "8080:8080/tcp"
+      - "8090:8090/tcp"
     restart: unless-stopped
     volumes:
       - dns-filter-data:/app/data

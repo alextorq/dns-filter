@@ -9,6 +9,12 @@ if [ -f .env ]; then
     set +o allexport
 fi
 
+# Переход в директорию скрипта
+cd "/home/balamut/projects/dns-filter"
+
+echo "Получаем последние изменения из репозитория..."
+git pull origin main
+
 # Сборка образа без использования кэша
 echo "Собираем Docker-образ (без использования кэша)..."
 docker compose build

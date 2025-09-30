@@ -14,7 +14,7 @@ func BlockDomain(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
 		l := logger.GetLogger()
 		first := r.Question[0]
 		domain := first.Name
-		//l.Warn("blocked:", domain)
+		l.Debug("blocked:", domain)
 
 		record, err := blacklists.GetDomainByName(domain)
 		if err != nil {

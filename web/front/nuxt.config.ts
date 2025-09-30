@@ -5,6 +5,7 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   devServer: { port: 4000},
   modules: ['@nuxt/ui'],
+  css: ['~/assets/css/main.css'],
   nitro: {
      preset: 'static'
   },

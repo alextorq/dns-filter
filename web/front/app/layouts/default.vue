@@ -9,6 +9,11 @@ const items = ref([
     label: 'Statistic',
     icon: 'i-lucide-pie-chart',
     to: '/statistic',
+  },
+  {
+    label: 'Settings',
+    icon: 'i-lucide-pie-chart',
+    to: '/settings',
   }
 ])
 </script>

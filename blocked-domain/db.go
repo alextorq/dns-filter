@@ -4,15 +4,12 @@ import (
 	"time"
 
 	"github.com/alextorq/dns-filter/db"
-	"gorm.io/gorm"
 )
 
 type BlockDomainEvent struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
-	DomainId  uint           `gorm:"index"`
+	ID        uint      `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	DomainId  uint      `gorm:"index"`
 }
 
 func CreateBlockDomainEvent(domainId uint) error {

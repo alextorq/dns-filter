@@ -1,6 +1,6 @@
 import axios, {type AxiosInstance} from "axios";
 
-const API_HOST = "/api"
+const API_HOST = "http://192.168.88.63:8080/api"
 
 export type DNSRecord = {
     id: number;
@@ -85,6 +85,12 @@ export class Api {
     async getBlockDomainsAmount() {
         const {data} = await this.transport.post<{amount: number}>(`/events/block/amount`);
         return data;
+    }
+
+
+    async changeLogLevel(level: string) {
+        const {data} = await this.transport.post<{level: string}>(`/config/logger/change-level`, {logLevel: level});
+        return data.level;
     }
 }
 

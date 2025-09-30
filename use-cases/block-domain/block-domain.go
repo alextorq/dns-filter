@@ -14,17 +14,17 @@ func BlockDomain(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
 		l := logger.GetLogger()
 		first := r.Question[0]
 		domain := first.Name
-		l.Warn("Заблокирован:", domain)
+		//l.Warn("blocked:", domain)
 
 		record, err := blacklists.GetDomainByName(domain)
 		if err != nil {
-			l.Error(fmt.Errorf("ошибка получения записи о блокировке %s: %w", domain, err))
+			l.Error(fmt.Errorf("error get domain record from db %s: %w", domain, err))
 			return
 		}
 
 		err = blocked_domain.CreateBlockDomainEvent(record.ID)
 		if err != nil {
-			l.Error(fmt.Errorf("ошибка отправки события о блокировки %s: %w", domain, err))
+			l.Error(fmt.Errorf("error save block domain event %s: %w", domain, err))
 		}
 	}()
 }

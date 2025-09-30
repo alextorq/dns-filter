@@ -9,7 +9,7 @@ import (
 type BlockDomainEvent struct {
 	ID        uint      `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time `json:"created_at"`
-	DomainId  uint      `gorm:"index"`
+	DomainId  uint
 }
 
 func CreateBlockDomainEvent(domainId uint) error {

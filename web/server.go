@@ -26,6 +26,7 @@ func CreateSever() *gin.Engine {
 	r.POST("/api/events/block/amount-by-group", eventsWeb.GetAmountByDomain)
 
 	r.POST("/api/config/logger/change-level", configWeb.ChangeLogLevel)
+	r.POST("/api/config/logger/get-level", configWeb.GetLogLevel)
 
 	go func() {
 		r.Run(":8080")

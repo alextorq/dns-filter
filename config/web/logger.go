@@ -31,3 +31,10 @@ func ChangeLogLevel(c *gin.Context) {
 		"message": "done",
 	})
 }
+
+func GetLogLevel(c *gin.Context) {
+	l := logger.GetLogger()
+	c.JSON(http.StatusOK, gin.H{
+		"level": l.GetLogLevel(),
+	})
+}

@@ -89,8 +89,12 @@ export class Api {
 
 
     async changeLogLevel(level: string) {
-        const {data} = await this.transport.post<{level: string}>(`/config/logger/change-level`, {logLevel: level});
-        return data.level;
+        const {data} = await this.transport.post<{message: string}>(`/config/logger/change-level`, {logLevel: level});
+    }
+
+    async getLogLevel() {
+        const {data} = await this.transport.post<{level: string}>(`/config/logger/get-level`);
+        return data;
     }
 }
 

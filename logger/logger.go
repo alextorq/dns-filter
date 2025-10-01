@@ -19,8 +19,10 @@ const (
 	ERROR
 )
 
+var Levels = [4]string{"DEBUG", "INFO", "WARN", "ERROR"}
+
 func (l LogLevel) String() string {
-	return [...]string{"DEBUG", "INFO", "WARN", "ERROR"}[l]
+	return Levels[l]
 }
 
 // ChanLogger — основной логгер
@@ -71,7 +73,6 @@ func shouldLog(msgLevel string, minLevel LogLevel) bool {
 	return lvl >= minLevel
 }
 
-// LogLevelFromString — сопоставление строки уровня с LogLevel
 func LogLevelFromString(level string) LogLevel {
 	l, _ := LogLevelFromStringOrError(level)
 	return l
@@ -146,4 +147,8 @@ func (l *ChanLogger) Close() {
 
 func (l *ChanLogger) UpdateLogLevel(level string) {
 	l.level = LogLevelFromString(level)
+}
+
+func (l *ChanLogger) GetLogLevel() string {
+	return l.level.String()
 }

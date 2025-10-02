@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import {api} from '~/api'
-import {isAxiosError} from "axios";
 import {useToggle} from "~~/composables/use-toggle";
 import {useComponentStatus} from "~~/composables/use-component-status";
 import {ComponentStatus} from "~~/utils/component-status";
+import {getErrorMessage} from "~~/utils/get-error-message";
 
 const toast = useToast()
 const {isActive, closeHandler, openHandler} = useToggle()
@@ -70,19 +70,14 @@ const onSubmit = async (e: Event) => {
       closeHandler()
     }catch (e) {
       status.value = ComponentStatus.ERROR_LOADING
-      if (isAxiosError(e)) {
-        const response = e.response
-        if (response && response.data && response.data.message) {
-          toast.add({
-            title: 'Error',
-            description: response.data.message,
-            duration: 5000,
-            color: 'error',
-          })
-          return
-        }
-        console.log(e)
-      }
+      console.error('Error', e)
+      const message = getErrorMessage(e)
+      toast.add({
+        title: 'Error',
+        description: message,
+        duration: 5000,
+        color: 'error',
+      })
     }
   }
 

@@ -83,11 +83,11 @@ const columns: TableColumn<DNSRecord>[] = [
   },
   {
     accessorKey: 'url',
-    header: 'url'
+    header: 'Domain'
   },
   {
     accessorKey: 'active',
-    header: () => h('div', { class: 'text-right' }, 'Активен'),
+    header: () => h('div', { class: 'text-right' }, 'Active'),
     cell: ({ row }) => {
       return h(ChangeStatus, {
         record: row.original,

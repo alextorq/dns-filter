@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/alextorq/dns-filter/logger/log"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/alextorq/dns-filter/logger/log"
 )
 
 // LokiEntry и Stream

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
-	blacklists "github.com/alextorq/dns-filter/black-lists"
+	blacklists "github.com/alextorq/dns-filter/dns-records"
+	createdomain "github.com/alextorq/dns-filter/dns-records/business/use-cases/create-domain"
+	"github.com/alextorq/dns-filter/dns-records/business/use-cases/update-dns-record"
 	"github.com/alextorq/dns-filter/logger"
-	createdomain "github.com/alextorq/dns-filter/use-cases/create-domain"
-	"github.com/alextorq/dns-filter/use-cases/update-dns-record"
 	"github.com/gin-gonic/gin"
 )
 

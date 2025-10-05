@@ -1,4 +1,4 @@
-package black_lists
+package dns_records
 
 import (
 	"bufio"

@@ -3,7 +3,7 @@ package update_dns_record
 import (
 	"fmt"
 
-	blacklists "github.com/alextorq/dns-filter/black-lists"
+	blacklists "github.com/alextorq/dns-filter/dns-records"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/use-cases"
 )

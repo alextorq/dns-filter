@@ -1,8 +1,8 @@
 package use_cases
 
 import (
-	blacklists "github.com/alextorq/dns-filter/black-lists"
 	"github.com/alextorq/dns-filter/config"
+	blacklists "github.com/alextorq/dns-filter/dns-records"
 	"github.com/alextorq/dns-filter/filter"
 )
 

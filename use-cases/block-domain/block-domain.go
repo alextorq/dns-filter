@@ -3,8 +3,8 @@ package block_domain
 import (
 	"fmt"
 
-	blacklists "github.com/alextorq/dns-filter/black-lists"
 	"github.com/alextorq/dns-filter/blocked-domain"
+	blacklists "github.com/alextorq/dns-filter/dns-records"
 	"github.com/alextorq/dns-filter/logger"
 	dnsLib "github.com/miekg/dns"
 )

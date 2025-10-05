@@ -1,9 +1,9 @@
 package migrate
 
 import (
-	blacklists "github.com/alextorq/dns-filter/black-lists"
 	"github.com/alextorq/dns-filter/blocked-domain"
 	"github.com/alextorq/dns-filter/db"
+	blacklists "github.com/alextorq/dns-filter/dns-records"
 )
 
 func Migrate() {

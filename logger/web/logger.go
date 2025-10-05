@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/alextorq/dns-filter/logger"
-	update_logger "github.com/alextorq/dns-filter/use-cases/update-logger"
+	"github.com/alextorq/dns-filter/logger/business/use-cases/update-logger"
 	"github.com/gin-gonic/gin"
 )
 

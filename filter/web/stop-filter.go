@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/alextorq/dns-filter/config"
-	change_filter_dns_records "github.com/alextorq/dns-filter/use-cases/change-filter-dns-records"
+	"github.com/alextorq/dns-filter/filter/business/use-cases/change-filter-dns-records"
 	"github.com/gin-gonic/gin"
 )
 

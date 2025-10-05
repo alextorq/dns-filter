@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	blacklists "github.com/alextorq/dns-filter/black-lists"
+	blacklists "github.com/alextorq/dns-filter/dns-records"
 	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 )

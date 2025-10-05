@@ -3,7 +3,7 @@ package create_domain
 import (
 	"fmt"
 
-	black_lists "github.com/alextorq/dns-filter/black-lists"
+	black_lists "github.com/alextorq/dns-filter/dns-records"
 	"github.com/alextorq/dns-filter/logger"
 	use_cases "github.com/alextorq/dns-filter/use-cases"
 )

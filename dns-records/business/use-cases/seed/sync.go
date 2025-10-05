@@ -1,7 +1,7 @@
-package use_cases
+package seed
 
 import (
-	blacklists "github.com/alextorq/dns-filter/black-lists"
+	blacklists "github.com/alextorq/dns-filter/dns-records"
 	"github.com/alextorq/dns-filter/logger"
 )
 
@@ -13,7 +13,7 @@ func Sync() error {
 		err := blacklists.CreateDNSRecordsByDomains(list)
 		return err
 	} else {
-		l.Info("There are %d records in the database. Skip loading from black-lists.", amount)
+		l.Info("There are %d records in the database. Skip loading from dns-records.", amount)
 	}
 	return nil
 }

@@ -1,21 +1,22 @@
 <script setup lang="ts">
 import {api} from "~/api";
-import Char from "~/domain/char-by-domains/char.vue";
+import {useComponentStatusWithLoading} from "~~/composables/use-component-status-with-loading";
+import {USwitch} from "#components";
+const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
 
-const status = ref(false)
+const status = ref(true)
 
-onMounted(() => {
-  const fetchData = async () => {
-    try {
-      status.value = await api.getFilterStatus()
-    } catch (error) {
-      console.error('Error fetching data:', error)
-    }
+const fetchData = async () => {
+  try {
+    status.value = await api.getFilterStatus()
+  } catch (error) {
+    console.error('Error fetching data:', error)
   }
+}
 
-  fetchData()
-})
+const fetchDataWithLoading = createLoadingRequest(fetchData)
 
+onMounted(fetchDataWithLoading)
 
 const changeStatus = async () => {
   try {
@@ -25,13 +26,18 @@ const changeStatus = async () => {
   }
 }
 
+const changeStatusWithLoading = createLoadingRequest(changeStatus)
+
 </script>
 
 <template>
-  <div style="height: calc(100vh - var(--ui-header-height));" class="flex justify-center items-center height-100">
+  <div style="height: calc(100vh - var(--ui-header-height));"
+       class="flex justify-center items-center height-100">
     <USwitch
+        :loading="isLoading"
         size="xl"
-        @change="changeStatus"
-        :model-value="status" label="Status" />
+        @change="changeStatusWithLoading"
+        :model-value="status"
+        label="Status" />
   </div>
 </template>

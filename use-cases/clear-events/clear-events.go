@@ -9,7 +9,7 @@ import (
 )
 
 func ClearEvent() {
-	const DAYS = 7
+	const DAYS = 2
 	l := logger.GetLogger()
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()

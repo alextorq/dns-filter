@@ -53,8 +53,8 @@ onMounted(loadLogLevel)
     </div>
 
     <h2>Database</h2>
-    <div class="w-full space-y-4 pb-4">
-      <div class="flex px-4 py-3.5 justify-between border-accented">
+    <div class="w-full space-y-4 ">
+      <div class="flex justify-between border-accented">
         <DownloadDb></DownloadDb>
       </div>
     </div>

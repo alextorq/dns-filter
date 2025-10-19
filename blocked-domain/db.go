@@ -28,7 +28,7 @@ func CreateBlockDomainEvent(domainId uint) error {
 func DeleteOlderThan(days int) error {
 	conn := db.GetConnection()
 	cutoff := time.Now().AddDate(0, 0, -days)
-	if err := conn.Where("created_at < ?", cutoff).Delete(&BlockDomainEvent{}).Error; err != nil {
+	if err := conn.Unscoped().Where("created_at < ?", cutoff).Delete(&BlockDomainEvent{}).Error; err != nil {
 		return err
 	}
 	return nil

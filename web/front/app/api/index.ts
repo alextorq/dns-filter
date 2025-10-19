@@ -1,6 +1,6 @@
 import axios, {type AxiosInstance} from "axios";
 
-const API_HOST = "/api"
+export const API_HOST = "/api"
 
 export type DNSRecord = {
     id: number;

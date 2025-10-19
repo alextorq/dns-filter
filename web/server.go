@@ -2,6 +2,7 @@ package web
 
 import (
 	eventsWeb "github.com/alextorq/dns-filter/blocked-domain/web"
+	dbWeb "github.com/alextorq/dns-filter/db/web"
 	"github.com/alextorq/dns-filter/dns-records/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
@@ -27,6 +28,8 @@ func CreateSever() *gin.Engine {
 
 	r.POST("/api/config/logger/change-level", loggerWeb.ChangeLogLevel)
 	r.POST("/api/config/logger/get-level", loggerWeb.GetLogLevel)
+
+	r.GET("/api/config/db/download", dbWeb.DownloadDb)
 
 	go func() {
 		r.Run(":8080")

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {api} from "~/api";
 import {useComponentStatusWithLoading} from "~~/composables/use-component-status-with-loading";
+import  DownloadDb from "~/db/components/download-db/index.vue";
 import {getErrorMessage} from "~~/utils/get-error-message";
 const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
 const toast = useToast()
@@ -50,5 +51,14 @@ onMounted(loadLogLevel)
         <USelect :loading="isLoading" size="xl" @change="changeLogLevel" v-model="level" :items="items" />
       </div>
     </div>
+
+    <h2>Database</h2>
+    <div class="w-full space-y-4 pb-4">
+      <div class="flex px-4 py-3.5 justify-between border-accented">
+        <DownloadDb></DownloadDb>
+      </div>
+    </div>
+
+
   </UContainer>
 </template>

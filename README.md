@@ -1,6 +1,7 @@
 # DNS Filter
 
-it is simple advertisement and malicious site blocking DNS server with web management interface.
+it is simple dns service for block advertisement and malicious
+you need seed block domains and set it server like dns in your network
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ## Features
@@ -82,6 +83,8 @@ it is simple advertisement and malicious site blocking DNS server with web manag
 - Loki logging integration
 - Grafana dashboards in `docs/`
 
+![img](docs/main.png)
+![img](docs/domains.png)
 ![img](docs/grafana-dashboard.png)
 
 

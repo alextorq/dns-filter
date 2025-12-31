@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": 2,
+  "id": null,
   "links": [],
   "panels": [
     {
@@ -36,7 +36,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -90,7 +91,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "beyr898w9zf28c"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -180,7 +181,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "beyr898w9zf28c"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -270,7 +271,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "beyr898w9zf28c"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -358,6 +359,10 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -444,6 +449,10 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -515,7 +524,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "beyr898w9zf28c"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -576,7 +585,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "beyr898w9zf28c"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -669,7 +678,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "beyr898w9zf28c"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -760,7 +769,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "bexonvizfb6dce"
+            "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
           "expr": "rate(dns_cache_misses_total[5m])",
@@ -777,7 +786,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "beyr898w9zf28c"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -883,7 +892,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "beyr898w9zf28c"
+        "uid": "${DS_PROMETHEUS}"
       },
       "fieldConfig": {
         "defaults": {
@@ -987,7 +996,19 @@
     "prometheus"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "hide": 0,
+        "label": "Datasource",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",

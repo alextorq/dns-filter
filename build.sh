@@ -9,8 +9,11 @@ if [ -f .env ]; then
     set +o allexport
 fi
 
+# Путь до папки проекта
+PROJECT_DIR="/home/balamut/projects/dns-filter"
+
 # Переход в директорию скрипта
-cd "/home/balamut/projects/dns-filter"
+cd "$PROJECT_DIR"
 
 echo "Получаем последние изменения из репозитория..."
 git pull origin main

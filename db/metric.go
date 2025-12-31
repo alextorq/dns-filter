@@ -2,10 +2,10 @@ package db
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"time"
 
+	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/metric"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -18,6 +18,7 @@ var (
 )
 
 func GetDbSize() {
+	l := logger.GetLogger()
 	info, err := os.Stat(GetDBConnectionString())
 	if err != nil {
 		fmt.Println(fmt.Errorf("failed to get file info: %w", err))
@@ -25,7 +26,7 @@ func GetDbSize() {
 	}
 	size := info.Size()
 	sqliteFileSize.Set(float64(info.Size()))
-	log.Printf("Database size: %f bytes", float64(size)/1024.0/1024.0)
+	l.Info(fmt.Sprintf("Database size: %f bytes", float64(size)/1024.0/1024.0))
 }
 
 func MonitoringDbSize() {

@@ -26,7 +26,7 @@ func GetDbSize() {
 	}
 	size := info.Size()
 	sqliteFileSize.Set(float64(info.Size()))
-	l.Info(fmt.Sprintf("Database size: %f bytes", float64(size)/1024.0/1024.0))
+	l.Debug(fmt.Sprintf("Database size: %f bytes", float64(size)/1024.0/1024.0))
 }
 
 func MonitoringDbSize() {

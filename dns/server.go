@@ -57,7 +57,7 @@ func (s *DnsServer) GetFromCacheOrCreateRequest(question dns.Question, id uint16
 	// Сначала проверяем кэш
 	fromCache, found := s.Cache.Get(cacheKey)
 	if found {
-		s.Logger.Info("Из кэша:", name, "Тип:", qtype)
+		s.Logger.Debug("Из кэша:", name, "Тип:", qtype)
 		// Возвращаем кэшированный ответ
 		return fromCache, nil
 	}

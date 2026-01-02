@@ -14,26 +14,6 @@ you need seed block domains and set it server like dns in your network
 - SQLite database for persistent storage
 - Dockerized deployment
 
-## Project Structure
-
-- `main.go` — Entry point for the Go backend
-- `black-lists/` — Blocklist management
-- `cache/` — DNS cache and metrics
-- `config/` — Configuration management
-- `db/` — Database connection and migrations
-- `dns/` — DNS server logic
-- `events/` — Event tracking and web API
-- `filter/` — Filtering logic and web API
-- `logger/` — Logging (console, Loki)
-- `metric/` — Metrics collection
-- `use-cases/` — Business logic (block/allow domains, sync, etc.)
-- `utils/` — Utility functions
-- `web/server.go` — Backend web server
-- `web/front/` — Vue.js frontend app
-- `Dockerfile.*` — Docker build files
-- `prometheus.yml` — Prometheus config
-- `nginx.conf` — Nginx config for frontend
-
 ## Getting Started
 
 ### Prerequisites
@@ -70,13 +50,6 @@ you need seed block domains and set it server like dns in your network
    ```sh
    docker-compose up --build
    ```
-
-## API Overview
-
-- **Change Log Level:** `POST /api/update-log-level`
-- **Block/Allow Domain:** `POST /api/block-domain`, `POST /api/allow-domain`
-- **Event Listing:** `GET /api/events`
-- **DNS Metrics:** `GET /api/metrics`
 
 ## Monitoring & Logging
 - Prometheus metrics endpoint

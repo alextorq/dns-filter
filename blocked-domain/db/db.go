@@ -1,4 +1,4 @@
-package blocked_domain
+package db
 
 import (
 	"time"

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	blocked_domain "github.com/alextorq/dns-filter/blocked-domain"
+	blocked_domain "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/db"
 	"gorm.io/gorm"
 )

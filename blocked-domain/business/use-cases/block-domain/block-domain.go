@@ -2,9 +2,7 @@ package blocked_domain_use_cases_block_domain
 
 import (
 	"fmt"
-
-	"github.com/alextorq/dns-filter/blocked-domain/db"
-	blacklists "github.com/alextorq/dns-filter/dns-records"
+	blacklists "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
 	dnsLib "github.com/miekg/dns"
 )
@@ -22,7 +20,7 @@ func BlockDomain(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
 			return
 		}
 
-		err = db.CreateBlockDomainEvent(record.ID)
+		err = blacklists.CreateBlockDomainEvent(record.ID)
 		if err != nil {
 			l.Error(fmt.Errorf("error save block domain event %s: %w", domain, err))
 		}

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/alextorq/dns-filter/dns-records/db"
+	"github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
 )
 
@@ -65,7 +65,7 @@ func Sync() error {
 		err := db.CreateDNSRecordsByDomains(list)
 		return err
 	} else {
-		l.Info(fmt.Sprintf("There are %d records in the database. Skip loading from dns-records.", amount))
+		l.Info(fmt.Sprintf("There are %d records in the database. Skip loading from blocked-domain.", amount))
 	}
 	return nil
 }

@@ -3,7 +3,6 @@ package web
 import (
 	eventsWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	dbWeb "github.com/alextorq/dns-filter/db/web"
-	"github.com/alextorq/dns-filter/dns-records/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
 	"github.com/gin-contrib/cors"
@@ -16,9 +15,9 @@ func CreateSever() *gin.Engine {
 	//TODO: configure CORS
 	r.Use(cors.Default())
 
-	r.POST("/api/dns-records", web.GetAllDnsRecords)
-	r.POST("/api/dns-records/create", web.CreateDnsRecords)
-	r.POST("/api/dns-records/update", web.ChangeDnsRecordActive)
+	r.POST("/api/dns-records", eventsWeb.GetAllDnsRecords)
+	r.POST("/api/dns-records/create", eventsWeb.CreateDnsRecords)
+	r.POST("/api/dns-records/update", eventsWeb.ChangeDnsRecordActive)
 
 	r.GET("/api/filter/status", filterWeb.GetFilterStatus)
 	r.POST("/api/filter/change-status", filterWeb.ChangeFilterStatus)

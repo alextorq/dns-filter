@@ -3,7 +3,7 @@ package use_cases
 import (
 	"fmt"
 
-	blacklists "github.com/alextorq/dns-filter/dns-records"
+	blacklists "github.com/alextorq/dns-filter/blocked-domain"
 )
 
 func LoadFromFile() error {

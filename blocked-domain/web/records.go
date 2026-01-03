@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"net/http"
 
-	dns_records "github.com/alextorq/dns-filter/dns-records"
-	createdomain "github.com/alextorq/dns-filter/dns-records/business/use-cases/create-domain"
-	"github.com/alextorq/dns-filter/dns-records/business/use-cases/update-dns-record"
-	dns_records_db "github.com/alextorq/dns-filter/dns-records/db"
+	"github.com/alextorq/dns-filter/blocked-domain"
+	create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
+	update_dns_record "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/update-dns-record"
+	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
-	use_cases "github.com/alextorq/dns-filter/use-cases"
 	"github.com/gin-gonic/gin"
 )
 
@@ -31,7 +30,7 @@ func GetAllDnsRecords(c *gin.Context) {
 		return
 	}
 
-	res, err := dns_records.GetRecordsByFilter(dns_records_db.GetAllParams{
+	res, err := blocked_domain.GetRecordsByFilter(blocked_domain_db.GetAllParams{
 		Limit:  req.Limit,
 		Offset: req.Offset,
 		Filter: req.Filter,
@@ -52,7 +51,7 @@ func GetAllDnsRecords(c *gin.Context) {
 func CreateDnsRecords(c *gin.Context) {
 	l := logger.GetLogger()
 
-	var req createdomain.RequestBody
+	var req create_domain.RequestBody
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		l.Error(fmt.Errorf("error bind json when change record: %w", err))
@@ -62,7 +61,7 @@ func CreateDnsRecords(c *gin.Context) {
 		return
 	}
 
-	err := createdomain.CreateDomain(req)
+	err := blocked_domain.CreateDomain(req)
 
 	if err != nil {
 		l.Error(fmt.Errorf("error create new dns record: %w", err))
@@ -90,7 +89,7 @@ func ChangeDnsRecordActive(c *gin.Context) {
 		return
 	}
 
-	record, err := update_dns_record.UpdateDnsRecord(updateData)
+	record, err := blocked_domain.UpdateDnsRecord(updateData)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -99,16 +98,10 @@ func ChangeDnsRecordActive(c *gin.Context) {
 		return
 	}
 
-	err = use_cases.UpdateFilterFromDb()
-	if err != nil {
-		l.Error(fmt.Errorf("error update filter from db when change record: %w", err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
+	l.Info("Record updated:")
 
 	c.JSON(http.StatusOK, gin.H{
-		"record": *record,
+		"message": "record updated",
+		"record":  record,
 	})
 }

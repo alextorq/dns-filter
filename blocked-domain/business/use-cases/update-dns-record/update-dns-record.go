@@ -3,7 +3,7 @@ package update_dns_record
 import (
 	"fmt"
 
-	"github.com/alextorq/dns-filter/dns-records/db"
+	"github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
 )
 

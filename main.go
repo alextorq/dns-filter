@@ -6,7 +6,6 @@ import (
 	"github.com/alextorq/dns-filter/cache"
 	"github.com/alextorq/dns-filter/db/migrate"
 	"github.com/alextorq/dns-filter/dns"
-	"github.com/alextorq/dns-filter/dns-records"
 	"github.com/alextorq/dns-filter/logger"
 	suggest_to_block "github.com/alextorq/dns-filter/suggest-to-block"
 	usecases "github.com/alextorq/dns-filter/use-cases"
@@ -26,7 +25,7 @@ func (h Handlers) Blocked(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
 
 func main() {
 	migrate.Migrate()
-	err := dns_records.Sync()
+	err := blocked_domain.Sync()
 	if err != nil {
 		panic(err)
 	}

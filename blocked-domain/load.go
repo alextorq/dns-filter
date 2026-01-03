@@ -1,4 +1,4 @@
-package dns_records
+package blocked_domain
 
 import (
 	"bufio"

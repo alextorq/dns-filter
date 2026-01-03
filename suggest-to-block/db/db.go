@@ -1,4 +1,4 @@
-package suggest_to_block
+package db
 
 import "github.com/alextorq/dns-filter/db"
 

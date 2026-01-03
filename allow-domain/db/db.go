@@ -1,4 +1,4 @@
-package allow_domain
+package db
 
 import (
 	"time"

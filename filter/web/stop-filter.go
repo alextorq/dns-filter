@@ -4,12 +4,12 @@ import (
 	"net/http"
 
 	"github.com/alextorq/dns-filter/config"
-	"github.com/alextorq/dns-filter/filter/business/use-cases/change-filter-dns-records"
+	"github.com/alextorq/dns-filter/filter"
 	"github.com/gin-gonic/gin"
 )
 
 func ChangeFilterStatus(c *gin.Context) {
-	val := change_filter_dns_records.ChangeFilterDnsRecords()
+	val := filter.ChangeFilterDnsRecords()
 	c.JSON(http.StatusOK, gin.H{
 		"status": val,
 	})

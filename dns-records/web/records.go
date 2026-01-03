@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net/http"
 
-	blacklists "github.com/alextorq/dns-filter/dns-records"
+	dns_records "github.com/alextorq/dns-filter/dns-records"
 	createdomain "github.com/alextorq/dns-filter/dns-records/business/use-cases/create-domain"
 	"github.com/alextorq/dns-filter/dns-records/business/use-cases/update-dns-record"
+	dns_records_db "github.com/alextorq/dns-filter/dns-records/db"
 	"github.com/alextorq/dns-filter/logger"
+	use_cases "github.com/alextorq/dns-filter/use-cases"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,7 +31,7 @@ func GetAllDnsRecords(c *gin.Context) {
 		return
 	}
 
-	res, err := blacklists.GetRecordsByFilter(blacklists.GetAllParams{
+	res, err := dns_records.GetRecordsByFilter(dns_records_db.GetAllParams{
 		Limit:  req.Limit,
 		Offset: req.Offset,
 		Filter: req.Filter,
@@ -91,6 +93,15 @@ func ChangeDnsRecordActive(c *gin.Context) {
 	record, err := update_dns_record.UpdateDnsRecord(updateData)
 
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	err = use_cases.UpdateFilterFromDb()
+	if err != nil {
+		l.Error(fmt.Errorf("error update filter from db when change record: %w", err))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
 		})

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	allowdomain "github.com/alextorq/dns-filter/allow-domain"
+	"github.com/alextorq/dns-filter/allow-domain/db"
 	"github.com/alextorq/dns-filter/logger"
 )
 
@@ -15,12 +15,12 @@ func ClearEvent() {
 	defer ticker.Stop()
 
 	// first run
-	if err := allowdomain.DeleteOlderThan(DAYS); err != nil {
+	if err := db.DeleteOlderThan(DAYS); err != nil {
 		l.Error(fmt.Errorf("error when delete old blocked-domain: %w", err))
 	}
 
 	for range ticker.C {
-		err := allowdomain.DeleteOlderThan(DAYS)
+		err := db.DeleteOlderThan(DAYS)
 		if err != nil {
 			l.Error(fmt.Errorf("error when delete old blocked-domain: %w", err))
 		}

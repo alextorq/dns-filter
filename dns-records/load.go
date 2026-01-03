@@ -71,7 +71,7 @@ var lists = []string{
 	"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
 }
 
-func LoadAll() []string {
+func loadAll() []string {
 	result := make([]string, 0)
 	for _, url := range lists {
 		partial := LoadStevenBlack(url)

@@ -1,4 +1,4 @@
-package dns_records
+package db
 
 import (
 	"errors"

@@ -36,6 +36,7 @@ type SuggestRecordsRequest = {
     limit: number;
     offset: number;
     filter: string;
+    active: boolean | null;
 }
 
 type DNSRecordUpdateResponse = {
@@ -73,6 +74,14 @@ export class Api {
     async getAllSuggestRecords(payload: SuggestRecordsRequest, abortSignal: AbortSignal) {
         const {data} = await this.transport.post<SuggestRecordsResponse>(`/suggest-to-block`, payload, {signal: abortSignal});
         return data;
+    }
+
+    async changeSuggestStatus(id: number, active: boolean) {
+        const {data} = await this.transport.post<DNSRecordUpdateResponse>(`/suggest-to-block/change-status`, {
+            active: active,
+            id: id
+        });
+        return data.record;
     }
 
     async changeDnsRecordStatus(id: number, active: boolean) {

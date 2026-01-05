@@ -28,6 +28,7 @@ func CreateSever() *gin.Engine {
 
 	r.POST("/api/suggest-to-block", suggestWeb.GetAllSuggestBlocks)
 	r.POST("/api/suggest-to-block/delete", suggestWeb.DeleteSuggestBlock)
+	r.POST("/api/suggest-to-block/change-status", suggestWeb.ChangeActiveStatus)
 
 	r.POST("/api/config/logger/change-level", loggerWeb.ChangeLogLevel)
 	r.POST("/api/config/logger/get-level", loggerWeb.GetLogLevel)

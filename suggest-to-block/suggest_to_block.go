@@ -22,6 +22,10 @@ func GetRecordsByFilter(params suggest_to_block_db.GetAllParams) (*suggest_to_bl
 	return suggest_to_block_db.GetAllSuggestBlocks(params)
 }
 
+func ChangeActiveStatus(id uint, active bool) error {
+	return suggest_to_block_db.UpdateActiveStatus(id, active)
+}
+
 func Collect() error {
 	l := logger.GetLogger()
 	l.Info("Start collecting suggestions to block domains")

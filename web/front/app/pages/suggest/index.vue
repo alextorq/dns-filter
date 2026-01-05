@@ -26,6 +26,7 @@ const fetchData = async () => {
       limit: pagination.value.pageSize,
       offset: pagination.value.pageIndex * pagination.value.pageSize || 0,
       filter: globalFilter.value,
+      active: true,
     }, lastFetchController.signal)
 
     data.value = response.list
@@ -56,6 +57,8 @@ onMounted(fetchWithLoading)
 const createDomain = async (item: SuggestBlock) => {
   try {
     await api.createDomain(item.domain)
+    await api.changeSuggestStatus(item.id, false)
+    await fetchWithLoading()
     toast.add({
       title: 'Success',
       description: 'New domain was added.',

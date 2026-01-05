@@ -7,6 +7,7 @@ type SuggestBlock struct {
 	Domain string `json:"domain" gorm:"uniqueIndex"`
 	Score  int    `json:"score"`
 	Reason string `json:"reasons"`
+	Active bool   `gorm:"default:true" json:"active"`
 }
 
 func CreateSuggestBlock(domain string, reason string) error {
@@ -35,10 +36,19 @@ func DeleteSuggestBlock(domain string) error {
 	return nil
 }
 
+func UpdateActiveStatus(id uint, active bool) error {
+	conn := db.GetConnection()
+	if err := conn.Model(&SuggestBlock{}).Where("id = ?", id).Update("active", active).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
 type GetAllParams struct {
 	Limit  int
 	Offset int
 	Filter string
+	Active *bool
 }
 
 type GetAllResult struct {
@@ -56,6 +66,11 @@ func GetAllSuggestBlocks(params GetAllParams) (*GetAllResult, error) {
 	// если нужно фильтровать по строке
 	if params.Filter != "" {
 		query = query.Where("domain LIKE ?", "%"+params.Filter+"%")
+	}
+
+	// если передан параметр Active, фильтруем по нему
+	if params.Active != nil {
+		query = query.Where("active = ?", *params.Active)
 	}
 
 	// сначала считаем количество

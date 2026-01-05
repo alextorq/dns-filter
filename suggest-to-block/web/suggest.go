@@ -16,6 +16,7 @@ func GetAllSuggestBlocks(c *gin.Context) {
 		Limit  int    `json:"limit"`
 		Offset int    `json:"offset"`
 		Filter string `json:"filter"`
+		Active *bool  `json:"active"`
 	}
 
 	var req RequestBody
@@ -32,6 +33,7 @@ func GetAllSuggestBlocks(c *gin.Context) {
 		Limit:  req.Limit,
 		Offset: req.Offset,
 		Filter: req.Filter,
+		Active: req.Active,
 	})
 	if err != nil {
 		l.Error(fmt.Errorf("error get suggest blocks from db: %w", err))
@@ -74,5 +76,37 @@ func DeleteSuggestBlock(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "suggest block deleted",
+	})
+}
+
+func ChangeActiveStatus(c *gin.Context) {
+	l := logger.GetLogger()
+	type RequestBody struct {
+		ID     uint `json:"id"`
+		Active bool `json:"active"`
+	}
+
+	var req RequestBody
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		l.Error(fmt.Errorf("error bind json when change suggest block status: %w", err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	err := suggest_to_block.ChangeActiveStatus(req.ID, req.Active)
+
+	if err != nil {
+		l.Error(fmt.Errorf("error change suggest block status: %w", err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "suggest block status changed",
 	})
 }

@@ -22,8 +22,8 @@ func CreateAllowDomainEvent(domain string) error {
 	}
 	//Check for existing record to avoid duplicates
 	var existingEvent AllowDomainEvent
-	if err := conn.Where("domain = ?", domain).First(&existingEvent).Error; err == nil {
-		// Record already exists, no need to create a new one
+	if conn.Where("domain = ?", domain).Limit(1).Find(&existingEvent).RowsAffected > 0 {
+		// Запись существует, ничего не делаем
 		return nil
 	}
 

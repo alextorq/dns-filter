@@ -5,6 +5,7 @@ import (
 	dbWeb "github.com/alextorq/dns-filter/db/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
+	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
@@ -24,6 +25,9 @@ func CreateSever() *gin.Engine {
 
 	r.POST("/api/events/block/amount", eventsWeb.GetAmount)
 	r.POST("/api/events/block/amount-by-group", eventsWeb.GetAmountByDomain)
+
+	r.POST("/api/suggest-to-block", suggestWeb.GetAllSuggestBlocks)
+	r.POST("/api/suggest-to-block/delete", suggestWeb.DeleteSuggestBlock)
 
 	r.POST("/api/config/logger/change-level", loggerWeb.ChangeLogLevel)
 	r.POST("/api/config/logger/get-level", loggerWeb.GetLogLevel)

@@ -18,6 +18,10 @@ func DeleteSuggestBlock(domain string) error {
 	return suggest_to_block_db.DeleteSuggestBlock(domain)
 }
 
+func GetRecordsByFilter(params suggest_to_block_db.GetAllParams) (*suggest_to_block_db.GetAllResult, error) {
+	return suggest_to_block_db.GetAllSuggestBlocks(params)
+}
+
 func Collect() error {
 	l := logger.GetLogger()
 	l.Info("Start collecting suggestions to block domains")

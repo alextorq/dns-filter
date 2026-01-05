@@ -34,3 +34,42 @@ func DeleteSuggestBlock(domain string) error {
 	}
 	return nil
 }
+
+type GetAllParams struct {
+	Limit  int
+	Offset int
+	Filter string
+}
+
+type GetAllResult struct {
+	List  []SuggestBlock `json:"list"`
+	Total int64          `json:"total"`
+}
+
+func GetAllSuggestBlocks(params GetAllParams) (*GetAllResult, error) {
+	conn := db.GetConnection()
+
+	var suggests []SuggestBlock
+	query := conn.Model(&SuggestBlock{})
+	var total int64
+
+	// если нужно фильтровать по строке
+	if params.Filter != "" {
+		query = query.Where("domain LIKE ?", "%"+params.Filter+"%")
+	}
+
+	// сначала считаем количество
+	query.Count(&total)
+
+	err := query.
+		Order("score DESC, id DESC").
+		Limit(params.Limit).
+		Offset(params.Offset).
+		Find(&suggests).
+		Error
+
+	return &GetAllResult{
+		List:  suggests,
+		Total: total,
+	}, err
+}

@@ -3,9 +3,10 @@ package db
 import "github.com/alextorq/dns-filter/db"
 
 type SuggestBlock struct {
-	ID     uint   `gorm:"primarykey" json:"id"`
-	Domain string `json:"domain" gorm:"uniqueIndex"`
-	Score  int    `json:"score"`
+	ID      uint     `gorm:"primarykey" json:"id"`
+	Domain  string   `json:"domain" gorm:"uniqueIndex"`
+	Score   int      `json:"score"`
+	Reasons []string `json:"reasons"`
 }
 
 func CreateSuggestBlock(domain string) (*SuggestBlock, error) {

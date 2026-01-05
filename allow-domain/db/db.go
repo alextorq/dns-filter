@@ -10,6 +10,7 @@ type AllowDomainEvent struct {
 	ID        uint      `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	Domain    string    `json:"domain" gorm:"uniqueIndex"`
+	Active    bool      `json:"active"`
 }
 
 func CreateAllowDomainEvent(domain string) error {
@@ -17,6 +18,7 @@ func CreateAllowDomainEvent(domain string) error {
 
 	event := AllowDomainEvent{
 		Domain: domain,
+		Active: true,
 	}
 	//Check for existing record to avoid duplicates
 	var existingEvent AllowDomainEvent
@@ -35,4 +37,17 @@ func DeleteOlderThan(days int) error {
 		return err
 	}
 	return nil
+}
+
+func GetAllActiveFilters() ([]string, error) {
+	conn := db.GetConnection()
+	var domains []string
+	err := conn.Model(&AllowDomainEvent{}).
+		Where("active = ?", true).
+		Pluck("domain", &domains).Error
+
+	if err != nil {
+		return nil, err
+	}
+	return domains, nil
 }

@@ -3,17 +3,18 @@ package db
 import "github.com/alextorq/dns-filter/db"
 
 type SuggestBlock struct {
-	ID      uint     `gorm:"primarykey" json:"id"`
-	Domain  string   `json:"domain" gorm:"uniqueIndex"`
-	Score   int      `json:"score"`
-	Reasons []string `json:"reasons"`
+	ID     uint   `gorm:"primarykey" json:"id"`
+	Domain string `json:"domain" gorm:"uniqueIndex"`
+	Score  int    `json:"score"`
+	Reason string `json:"reasons"`
 }
 
-func CreateSuggestBlock(domain string) (*SuggestBlock, error) {
+func CreateSuggestBlock(domain string, reason string) (*SuggestBlock, error) {
 	conn := db.GetConnection()
 	suggest := SuggestBlock{
 		Domain: domain,
 		Score:  1,
+		Reason: reason,
 	}
 	// Check for existing record to avoid duplicates
 	var existingSuggest SuggestBlock

@@ -36,7 +36,7 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 func CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain(blockedDomain string, allowedDomain string) bool {
 	const DomainSeparator = "."
 	allowedDomainParts := strings.Split(allowedDomain, DomainSeparator)
-	if len(allowedDomain) < 4 {
+	if len(allowedDomainParts) < 4 {
 		return false
 	}
 

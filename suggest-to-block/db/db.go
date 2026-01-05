@@ -9,7 +9,7 @@ type SuggestBlock struct {
 	Reason string `json:"reasons"`
 }
 
-func CreateSuggestBlock(domain string, reason string) (*SuggestBlock, error) {
+func CreateSuggestBlock(domain string, reason string) error {
 	conn := db.GetConnection()
 	suggest := SuggestBlock{
 		Domain: domain,
@@ -18,14 +18,13 @@ func CreateSuggestBlock(domain string, reason string) (*SuggestBlock, error) {
 	}
 	// Check for existing record to avoid duplicates
 	var existingSuggest SuggestBlock
-	if err := conn.Where("domain = ?", domain).First(&existingSuggest).Error; err == nil {
-		return &existingSuggest, nil
+
+	if conn.Where("domain = ?", domain).Limit(1).Find(&existingSuggest).RowsAffected > 0 {
+		// Запись существует, ничего не делаем
+		return nil
 	}
 
-	if err := conn.Create(&suggest).Error; err != nil {
-		return nil, err
-	}
-	return &suggest, nil
+	return conn.Create(&suggest).Error
 }
 
 func DeleteSuggestBlock(domain string) error {

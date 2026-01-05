@@ -10,7 +10,7 @@ import (
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
 )
 
-func CreateSuggestBlock(domain string, reason string) (*suggest_to_block_db.SuggestBlock, error) {
+func CreateSuggestBlock(domain string, reason string) error {
 	return suggest_to_block_db.CreateSuggestBlock(domain, reason)
 }
 
@@ -34,7 +34,7 @@ func Collect() error {
 	forBlock := suggest_to_block_use_cases_collect.CollectSuggest(blocked, allowed)
 
 	for _, domain := range forBlock {
-		_, err := CreateSuggestBlock(domain.Domain, domain.Reason)
+		err := CreateSuggestBlock(domain.Domain, domain.Reason)
 		if err != nil {
 			l := logger.GetLogger()
 			l.Error(err)

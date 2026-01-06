@@ -31,7 +31,6 @@ const fetchData = async () => {
     data.value = response.list
     pagination.value = {
       ...pagination.value,
-      pageIndex: 0,
       total: response.total,
     }
   } catch (error) {

@@ -4,6 +4,7 @@ import {api, type SuggestBlock} from "~/api";
 import AddDomainModal from '~/domain/add-new-domain/components/add-domain-modal.vue';
 import {useComponentStatusWithLoading} from "~~/composables/use-component-status-with-loading";
 import {UButton} from "#components";
+import {getErrorMessage} from "~~/utils/get-error-message";
 
 let lastFetchController: AbortController | null = null
 
@@ -32,10 +33,16 @@ const fetchData = async () => {
     data.value = response.list
     pagination.value = {
       ...pagination.value,
-      pageIndex: 0,
       total: response.total,
     }
   } catch (error) {
+    const message = getErrorMessage(error)
+    toast.add({
+      title: 'Error',
+      description: message,
+      duration: 5000,
+      color: 'error',
+    })
     console.error('Error fetching data:', error)
   }
 }

@@ -2,12 +2,14 @@ package web
 
 import (
 	"fmt"
-	"net/http"
-
+	"github.com/alextorq/dns-filter/blocked-domain"
+	blocked_domain_use_cases_create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
+	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/suggest-to-block"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
 func GetAllSuggestBlocks(c *gin.Context) {
@@ -48,26 +50,48 @@ func GetAllSuggestBlocks(c *gin.Context) {
 	})
 }
 
-func DeleteSuggestBlock(c *gin.Context) {
+func AddToBlock(c *gin.Context) {
 	l := logger.GetLogger()
 	type RequestBody struct {
+		ID     uint   `json:"id"`
 		Domain string `json:"domain"`
 	}
 
 	var req RequestBody
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		l.Error(fmt.Errorf("error bind json when delete suggest block: %w", err))
+		l.Error(fmt.Errorf("error bind json suggest block: %w", err))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": err.Error(),
 		})
 		return
 	}
 
-	err := suggest_to_block.DeleteSuggestBlock(req.Domain)
+	err := blocked_domain.CreateDomain(blocked_domain_use_cases_create_domain.RequestBody{
+		Domain: req.Domain,
+	})
 
 	if err != nil {
-		l.Error(fmt.Errorf("error delete suggest block: %w", err))
+		l.Error(fmt.Errorf("error change status suggest block: %w", err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	err = suggest_to_block.ChangeActiveStatus(req.ID, false)
+	if err != nil {
+		l.Error(fmt.Errorf("error change status suggest block: %w", err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	err = filter.UpdateFilterFromDb()
+
+	if err != nil {
+		l.Error(fmt.Errorf("error change status suggest block: %w", err))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
 		})
@@ -75,7 +99,7 @@ func DeleteSuggestBlock(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "suggest block deleted",
+		"message": "suggest block add to blocklist",
 	})
 }
 

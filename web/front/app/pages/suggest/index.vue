@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn,  } from '@nuxt/ui'
 import {api, type SuggestBlock} from "~/api";
-import AddDomainModal from '~/domain/add-new-domain/components/add-domain-modal.vue';
 import {useComponentStatusWithLoading} from "~~/composables/use-component-status-with-loading";
 import {UButton} from "#components";
 import {getErrorMessage} from "~~/utils/get-error-message";
@@ -63,8 +62,7 @@ onMounted(fetchWithLoading)
 
 const createDomain = async (item: SuggestBlock) => {
   try {
-    await api.createDomain(item.domain)
-    await api.changeSuggestStatus(item.id, false)
+    await api.addSuggestToBlock(item)
     await fetchWithLoading()
     toast.add({
       title: 'Success',

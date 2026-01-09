@@ -6,6 +6,7 @@ import (
 	"github.com/alextorq/dns-filter/cache"
 	"github.com/alextorq/dns-filter/db/migrate"
 	"github.com/alextorq/dns-filter/dns"
+	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 	suggest_to_block "github.com/alextorq/dns-filter/suggest-to-block"
 	usecases "github.com/alextorq/dns-filter/use-cases"
@@ -30,7 +31,7 @@ func main() {
 		panic(err)
 	}
 
-	err = usecases.UpdateFilterFromDb()
+	err = filter.UpdateFilterFromDb()
 	if err != nil {
 		panic(err)
 	}

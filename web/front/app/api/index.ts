@@ -1,6 +1,6 @@
 import axios, {type AxiosInstance} from "axios";
 
-export const API_HOST = "/api"
+export const API_HOST = "http://192.168.88.23:8080/api"
 
 export type DNSRecord = {
     id: number;
@@ -37,6 +37,12 @@ type SuggestRecordsRequest = {
     offset: number;
     filter: string;
     active: boolean | null;
+}
+
+
+type AddSuggestToBlockRequest = {
+    id: number;
+    domain: string;
 }
 
 type DNSRecordUpdateResponse = {
@@ -76,11 +82,8 @@ export class Api {
         return data;
     }
 
-    async changeSuggestStatus(id: number, active: boolean) {
-        const {data} = await this.transport.post<DNSRecordUpdateResponse>(`/suggest-to-block/change-status`, {
-            active: active,
-            id: id
-        });
+    async addSuggestToBlock(params: AddSuggestToBlockRequest) {
+        const {data} = await this.transport.post<DNSRecordUpdateResponse>(`/suggest-to-block/add-to-block`, params);
         return data.record;
     }
 

@@ -2,6 +2,7 @@ package db
 
 import (
 	"log"
+	"sync"
 
 	"github.com/alextorq/dns-filter/config"
 	"gorm.io/driver/sqlite" // Sqlite driver based on CGO
@@ -14,17 +15,18 @@ func GetDBConnectionString() string {
 	return conf.DbPath
 }
 
-var db *gorm.DB = nil
+var (
+	db   *gorm.DB
+	once sync.Once
+)
 
 func GetConnection() *gorm.DB {
-	if db != nil {
-		return db
-	}
-	connect, err := gorm.Open(sqlite.Open(GetDBConnectionString()), &gorm.Config{})
-	// Открываем (или создаём, если нет) файл базы данных
-	db = connect
-	if err != nil {
-		log.Fatal(err)
-	}
+	once.Do(func() {
+		var err error
+		db, err = gorm.Open(sqlite.Open(GetDBConnectionString()), &gorm.Config{})
+		if err != nil {
+			log.Fatal(err)
+		}
+	})
 	return db
 }

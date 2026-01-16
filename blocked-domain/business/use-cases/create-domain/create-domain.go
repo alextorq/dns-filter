@@ -28,9 +28,9 @@ func CreateDomain(domain RequestBody) error {
 		wrap := fmt.Errorf("error create domain: %w", err)
 		l.Error(wrap)
 		return wrap
-	} else {
-		l.Info("Domain created:", domain.Domain)
 	}
+
+	l.Info("Domain created:", domain.Domain)
 
 	return nil
 }

@@ -85,6 +85,10 @@ const columns: TableColumn<DNSRecord>[] = [
     header: 'Domain'
   },
   {
+    accessorKey: 'source',
+    header: 'Source',
+  },
+  {
     accessorKey: 'active',
     header: () => h('div', { class: 'text-right' }, 'Active'),
     cell: ({ row }) => {

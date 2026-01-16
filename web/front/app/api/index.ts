@@ -7,6 +7,7 @@ export type DNSRecord = {
     active: boolean;
     createdAt: string;
     url: string;
+    source: string;
 }
 
 export type SuggestBlock = {

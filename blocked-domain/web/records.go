@@ -2,14 +2,13 @@ package web
 
 import (
 	"fmt"
-	"net/http"
-
 	"github.com/alextorq/dns-filter/blocked-domain"
 	create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
 	update_dns_record "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/update-dns-record"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
 func GetAllDnsRecords(c *gin.Context) {
@@ -61,7 +60,10 @@ func CreateDnsRecords(c *gin.Context) {
 		return
 	}
 
-	err := blocked_domain.CreateDomain(req)
+	err := blocked_domain.CreateDomain(create_domain.RequestBody{
+		Domain: req.Domain,
+		Source: blocked_domain_db.SourceUser,
+	})
 
 	if err != nil {
 		l.Error(fmt.Errorf("error create new dns record: %w", err))

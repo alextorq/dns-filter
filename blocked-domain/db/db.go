@@ -242,7 +242,7 @@ func GetRowsByDomains() ([]DomainCount, error) {
 	conn := db.GetConnection()
 	var results []DomainCount
 	err := conn.Model(&BlockDomainEvent{}).
-		Select("block_lists.url as url, COUNT(block_domain_events.id) as count").
+		Select("block_lists.url as domain, COUNT(block_domain_events.id) as count").
 		Joins("left join block_lists on block_lists.id = block_domain_events.domain_id").
 		Group("block_lists.url").
 		Scan(&results).Error

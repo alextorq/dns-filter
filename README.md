@@ -4,6 +4,7 @@ it is simple dns service for block advertisement and malicious
 you need seed block domains and set it server like dns in your network
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://github.com/alextorq/dns-filter/actions/workflows/test.yml/badge.svg)](https://github.com/alextorq/dns-filter/actions/workflows/test.yml)
 ## Features
 
 - DNS filtering with block/allow lists

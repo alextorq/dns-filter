@@ -9,7 +9,7 @@ let lastFetchController: AbortController | null = null
 
 const data = ref<DNSRecord[]>([])
 const globalFilter = ref('')
-const source = ref('')
+const source = ref(null)
 
 const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
 
@@ -116,11 +116,12 @@ const columns: TableColumn<DNSRecord>[] = [
               placeholder="Search" />
 
           <USelect
+            style="width: 120px"
             v-model="source"
             placeholder="Source"
             class="max-w-xs"
-            :options="[
-              { label: 'All', value: '' },
+            :items="[
+              { label: 'All', value: null },
               { label: 'StevenBlack', value: 'StevenBlack' },
               { label: 'User', value: 'User' },
               { label: 'EasyList', value: 'EasyList' },

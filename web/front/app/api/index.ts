@@ -31,6 +31,7 @@ type DnsRecordsRequest = {
     limit: number;
     offset: number;
     filter: string;
+    source: string;
 }
 
 type SuggestRecordsRequest = {

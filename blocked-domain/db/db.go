@@ -56,6 +56,7 @@ type GetAllParams struct {
 	Limit  int
 	Offset int
 	Filter string
+	Source string
 }
 
 type GetRecordsResult struct {
@@ -72,6 +73,10 @@ func GetRecordsByFilter(filter GetAllParams) (GetRecordsResult, error) {
 	// если нужно фильтровать по строке
 	if filter.Filter != "" {
 		query = query.Where("url LIKE ?", "%"+filter.Filter+"%")
+	}
+	// если нужно фильтровать по источнику
+	if filter.Source != "" {
+		query = query.Where("source = ?", filter.Source)
 	}
 
 	// сначала считаем количество

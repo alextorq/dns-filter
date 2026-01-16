@@ -2,13 +2,14 @@ package web
 
 import (
 	"fmt"
+	"net/http"
+
 	"github.com/alextorq/dns-filter/blocked-domain"
 	create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
 	update_dns_record "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/update-dns-record"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/gin-gonic/gin"
-	"net/http"
 )
 
 func GetAllDnsRecords(c *gin.Context) {
@@ -17,6 +18,7 @@ func GetAllDnsRecords(c *gin.Context) {
 		Limit  int    `json:"limit"`
 		Offset int    `json:"offset"`
 		Filter string `json:"filter"`
+		Source string `json:"source"`
 	}
 
 	var req RequestBody

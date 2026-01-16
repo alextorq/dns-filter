@@ -19,8 +19,7 @@ func CreateDomain(domain RequestBody) error {
 	}
 
 	if !db.DomainNotExist(domain.Domain) {
-		wrap := fmt.Errorf("domain %s already exists", domain.Domain)
-		return wrap
+		return fmt.Errorf("domain %s already exists", domain.Domain)
 	}
 
 	err := db.CreateDomain(domain.Domain, domain.Source)

@@ -9,6 +9,7 @@ let lastFetchController: AbortController | null = null
 
 const data = ref<DNSRecord[]>([])
 const globalFilter = ref('')
+const source = ref('')
 
 const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
 
@@ -26,6 +27,7 @@ const fetchData = async () => {
       limit: pagination.value.pageSize,
       offset: pagination.value.pageIndex * pagination.value.pageSize || 0,
       filter: globalFilter.value,
+      source: source.value || '',
     }, lastFetchController.signal)
 
     data.value = response.list
@@ -106,11 +108,27 @@ const columns: TableColumn<DNSRecord>[] = [
   <UContainer>
     <div class="w-full space-y-4 pb-4">
       <div class="flex px-4 py-3.5 justify-between border-b border-accented">
-        <UInput
+        <div class="flex items-center space-x-3">
+          <UInput
+              @change="changeFilter"
+              v-model="globalFilter"
+              class="max-w-sm"
+              placeholder="Search" />
+
+          <USelect
+            v-model="source"
+            placeholder="Source"
+            class="max-w-xs"
+            :options="[
+              { label: 'All', value: '' },
+              { label: 'StevenBlack', value: 'StevenBlack' },
+              { label: 'User', value: 'User' },
+              { label: 'EasyList', value: 'EasyList' },
+              { label: 'SuggestedToBlock', value: 'SuggestedToBlock' }
+            ]"
             @change="changeFilter"
-            v-model="globalFilter"
-            class="max-w-sm"
-            placeholder="Search" />
+          />
+        </div>
         <AddDomainModal/>
       </div>
 

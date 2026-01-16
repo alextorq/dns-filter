@@ -35,6 +35,7 @@ func GetAllDnsRecords(c *gin.Context) {
 		Limit:  req.Limit,
 		Offset: req.Offset,
 		Filter: req.Filter,
+		Source: req.Source,
 	})
 	if err != nil {
 		l.Error(fmt.Errorf("error get dns records from db: %w", err))

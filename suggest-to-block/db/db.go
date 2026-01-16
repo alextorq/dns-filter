@@ -1,6 +1,8 @@
 package db
 
-import "github.com/alextorq/dns-filter/db"
+import (
+	"github.com/alextorq/dns-filter/db"
+)
 
 type SuggestBlock struct {
 	ID     uint   `gorm:"primarykey" json:"id"`

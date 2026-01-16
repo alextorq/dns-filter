@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alextorq/dns-filter/db"
+	"github.com/alextorq/dns-filter/utils"
 	"gorm.io/gorm"
 )
 
@@ -122,26 +123,11 @@ func GetAmountRecords() int64 {
 	return count
 }
 
-func onlyUniqString(items []string) []string {
-	seen := make(map[string]struct{})
-	// pre-allocate memory: длина 0, но емкость (capacity) равна len(items)
-	result := make([]string, 0, len(items))
-
-	for _, item := range items {
-		if _, exist := seen[item]; !exist {
-			result = append(result, item)
-			seen[item] = struct{}{}
-		}
-	}
-
-	return result
-}
-
 func CreateDNSRecordsByDomains(urls []string, source BlockListSource) error {
 	conn := db.GetConnection()
 	const chunkSize = 800 // безопасный размер для SQLite (лимит 999)
 
-	dedupedUrls := onlyUniqString(urls)
+	dedupedUrls := utils.OnlyUniqString(urls)
 
 	// --- 1. Находим уже существующие записи чанками ---
 	var existing []string

@@ -38,10 +38,6 @@ func DomainNotExist(domain string) bool {
 	return db.DomainNotExist(domain)
 }
 
-func CreateDNSRecordsByDomains(urls []string) error {
-	return db.CreateDNSRecordsByDomains(urls)
-}
-
 func CreateDomain(domain blocked_domain_use_cases_create_domain.RequestBody) error {
 	return blocked_domain_use_cases_create_domain.CreateDomain(domain)
 }

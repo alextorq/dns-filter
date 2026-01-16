@@ -8,7 +8,8 @@ import (
 )
 
 type RequestBody struct {
-	Domain string `json:"domain"`
+	Domain string             `json:"domain"`
+	Source db.BlockListSource `json:"source"`
 }
 
 func CreateDomain(domain RequestBody) error {
@@ -22,7 +23,7 @@ func CreateDomain(domain RequestBody) error {
 		return wrap
 	}
 
-	err := db.CreateDomain(domain.Domain)
+	err := db.CreateDomain(domain.Domain, domain.Source)
 	if err != nil {
 		wrap := fmt.Errorf("error create domain: %w", err)
 		l.Error(wrap)

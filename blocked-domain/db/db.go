@@ -17,6 +17,8 @@ type BlockList struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 	Url       string         `gorm:"type:varchar(255);not null;uniqueIndex:idx_theme_host" json:"url"`
 	Active    bool           `gorm:"default:true" json:"active"`
+	// раньше был только StevenBlack, теперь можно указывать источник
+	Source BlockListSource `gorm:"type:varchar(255);default:StevenBlack" json:"source"`
 	// One-to-Many
 	BlockedEvents []BlockDomainEvent `gorm:"foreignKey:DomainId" json:"blocked-events"`
 }
@@ -86,16 +88,6 @@ func GetRecordsByFilter(filter GetAllParams) (GetRecordsResult, error) {
 	}, err
 }
 
-func GetAllActive() ([]BlockList, error) {
-	conn := db.GetConnection()
-	var lists []BlockList
-	err := conn.Find(&lists).Error
-	if err != nil {
-		return nil, err
-	}
-	return lists, nil
-}
-
 func GetAllActiveFilters() ([]string, error) {
 	conn := db.GetConnection()
 	var urls []string
@@ -130,20 +122,26 @@ func GetAmountRecords() int64 {
 	return count
 }
 
-func CreateDNSRecordsByDomains(urls []string) error {
+func onlyUniqString(items []string) []string {
+	seen := make(map[string]struct{})
+	// pre-allocate memory: длина 0, но емкость (capacity) равна len(items)
+	result := make([]string, 0, len(items))
+
+	for _, item := range items {
+		if _, exist := seen[item]; !exist {
+			result = append(result, item)
+			seen[item] = struct{}{}
+		}
+	}
+
+	return result
+}
+
+func CreateDNSRecordsByDomains(urls []string, source BlockListSource) error {
 	conn := db.GetConnection()
 	const chunkSize = 800 // безопасный размер для SQLite (лимит 999)
 
-	// --- 0. Убираем дубликаты в urls ---
-	uniqueUrls := make(map[string]struct{}, len(urls))
-	for _, u := range urls {
-		uniqueUrls[u] = struct{}{}
-	}
-
-	dedupedUrls := make([]string, 0, len(uniqueUrls))
-	for u := range uniqueUrls {
-		dedupedUrls = append(dedupedUrls, u)
-	}
+	dedupedUrls := onlyUniqString(urls)
 
 	// --- 1. Находим уже существующие записи чанками ---
 	var existing []string
@@ -175,6 +173,7 @@ func CreateDNSRecordsByDomains(urls []string) error {
 			newEntries = append(newEntries, BlockList{
 				Url:    u,
 				Active: true,
+				Source: source,
 			})
 		}
 	}
@@ -193,11 +192,12 @@ func CreateDNSRecordsByDomains(urls []string) error {
 	return nil
 }
 
-func CreateDomain(domain string) error {
+func CreateDomain(domain string, source BlockListSource) error {
 	conn := db.GetConnection()
 	newEntry := BlockList{
 		Url:    domain,
 		Active: true,
+		Source: source,
 	}
 	return conn.Create(&newEntry).Error
 }

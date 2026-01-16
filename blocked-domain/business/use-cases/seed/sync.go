@@ -33,9 +33,11 @@ func ParseIpHostsLine(r io.Reader) []string {
 	return result
 }
 
-func LoadStevenBlack(url string) []string {
-	resp, err := http.Get(url)
-	defer resp.Body.Close()
+func LoadStevenBlack() []string {
+	resp, err := http.Get("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts")
+	if err == nil {
+		defer resp.Body.Close()
+	}
 
 	if err != nil {
 		fmt.Println(err)
@@ -45,15 +47,71 @@ func LoadStevenBlack(url string) []string {
 	return items
 }
 
-func LoadAllDomains() []string {
-	result := make([]string, 0)
-	var lists = []string{
-		"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+func ParseEasyList(r io.Reader) []string {
+	scanner := bufio.NewScanner(r)
+	var result []string
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Правила блокировки в EasyList обычно начинаются с ||
+		// Мы игнорируем правила исключений (начинаются с @@)
+		if strings.HasPrefix(line, "||") && !strings.HasPrefix(line, "@@") {
+			// Убираем префикс '||'
+			domain := line[2:]
+
+			// Находим конец домена. Он может заканчиваться на ^, $, или /
+			endPos := strings.IndexAny(domain, "^$/")
+			if endPos != -1 {
+				domain = domain[:endPos]
+			}
+
+			// Пропускаем записи, содержащие '*', так как это wildcard-правила,
+			// которые сложно обрабатывать в простом DNS-фильтре.
+			// Также проверяем, что это похоже на домен.
+			if domain != "" && !strings.Contains(domain, "*") && strings.Contains(domain, ".") {
+				// Добавляем точку в конце для соответствия формату DNS
+				result = append(result, domain+".")
+			}
+		}
 	}
-	for _, url := range lists {
-		partial := LoadStevenBlack(url)
-		result = append(result, partial...)
+	return result
+}
+
+func LoadEasyList() []string {
+	resp, err := http.Get("https://easylist.to/easylist/easylist.txt")
+	if err == nil {
+		defer resp.Body.Close()
 	}
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	items := ParseEasyList(resp.Body)
+	return items
+}
+
+type DomainBySource struct {
+	Source  db.BlockListSource
+	Domains []string
+}
+
+func LoadAllDomains() []DomainBySource {
+	result := make([]DomainBySource, 0)
+	partial := LoadStevenBlack()
+	result = append(result, DomainBySource{
+		Source:  db.SourceStevenBlack,
+		Domains: partial,
+	})
+
+	partial = LoadEasyList()
+	fmt.Println("Loaded EasyList domains:", len(partial))
+
+	result = append(result, DomainBySource{
+		Source:  db.SourceEasyList,
+		Domains: partial,
+	})
+
 	return result
 }
 
@@ -61,9 +119,15 @@ func Sync() error {
 	l := logger.GetLogger()
 	amount := db.GetAmountRecords()
 	if amount == 0 {
+		l.Info("No records in the database. Start loading from blocked-domain.")
 		list := LoadAllDomains()
-		err := db.CreateDNSRecordsByDomains(list)
-		return err
+		for _, item := range list {
+			err := db.CreateDNSRecordsByDomains(item.Domains, item.Source)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	} else {
 		l.Info(fmt.Sprintf("There are %d records in the database. Skip loading from blocked-domain.", amount))
 	}

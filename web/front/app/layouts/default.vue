@@ -6,9 +6,9 @@ const items = ref([
     to: '/domains',
   },
   {
-    label: 'Sync',
+    label: 'Sources',
     icon: 'i-lucide-refresh-cw',
-    to: '/sync',
+    to: '/sources',
   },
   {
     label: 'Statistic',

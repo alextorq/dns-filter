@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
+	blDb "github.com/alextorq/dns-filter/blocked-domain/db"
+	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 	syncDb "github.com/alextorq/dns-filter/source/db"
 	"github.com/gin-gonic/gin"
@@ -63,7 +65,27 @@ func ChangeSourceActive(c *gin.Context) {
 		return
 	}
 
+	blDb.ChangeRecordStatusBySource(source.Name.String(), req.Active)
+	if err != nil {
+		l.Error(fmt.Errorf("error change blocked domains by source in db: %w", err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	err = filter.UpdateFilterFromDb()
+
+	if err != nil {
+		l.Error(fmt.Errorf("error update filter after changing source active: %w", err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Source active status updated successfully",
+		"message": "record updated",
+		"record":  source,
 	})
 }

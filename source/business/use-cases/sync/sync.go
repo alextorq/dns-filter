@@ -3,6 +3,7 @@ package sync
 import (
 	blockDb "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
+	"github.com/alextorq/dns-filter/source/business/use-cases/sync/easy-list"
 	"github.com/alextorq/dns-filter/source/db"
 )
 
@@ -25,7 +26,7 @@ func LoadAndParseActiveSources() []DomainBySource {
 	for _, item := range items {
 		switch item.Name {
 		case db.SourceEasyList:
-			partial := LoadEasyList()
+			partial := easy_list.LoadEasyList()
 			l.Debug("Loaded EasyList domains:", len(partial))
 
 			result = append(result, DomainBySource{

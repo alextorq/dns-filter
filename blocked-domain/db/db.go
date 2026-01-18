@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// BlockList represents a domain rule in the blocklist
 type BlockList struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
@@ -193,8 +192,6 @@ func CreateDomain(domain string, source string) error {
 	return conn.Create(&newEntry).Error
 }
 
-// ===== BlockDomainEvent Operations =====
-
 func CreateBlockDomainEvent(domainId uint) error {
 	conn := db.GetConnection()
 
@@ -239,4 +236,10 @@ func GetRowsByDomains() ([]DomainCount, error) {
 		Scan(&results).Error
 
 	return results, err
+}
+
+func ChangeRecordStatusBySource(source string, active bool) error {
+	conn := db.GetConnection()
+	return conn.Model(&BlockList{}).Where("source = ?", source).
+		Update("active", active).Error
 }

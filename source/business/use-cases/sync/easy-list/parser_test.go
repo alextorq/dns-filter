@@ -23,7 +23,7 @@ func TestParseEasyList(t *testing.T) {
 ||example.com^
 ||test.org^
 `,
-			expected: []string{"example.com", "test.org"},
+			expected: []string{"example.com.", "test.org."},
 		},
 		{
 			name: "Whitelist logic (Merge check)",
@@ -32,7 +32,7 @@ func TestParseEasyList(t *testing.T) {
 ||good.com^
 @@||good.com^
 `,
-			expected: []string{"bad.com"}, // good.com должен исчезнуть
+			expected: []string{"bad.com."}, // good.com должен исчезнуть
 		},
 		{
 			name: "Ignore paths and files",
@@ -41,7 +41,7 @@ func TestParseEasyList(t *testing.T) {
 ||domain.com/banner.jpg
 ||clean-domain.com^
 `,
-			expected: []string{"clean-domain.com"},
+			expected: []string{"clean-domain.com."},
 		},
 		{
 			name: "Strip options and ports",
@@ -49,7 +49,7 @@ func TestParseEasyList(t *testing.T) {
 ||options.com^$third-party,popup
 ||port-test.com:8080^
 `,
-			expected: []string{"options.com", "port-test.com"},
+			expected: []string{"options.com.", "port-test.com."},
 		},
 		{
 			name: "Ignore CSS rules and wildcards",
@@ -59,7 +59,7 @@ example.com##.banner
 ||wildcard.*^
 ||valid.com^
 `,
-			expected: []string{"valid.com"},
+			expected: []string{"valid.com."},
 		},
 		{
 			name: "Mixed complex case",
@@ -72,7 +72,7 @@ example.com##.banner
 ||trash.com/file
 ||weird-port.com:999^
 `,
-			expected: []string{"blocked.com", "weird-port.com"},
+			expected: []string{"blocked.com.", "weird-port.com."},
 		},
 	}
 

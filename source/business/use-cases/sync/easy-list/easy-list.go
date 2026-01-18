@@ -137,5 +137,16 @@ func ParseEasyList(r io.Reader) []string {
 		allowListSlice = append(allowListSlice, k)
 	}
 
-	return MergeLists(blockListSlice, allowListSlice)
+	merge := MergeLists(blockListSlice, allowListSlice)
+
+	withDot := make([]string, 0, len(merge))
+	for _, domain := range merge {
+		if strings.HasSuffix(domain, ".") {
+			withDot = append(withDot, domain)
+			continue
+		} else {
+			withDot = append(withDot, domain+".")
+		}
+	}
+	return withDot
 }

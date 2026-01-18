@@ -6,11 +6,10 @@ type BlockListSource string
 const (
 	// SourceStevenBlack - domains from StevenBlack blocklist
 	SourceStevenBlack BlockListSource = "StevenBlack"
-	SourceUser        BlockListSource = "User"
-
 	// SourceEasyList - domains from EasyList blocklist
 	SourceEasyList BlockListSource = "EasyList"
 
+	SourceUser BlockListSource = "User"
 	// SourceSuggestedToBlock - domains suggested by users to block
 	SourceSuggestedToBlock BlockListSource = "SuggestedToBlock"
 )

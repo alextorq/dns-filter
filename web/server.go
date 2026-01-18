@@ -5,6 +5,7 @@ import (
 	dbWeb "github.com/alextorq/dns-filter/db/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
+	syncWeb "github.com/alextorq/dns-filter/source/web"
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,9 @@ func CreateSever() *gin.Engine {
 
 	r.POST("/api/config/logger/change-level", loggerWeb.ChangeLogLevel)
 	r.POST("/api/config/logger/get-level", loggerWeb.GetLogLevel)
+
+	r.POST("/api/sources", syncWeb.GetAllSources)
+	r.POST("/api/sources/change-status", syncWeb.ChangeSourceActive)
 
 	r.GET("/api/config/db/download", dbWeb.DownloadDb)
 

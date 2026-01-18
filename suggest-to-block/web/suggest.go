@@ -6,9 +6,9 @@ import (
 
 	"github.com/alextorq/dns-filter/blocked-domain"
 	blocked_domain_use_cases_create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
-	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
+	blocked_domain_db "github.com/alextorq/dns-filter/source/db"
 	"github.com/alextorq/dns-filter/suggest-to-block"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
 	"github.com/gin-gonic/gin"
@@ -71,7 +71,7 @@ func AddToBlock(c *gin.Context) {
 
 	err := blocked_domain.CreateDomain(blocked_domain_use_cases_create_domain.RequestBody{
 		Domain: req.Domain,
-		Source: blocked_domain_db.SourceSuggestedToBlock,
+		Source: blocked_domain_db.SourceSuggestedToBlock.String(),
 	})
 
 	if err != nil {

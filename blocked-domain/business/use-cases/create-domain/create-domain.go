@@ -8,8 +8,8 @@ import (
 )
 
 type RequestBody struct {
-	Domain string             `json:"domain"`
-	Source db.BlockListSource `json:"source"`
+	Domain string `json:"domain"`
+	Source string `json:"source"`
 }
 
 func CreateDomain(domain RequestBody) error {

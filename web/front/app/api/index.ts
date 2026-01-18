@@ -1,6 +1,8 @@
 import axios, {type AxiosInstance} from "axios";
 
-export const API_HOST = "http://192.168.88.63:8090/api"
+export const API_HOST = import.meta.env.DEV 
+    ? "http://localhost:8080/api" 
+    : "/api"
 
 export type DNSRecord = {
     id: number;
@@ -63,6 +65,23 @@ export type DomainBlockWithCount = {
 
 export type DomainsBlockGroup = {
     groups: DomainBlockWithCount[];
+}
+
+export type SyncRecord = {
+    id: number;
+    active: boolean;
+    created_at: string;
+    name: string;
+}
+
+type SyncRecordsResponse = {
+    list: SyncRecord[];
+    total: number
+}
+
+type SyncRecordsRequest = {
+    limit: number;
+    offset: number;
 }
 
 export class Api {
@@ -132,6 +151,19 @@ export class Api {
     async getLogLevel() {
         const {data} = await this.transport.post<{level: string}>(`/config/logger/get-level`);
         return data;
+    }
+
+    async getAllSyncRecords(payload: SyncRecordsRequest, abortSignal: AbortSignal) {
+        const {data} = await this.transport.post<SyncRecordsResponse>(`/sources`, payload, {signal: abortSignal});
+        return data;
+    }
+
+    async changeSyncRecordStatus(id: number, active: boolean) {
+        const {data} = await this.transport.post<{record: SyncRecord}>(`/sources/change-status`, {
+            active: active,
+            id: id
+        });
+        return data.record;
     }
 }
 

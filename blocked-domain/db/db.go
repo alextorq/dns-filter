@@ -19,7 +19,7 @@ type BlockList struct {
 	Url       string         `gorm:"type:varchar(255);not null;uniqueIndex:idx_theme_host" json:"url"`
 	Active    bool           `gorm:"default:true" json:"active"`
 	// раньше был только StevenBlack, теперь можно указывать источник
-	Source BlockListSource `gorm:"type:varchar(255);default:StevenBlack" json:"source"`
+	Source string `gorm:"type:varchar(255);default:StevenBlack" json:"source"`
 	// One-to-Many
 	BlockedEvents []BlockDomainEvent `gorm:"foreignKey:DomainId" json:"blocked-events"`
 }
@@ -128,7 +128,7 @@ func GetAmountRecords() int64 {
 	return count
 }
 
-func CreateDNSRecordsByDomains(urls []string, source BlockListSource) error {
+func CreateDNSRecordsByDomains(urls []string, source string) error {
 	conn := db.GetConnection()
 	const chunkSize = 800 // безопасный размер для SQLite (лимит 999)
 
@@ -183,7 +183,7 @@ func CreateDNSRecordsByDomains(urls []string, source BlockListSource) error {
 	return nil
 }
 
-func CreateDomain(domain string, source BlockListSource) error {
+func CreateDomain(domain string, source string) error {
 	conn := db.GetConnection()
 	newEntry := BlockList{
 		Url:    domain,

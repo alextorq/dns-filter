@@ -17,8 +17,7 @@ type BlockList struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 	Url       string         `gorm:"type:varchar(255);not null;uniqueIndex:idx_theme_host" json:"url"`
 	Active    bool           `gorm:"default:true" json:"active"`
-	// раньше был только StevenBlack, теперь можно указывать источник
-	Source string `gorm:"type:varchar(255);default:StevenBlack" json:"source"`
+	Source    string         `gorm:"type:varchar(255)" json:"source"`
 	// One-to-Many
 	BlockedEvents []BlockDomainEvent `gorm:"foreignKey:DomainId" json:"blocked-events"`
 }

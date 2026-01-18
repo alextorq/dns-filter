@@ -43,6 +43,7 @@ const fetchData = async () => {
 const fetchWithLoading = createLoadingRequest(fetchData)
 
 const changeFilter = async () => {
+  pagination.value.pageIndex = 0
   await fetchWithLoading()
 }
 

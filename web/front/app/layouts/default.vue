@@ -22,7 +22,7 @@ const items = ref([
   },
   {
     label: 'Settings',
-    icon: 'i-lucide-pie-chart',
+    icon: 'i-lucide-settings',
     to: '/settings',
   }
 ])

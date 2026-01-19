@@ -2,24 +2,20 @@ package sync
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 )
 
-func LoadStevenBlack() []string {
+func LoadStevenBlack() ([]string, error) {
 	resp, err := http.Get("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts")
-	if err == nil {
-		defer resp.Body.Close()
-	}
-
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
+	defer resp.Body.Close()
 
 	items := ParseIpHostsLine(resp.Body)
-	return items
+	return items, nil
 }
 
 func ParseIpHostsLine(r io.Reader) []string {

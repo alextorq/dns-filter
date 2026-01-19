@@ -39,12 +39,16 @@ func LoadAndParseActiveSources() []DomainBySource {
 				l.Error(fmt.Errorf("failed to load EasyList: %w", err))
 			}
 		case db.SourceStevenBlack:
-			partial := LoadStevenBlack()
-			result = append(result, DomainBySource{
-				Source:  db.SourceStevenBlack,
-				Domains: partial,
-			})
-			l.Debug("Loaded SourceStevenBlack domains:", len(partial))
+			partial, err := LoadStevenBlack()
+			if err == nil {
+				result = append(result, DomainBySource{
+					Source:  db.SourceStevenBlack,
+					Domains: partial,
+				})
+				l.Debug("Loaded SourceStevenBlack domains:", len(partial))
+			} else {
+				l.Error(fmt.Errorf("failed to load SourceStevenBlack: %w", err))
+			}
 		}
 	}
 

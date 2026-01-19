@@ -7,6 +7,7 @@ import (
 )
 
 type Filter struct {
+	mu    sync.RWMutex
 	Bloom *bloom.BloomFilter
 }
 
@@ -25,16 +26,19 @@ func GetFilter() *Filter {
 }
 
 func (f *Filter) DomainExist(domain string) bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return f.Bloom.Test([]byte(domain))
 }
 
 func (f *Filter) UpdateFilter(rows []string) *Filter {
 	filter := bloom.NewWithEstimates(uint(len(rows)), 0.001)
-
 	for _, item := range rows {
 		filter.Add([]byte(item))
 	}
 
+	f.mu.Lock()
 	f.Bloom = filter
+	f.mu.Unlock()
 	return f
 }

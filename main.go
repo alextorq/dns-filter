@@ -46,6 +46,6 @@ func main() {
 	metricInstance := dns.CreateMetric()
 	handlers := Handlers{}
 	s := dns.CreateServer(chanLogger, cacheWithMetric, usecases.CheckBlock, metricInstance, handlers)
-	web.CreateSever()
+	web.CreateServer()
 	s.Serve()
 }

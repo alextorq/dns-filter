@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func CreateSever() *gin.Engine {
+func CreateServer() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode) // или gin.DebugMode
 	r := gin.Default()
 	//TODO: configure CORS

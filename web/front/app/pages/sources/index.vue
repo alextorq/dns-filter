@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
-import {api, type DNSRecord} from "~/api";
-import AddDomainModal from '~/domain/add-new-domain/components/add-domain-modal.vue';
-import ChangeStatus from '~/domain/change-domain-status/components/change-status.vue';
+import {api, type SyncRecord} from "~/api";
+import ChangeSyncStatus from '~/sync/change-sync-status/components/change-sync-status.vue';
 import {useComponentStatusWithLoading} from "~~/composables/use-component-status-with-loading";
+import {getErrorMessage} from "~~/utils/get-error-message";
+
+const toast = useToast()
 
 let lastFetchController: AbortController | null = null
 
-const data = ref<DNSRecord[]>([])
-const globalFilter = ref('')
-const source = ref(null)
+const data = ref<SyncRecord[]>([])
 
 const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
 
@@ -23,11 +23,9 @@ const fetchData = async () => {
   try {
     if (lastFetchController) lastFetchController.abort()
     lastFetchController = new AbortController()
-    const response = await api.getAllDnsRecords({
+    const response = await api.getAllSyncRecords({
       limit: pagination.value.pageSize,
       offset: pagination.value.pageIndex * pagination.value.pageSize || 0,
-      filter: globalFilter.value,
-      source: source.value || '',
     }, lastFetchController.signal)
 
     data.value = response.list
@@ -36,16 +34,18 @@ const fetchData = async () => {
       total: response.total,
     }
   } catch (error) {
+    const message = getErrorMessage(error)
+    toast.add({
+      title: 'Error',
+      description: message,
+      duration: 5000,
+      color: 'error',
+    })
     console.error('Error fetching data:', error)
   }
 }
 
 const fetchWithLoading = createLoadingRequest(fetchData)
-
-const changeFilter = async () => {
-  pagination.value.pageIndex = 0
-  await fetchWithLoading()
-}
 
 const changePage = async (page: number) => {
   pagination.value.pageIndex = page - 1
@@ -54,7 +54,7 @@ const changePage = async (page: number) => {
 
 onMounted(fetchWithLoading)
 
-const updateActiveStatus = (item: DNSRecord) => {
+const updateActiveStatus = (item: SyncRecord) => {
   try {
     const index = data.value.findIndex(record => record.id === item.id)
     if (index !== -1) {
@@ -65,7 +65,7 @@ const updateActiveStatus = (item: DNSRecord) => {
   }
 }
 
-const columns: TableColumn<DNSRecord>[] = [
+const columns: TableColumn<SyncRecord>[] = [
   {
     accessorKey: 'id',
     header: 'id',
@@ -84,18 +84,18 @@ const columns: TableColumn<DNSRecord>[] = [
     }
   },
   {
-    accessorKey: 'url',
-    header: 'Domain'
+    accessorKey: 'name',
+    header: 'Name'
   },
   {
-    accessorKey: 'source',
-    header: 'Source',
+    accessorKey: 'url',
+    header: 'URL',
   },
   {
     accessorKey: 'active',
     header: () => h('div', { class: 'text-right' }, 'Active'),
     cell: ({ row }) => {
-      return h(ChangeStatus, {
+      return h(ChangeSyncStatus, {
         record: row.original,
         onUpdate: updateActiveStatus,
       })
@@ -108,32 +108,6 @@ const columns: TableColumn<DNSRecord>[] = [
 <template>
   <UContainer>
     <div class="w-full space-y-4 pb-4">
-      <div class="flex px-4 py-3.5 justify-between border-b border-accented">
-        <div class="flex items-center space-x-3">
-          <UInput
-              @change="changeFilter"
-              v-model="globalFilter"
-              class="max-w-sm"
-              placeholder="Search" />
-
-          <USelect
-            style="width: 120px"
-            v-model="source"
-            placeholder="Source"
-            class="max-w-xs"
-            :items="[
-              { label: 'All', value: null },
-              { label: 'StevenBlack', value: 'StevenBlack' },
-              { label: 'User', value: 'User' },
-              { label: 'EasyList', value: 'EasyList' },
-              { label: 'SuggestedToBlock', value: 'SuggestedToBlock' }
-            ]"
-            @change="changeFilter"
-          />
-        </div>
-        <AddDomainModal/>
-      </div>
-
       <UTable
           :loading="isLoading"
           empty="No data"

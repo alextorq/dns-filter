@@ -9,6 +9,7 @@ import (
 	update_dns_record "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/update-dns-record"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
+	syncDb "github.com/alextorq/dns-filter/source/db"
 	"github.com/gin-gonic/gin"
 )
 
@@ -65,7 +66,7 @@ func CreateDnsRecords(c *gin.Context) {
 
 	err := blocked_domain.CreateDomain(create_domain.RequestBody{
 		Domain: req.Domain,
-		Source: blocked_domain_db.SourceUser,
+		Source: syncDb.SourceUser.String(),
 	})
 
 	if err != nil {

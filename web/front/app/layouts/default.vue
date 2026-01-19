@@ -6,6 +6,11 @@ const items = ref([
     to: '/domains',
   },
   {
+    label: 'Sources',
+    icon: 'i-lucide-refresh-cw',
+    to: '/sources',
+  },
+  {
     label: 'Statistic',
     icon: 'i-lucide-pie-chart',
     to: '/statistic',
@@ -17,7 +22,7 @@ const items = ref([
   },
   {
     label: 'Settings',
-    icon: 'i-lucide-pie-chart',
+    icon: 'i-lucide-settings',
     to: '/settings',
   }
 ])

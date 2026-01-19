@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// BlockList represents a domain rule in the blocklist
 type BlockList struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
@@ -18,8 +17,7 @@ type BlockList struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 	Url       string         `gorm:"type:varchar(255);not null;uniqueIndex:idx_theme_host" json:"url"`
 	Active    bool           `gorm:"default:true" json:"active"`
-	// раньше был только StevenBlack, теперь можно указывать источник
-	Source BlockListSource `gorm:"type:varchar(255);default:StevenBlack" json:"source"`
+	Source    string         `gorm:"type:varchar(255)" json:"source"`
 	// One-to-Many
 	BlockedEvents []BlockDomainEvent `gorm:"foreignKey:DomainId" json:"blocked-events"`
 }
@@ -128,9 +126,9 @@ func GetAmountRecords() int64 {
 	return count
 }
 
-func CreateDNSRecordsByDomains(urls []string, source BlockListSource) error {
+func CreateDNSRecordsByDomains(urls []string, source string) error {
 	conn := db.GetConnection()
-	const chunkSize = 800 // безопасный размер для SQLite (лимит 999)
+	const chunkSize = 500 // безопасный размер для SQLite (лимит 999)
 
 	dedupedUrls := utils.OnlyUniqString(urls)
 
@@ -183,7 +181,7 @@ func CreateDNSRecordsByDomains(urls []string, source BlockListSource) error {
 	return nil
 }
 
-func CreateDomain(domain string, source BlockListSource) error {
+func CreateDomain(domain string, source string) error {
 	conn := db.GetConnection()
 	newEntry := BlockList{
 		Url:    domain,
@@ -192,8 +190,6 @@ func CreateDomain(domain string, source BlockListSource) error {
 	}
 	return conn.Create(&newEntry).Error
 }
-
-// ===== BlockDomainEvent Operations =====
 
 func CreateBlockDomainEvent(domainId uint) error {
 	conn := db.GetConnection()
@@ -239,4 +235,10 @@ func GetRowsByDomains() ([]DomainCount, error) {
 		Scan(&results).Error
 
 	return results, err
+}
+
+func ChangeRecordStatusBySource(source string, active bool) error {
+	conn := db.GetConnection()
+	return conn.Model(&BlockList{}).Where("source = ?", source).
+		Update("active", active).Error
 }

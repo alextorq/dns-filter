@@ -4,7 +4,6 @@ import (
 	blocked_domain_use_cases_block_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/block-domain"
 	blocked_domain_use_cases_clear_events "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/clear-events"
 	blocked_domain_use_cases_create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
-	blocked_domain_use_cases_seed "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/seed"
 	blocked_domain_use_cases_update_dns_record "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/update-dns-record"
 	"github.com/alextorq/dns-filter/blocked-domain/db"
 	dnsLib "github.com/miekg/dns"
@@ -21,10 +20,6 @@ func BlockDomain(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
 }
 
 // ===== Blocklist Management (moved from dns-records) =====
-
-func Sync() error {
-	return blocked_domain_use_cases_seed.Sync()
-}
 
 func GetRecordsByFilter(filter db.GetAllParams) (db.GetRecordsResult, error) {
 	return db.GetRecordsByFilter(filter)

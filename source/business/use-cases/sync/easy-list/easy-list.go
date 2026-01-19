@@ -2,24 +2,22 @@ package easy_list
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 )
 
-func LoadEasyList() []string {
+func LoadEasyList() ([]string, error) {
 	resp, err := http.Get("https://easylist.to/easylist/easylist.txt")
 	if err == nil {
 		defer resp.Body.Close()
 	}
-
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
 
-	items := ParseEasyList(resp.Body)
-	return items
+	result := ParseEasyList(resp.Body)
+	return result, nil
 }
 
 // IsSafeDNSDomain проверяет, является ли строка валидным доменом для DNS блокировки

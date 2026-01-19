@@ -128,7 +128,7 @@ func GetAmountRecords() int64 {
 
 func CreateDNSRecordsByDomains(urls []string, source string) error {
 	conn := db.GetConnection()
-	const chunkSize = 800 // безопасный размер для SQLite (лимит 999)
+	const chunkSize = 500 // безопасный размер для SQLite (лимит 999)
 
 	dedupedUrls := utils.OnlyUniqString(urls)
 

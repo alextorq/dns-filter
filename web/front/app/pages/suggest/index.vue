@@ -73,7 +73,6 @@ const createDomain = async (item: SuggestBlock) => {
   }catch (e) {
     console.log(e)
   }
-
 }
 
 const columns: TableColumn<SuggestBlock>[] = [
@@ -93,15 +92,6 @@ const columns: TableColumn<SuggestBlock>[] = [
     header: () => h('div', 'Actions'),
     cell: (props) => {
       return h('div', [
-        // UButton
-        // h(UButton, {
-        //   size: 'sm',
-        //   color: 'secondary',
-        //   onClick: () => {
-        //     updateActiveStatus(props.row.original)
-        //   }
-        // }, () =>  'Change Status'),
-
         h(UButton, {
           size: 'sm',
           color: 'primary',

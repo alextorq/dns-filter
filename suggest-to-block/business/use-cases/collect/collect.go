@@ -8,40 +8,52 @@ import (
 type Suggestion struct {
 	Domain string
 	Reason string
+	Score  int
 }
+
+const (
+	ItemScoreSuspiciousDomain       = 20
+	ItemScoreContainsBadKeywords    = 5
+	ItemScoreSubdomainOfBlocked     = 20
+	ItemScoreSimilarToBlockedDomain = 15
+	ThresholdToSuggestBlocking      = 30
+)
 
 func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
 	var result []Suggestion
 
-SearchLoop:
 	for _, allowedDomain := range allowedDomains {
+		suggestion := Suggestion{
+			Domain: allowedDomain,
+			Score:  0,
+		}
+
+		if IsDomainSuspicious(allowedDomain) {
+			suggestion.Score += ItemScoreSuspiciousDomain
+			suggestion.Reason += "\nappears to be suspicious; "
+		}
+
+		if CheckForBadKeywords(allowedDomain) {
+			suggestion.Score += ItemScoreContainsBadKeywords
+			suggestion.Reason += "\ncontains keywords indicating ads or tracking; "
+		}
+
 		for _, blockedDomain := range blockedDomains {
 			if CheckItIsSubDomain(blockedDomain, allowedDomain) {
-				result = append(result, Suggestion{
-					Domain: allowedDomain,
-					Reason: fmt.Sprintf("is subdomain of blocked domain %s", blockedDomain),
-				})
-				continue SearchLoop
-			} else if CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain(blockedDomain, allowedDomain) {
-				result = append(result, Suggestion{
-					Domain: allowedDomain,
-					Reason: fmt.Sprintf("has same domain level and same blocked domain as %s", blockedDomain),
-				})
-				continue SearchLoop
-			} else if CheckForBadKeywords(allowedDomain) {
-				result = append(result, Suggestion{
-					Domain: allowedDomain,
-					Reason: "contains suspicious keywords indicating ads or tracking",
-				})
-				continue SearchLoop
-			} else if IsDomainSuspicious(allowedDomain) {
-				result = append(result, Suggestion{
-					Domain: allowedDomain,
-					Reason: "appears to be generated or random (DGA-like)",
-				})
-				continue SearchLoop
+				suggestion.Score = +ItemScoreSubdomainOfBlocked
+				suggestion.Reason += fmt.Sprintf("\nis subdomain of blocked domain %s; ", blockedDomain)
+			}
+
+			if CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain(blockedDomain, allowedDomain) {
+				suggestion.Score += ItemScoreSimilarToBlockedDomain
+				suggestion.Reason += fmt.Sprintf("\nhas same domain level and similar blocked domain as %s; ", blockedDomain)
 			}
 		}
+
+		if suggestion.Score > 0 {
+			result = append(result, suggestion)
+		}
+
 	}
 
 	return result

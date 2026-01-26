@@ -12,11 +12,11 @@ type SuggestBlock struct {
 	Active bool   `gorm:"default:true" json:"active"`
 }
 
-func CreateSuggestBlock(domain string, reason string) error {
+func CreateSuggestBlock(domain string, reason string, score int) error {
 	conn := db.GetConnection()
 	suggest := SuggestBlock{
 		Domain: domain,
-		Score:  1,
+		Score:  score,
 		Reason: reason,
 	}
 	// Check for existing record to avoid duplicates

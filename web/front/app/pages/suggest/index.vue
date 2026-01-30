@@ -85,6 +85,10 @@ const columns: TableColumn<SuggestBlock>[] = [
     header: 'Domain'
   },
   {
+    accessorKey: 'score',
+    header: 'Score'
+  },
+  {
     accessorKey: 'reasons',
     header: () => h('div', 'Reason'),
   }, {

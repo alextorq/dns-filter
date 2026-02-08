@@ -1,6 +1,7 @@
 # TODO
 
 ## Deployment
+boost allow domain function with batch processing
 Add deploy script for server
 it must be easy to deploy the server create new influx db and organization
 

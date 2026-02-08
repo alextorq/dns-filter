@@ -40,6 +40,7 @@ func main() {
 	go blocked_domain.ClearOldEvent()
 	go allow_domain.ClearOldEvent()
 	go suggest_to_block.StartCollectSuggest()
+	blocked_domain.StartEventWorker()
 
 	chanLogger := logger.GetLogger()
 	cacheWithMetric := cache.GetCacheWithMetric()

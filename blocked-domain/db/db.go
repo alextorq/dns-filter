@@ -204,6 +204,41 @@ func CreateBlockDomainEvent(domainId uint) error {
 	return nil
 }
 
+func BatchCreateBlockDomainEvents(domains []string) error {
+	conn := db.GetConnection()
+	if len(domains) == 0 {
+		return nil
+	}
+
+	// 1. Получаем ID всех уникальных доменов из батча
+	uniqDomains := utils.OnlyUniqString(domains)
+	var blockLists []BlockList
+	if err := conn.Where("url IN ?", uniqDomains).Find(&blockLists).Error; err != nil {
+		return err
+	}
+
+	// Создаем карту url -> id для быстрого поиска
+	domainMap := make(map[string]uint)
+	for _, bl := range blockLists {
+		domainMap[bl.Url] = bl.ID
+	}
+
+	// 2. Формируем список событий, сохраняя исходное количество запросов
+	var events []BlockDomainEvent
+	for _, domain := range domains {
+		if id, ok := domainMap[domain]; ok {
+			events = append(events, BlockDomainEvent{DomainId: id})
+		}
+	}
+
+	if len(events) == 0 {
+		return nil
+	}
+
+	// 3. Пакетная вставка
+	return conn.CreateInBatches(events, 100).Error
+}
+
 func DeleteOlderThan(days int) error {
 	conn := db.GetConnection()
 	cutoff := time.Now().AddDate(0, 0, -days)

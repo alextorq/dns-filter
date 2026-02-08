@@ -2,27 +2,64 @@ package blocked_domain_use_cases_block_domain
 
 import (
 	"fmt"
+	"time"
+
 	blacklists "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
 	dnsLib "github.com/miekg/dns"
 )
 
-func BlockDomain(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
-	go func() {
-		l := logger.GetLogger()
-		first := r.Question[0]
-		domain := first.Name
-		l.Debug("blocked:", domain)
+const (
+	batchSize     = 100
+	flushInterval = 20 * time.Second
+	chanSize      = 5000
+)
 
-		record, err := blacklists.GetDomainByName(domain)
-		if err != nil {
-			l.Error(fmt.Errorf("error get domain record from db %s: %w", domain, err))
+var eventChan = make(chan string, chanSize)
+
+func StartWorker() {
+	l := logger.GetLogger()
+	buffer := make([]string, 0, batchSize)
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+
+	saveFunc := func() {
+		if len(buffer) == 0 {
 			return
 		}
-
-		err = blacklists.CreateBlockDomainEvent(record.ID)
-		if err != nil {
-			l.Error(fmt.Errorf("error save block domain event %s: %w", domain, err))
+		if err := blacklists.BatchCreateBlockDomainEvents(buffer); err != nil {
+			l.Error(fmt.Errorf("error processing batch block events: %w", err))
 		}
-	}()
+		// Очищаем буфер, сохраняя capacity
+		buffer = buffer[:0]
+	}
+
+	l.Info("Block event worker started")
+
+	for {
+		select {
+		case domain := <-eventChan:
+			buffer = append(buffer, domain)
+			if len(buffer) >= batchSize {
+				saveFunc()
+			}
+		case <-ticker.C:
+			saveFunc()
+		}
+	}
+}
+
+func BlockDomain(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
+	if len(r.Question) == 0 {
+		return
+	}
+	first := r.Question[0]
+	domain := first.Name
+
+	select {
+	case eventChan <- domain:
+	default:
+		// Если канал переполнен, лучше потерять лог, чем заблокировать DNS запрос
+		logger.GetLogger().Warn("Block event channel full, dropping event for: " + domain)
+	}
 }

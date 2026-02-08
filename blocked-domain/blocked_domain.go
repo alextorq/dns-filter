@@ -15,6 +15,10 @@ func ClearOldEvent() {
 	blocked_domain_use_cases_clear_events.ClearEvent()
 }
 
+func StartEventWorker() {
+	go blocked_domain_use_cases_block_domain.StartWorker()
+}
+
 func BlockDomain(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
 	blocked_domain_use_cases_block_domain.BlockDomain(w, r)
 }

@@ -15,7 +15,7 @@ export type DNSRecord = {
 export type SuggestBlock = {
     id: number;
     domain: string;
-    reason: string;
+    reasons: string;
     score: number;
 }
 

@@ -92,8 +92,8 @@ const columns: TableColumn<SuggestBlock>[] = [
     accessorKey: 'reasons',
     header: () => h('div', 'Reason'),
     cell: (props) => {
-      return h('div', props.row.original.reasons.split('\n').map((reason: string) => {
-        return h('div', reason)
+      return h('ul', props.row.original.reasons.split('\n').map((reason: string) => {
+        return h('li', reason)
       }))
     }
   }, {

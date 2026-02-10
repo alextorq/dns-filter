@@ -11,7 +11,7 @@ useHead({
 
 let lastFetchController: AbortController | null = null
 
-const data = ref<SuggestBlock[]>([])
+const records = ref<SuggestBlock[]>([])
 const globalFilter = ref('')
 
 const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
@@ -33,7 +33,7 @@ const fetchData = async () => {
       active: true,
     }, lastFetchController.signal)
 
-    data.value = response.list
+    records.value = response.list
     pagination.value = {
       ...pagination.value,
       total: response.total,
@@ -49,7 +49,7 @@ const fetchData = async () => {
     console.error('Error fetching data:', error)
   }
 }
-
+const toast = useToast()
 const fetchWithLoading = createLoadingRequest(fetchData)
 
 const changeFilter = async () => {
@@ -61,8 +61,6 @@ const changePage = async (page: number) => {
   pagination.value.pageIndex = page - 1
   await fetchWithLoading()
 }
-const toast = useToast()
-
 onMounted(fetchWithLoading)
 
 const createDomain = async (item: SuggestBlock) => {
@@ -81,7 +79,7 @@ const createDomain = async (item: SuggestBlock) => {
       duration: 5000,
       color: 'error',
     })
-    console.log(e)
+    console.error('Error creating domain:', e)
   }
 }
 
@@ -114,8 +112,8 @@ const columns: TableColumn<SuggestBlock>[] = [
         h(UButton, {
           size: 'sm',
           color: 'primary',
-          onClick: () => {
-            createDomain(props.row.original)
+          onClick: async () => {
+            await createDomain(props.row.original)
           }
         }, () => 'Apply Domain'),
       ])
@@ -140,7 +138,7 @@ const columns: TableColumn<SuggestBlock>[] = [
           :loading="isLoading"
           empty="No data"
           v-model:pagination="pagination"
-          :data="data"
+          :data="records"
           :columns="columns"
           class="flex-1"
       />

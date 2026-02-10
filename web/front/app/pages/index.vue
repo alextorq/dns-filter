@@ -4,6 +4,10 @@ import {useComponentStatusWithLoading} from "~~/composables/use-component-status
 import {USwitch} from "#components";
 const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
 
+useHead({
+  title: 'Filter',
+})
+
 const status = ref(true)
 
 const fetchData = async () => {

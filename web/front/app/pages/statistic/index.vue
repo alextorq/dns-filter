@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import Char from "~/domain/char-by-domains/char.vue";
 import AllAmount from "~/domain/char-amount/char.vue";
+
+useHead({
+  title: 'Statistic',
+})
+
 </script>
 
 <template>

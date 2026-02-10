@@ -19,6 +19,10 @@ const pagination = ref({
   total: 0,
 })
 
+useHead({
+  title: 'Domains',
+})
+
 const fetchData = async () => {
   try {
     if (lastFetchController) lastFetchController.abort()

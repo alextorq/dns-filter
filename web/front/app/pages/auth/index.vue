@@ -2,7 +2,9 @@
 import * as z from 'zod'
 import type { FormSubmitEvent } from '@nuxt/ui'
 
-const toast = useToast()
+useHead({
+  title: 'Auth',
+})
 
 const fields = [{
   name: 'email',

@@ -5,6 +5,10 @@ import {useComponentStatusWithLoading} from "~~/composables/use-component-status
 import {UButton} from "#components";
 import {getErrorMessage} from "~~/utils/get-error-message";
 
+useHead({
+  title: 'Suggest',
+})
+
 let lastFetchController: AbortController | null = null
 
 const data = ref<SuggestBlock[]>([])
@@ -71,6 +75,12 @@ const createDomain = async (item: SuggestBlock) => {
       duration: 3000,
     })
   }catch (e) {
+    toast.add({
+      title: 'Error',
+      description: getErrorMessage(e),
+      duration: 5000,
+      color: 'error',
+    })
     console.log(e)
   }
 }

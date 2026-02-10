@@ -6,6 +6,11 @@ import {getErrorMessage} from "~~/utils/get-error-message";
 const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
 const toast = useToast()
 
+
+useHead({
+  title: 'Settings',
+})
+
 const getLogLevel = async () => {
   try {
     const data = await api.getLogLevel()

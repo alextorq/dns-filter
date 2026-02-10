@@ -13,6 +13,10 @@ const data = ref<SyncRecord[]>([])
 
 const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
 
+useHead({
+  title: 'Sources',
+})
+
 const pagination = ref({
   pageIndex: 0,
   pageSize: 12,

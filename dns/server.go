@@ -83,6 +83,8 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 	start := time.Now()
 	clientIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
+	s.Logger.Debug(w.RemoteAddr())
+	s.Logger.Debug(w.LocalAddr().String())
 
 	for _, q := range r.Question {
 		qtype := dns.TypeToString[q.Qtype]

@@ -2,6 +2,7 @@ package web
 
 import (
 	eventsWeb "github.com/alextorq/dns-filter/blocked-domain/web"
+	excludeClientsWeb "github.com/alextorq/dns-filter/clients/web"
 	dbWeb "github.com/alextorq/dns-filter/db/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
@@ -36,6 +37,9 @@ func CreateServer() *gin.Engine {
 
 	r.POST("/api/sources", syncWeb.GetAllSources)
 	r.POST("/api/sources/change-status", syncWeb.ChangeSourceActive)
+
+	r.POST("/api/exclude-clients", excludeClientsWeb.GetAllClients)
+	r.POST("/api/exclude-clients/add", excludeClientsWeb.AddClient)
 
 	r.GET("/api/config/db/download", dbWeb.DownloadDb)
 

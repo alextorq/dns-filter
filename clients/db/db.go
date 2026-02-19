@@ -58,6 +58,16 @@ func DeleteClient(id uint) error {
 	return nil
 }
 
+func GetClientById(id uint) (*ExcludeClient, error) {
+	con := database.GetConnection()
+	var client ExcludeClient
+	err := con.First(&client, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &client, nil
+}
+
 func UpdateClientIsActive(id uint, isActive bool) error {
 	con := database.GetConnection()
 	err := con.Model(&ExcludeClient{}).Where("id = ?", id).Update("active", isActive).Error

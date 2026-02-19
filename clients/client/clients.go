@@ -25,10 +25,10 @@ func GetClients() *ExcludeClient {
 	return clients
 }
 
-func (f *ExcludeClient) ClientExist(domain string) bool {
+func (f *ExcludeClient) ClientExist(client string) bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	_, ok := f.dictionary[domain]
+	_, ok := f.dictionary[client]
 	return ok
 }
 
@@ -42,4 +42,16 @@ func (f *ExcludeClient) UpdateClients(rows []string) *ExcludeClient {
 	f.dictionary = dictionary
 	f.mu.Unlock()
 	return f
+}
+
+func (f *ExcludeClient) AddClient(client string) {
+	f.mu.Lock()
+	f.dictionary[client] = true
+	f.mu.Unlock()
+}
+
+func (f *ExcludeClient) RemoveClient(client string) {
+	f.mu.Lock()
+	delete(f.dictionary, client)
+	f.mu.Unlock()
 }

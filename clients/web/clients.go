@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/alextorq/dns-filter/clients/db"
+	"github.com/alextorq/dns-filter/clients/use-cases/add"
+	"github.com/alextorq/dns-filter/clients/use-cases/remove"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/gin-gonic/gin"
 )
@@ -39,7 +41,7 @@ func AddClient(c *gin.Context) {
 		return
 	}
 
-	err := db.AddClient(req.UserId)
+	err := add.AddClient(req.UserId)
 	if err != nil {
 		c.JSON(500, gin.H{
 			"error": err.Error(),
@@ -96,7 +98,7 @@ func DeleteClient(c *gin.Context) {
 		return
 	}
 
-	err := db.DeleteClient(req.ID)
+	err := remove.RemoveClient(req.ID)
 	if err != nil {
 		c.JSON(500, gin.H{
 			"error": err.Error(),

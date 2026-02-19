@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	clients "github.com/alextorq/dns-filter/clients/client"
 	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/utils"
 	"github.com/miekg/dns"
@@ -80,17 +81,22 @@ func (s *DnsServer) GetFromCacheOrCreateRequest(question dns.Question, id uint16
 func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
+	cl := clients.GetClients()
 
 	start := time.Now()
 	clientIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
-	s.Logger.Debug(w.RemoteAddr())
-	s.Logger.Debug(w.LocalAddr().String())
 
 	for _, q := range r.Question {
 		qtype := dns.TypeToString[q.Qtype]
 		qname := q.Name
 
-		if s.Filter(qname) {
+		useFilter := s.Filter(qname)
+		if cl.ClientExist(clientIP) {
+			useFilter = false
+			s.Logger.Debug("Клиент: ", clientIP, "из списка разрешённых")
+		}
+
+		if useFilter {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
 			s.Handlers.Blocked(w, r)

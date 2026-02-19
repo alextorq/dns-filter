@@ -26,6 +26,16 @@ func GetAllClients() ([]ExcludeClient, error) {
 	return clients, nil
 }
 
+func GetAllActiveClients() ([]ExcludeClient, error) {
+	con := database.GetConnection()
+	var clients []ExcludeClient
+	err := con.Where("active = ?", true).Find(&clients).Error
+	if err != nil {
+		return nil, err
+	}
+	return clients, nil
+}
+
 func AddClient(userId string) error {
 	con := database.GetConnection()
 	client := ExcludeClient{
@@ -33,6 +43,24 @@ func AddClient(userId string) error {
 		Active: true,
 	}
 	err := con.Create(&client).Error
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func DeleteClient(id uint) error {
+	con := database.GetConnection()
+	err := con.Delete(&ExcludeClient{}, id).Error
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func UpdateClientIsActive(id uint, isActive bool) error {
+	con := database.GetConnection()
+	err := con.Model(&ExcludeClient{}).Where("id = ?", id).Update("active", isActive).Error
 	if err != nil {
 		return err
 	}

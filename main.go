@@ -4,11 +4,13 @@ import (
 	allow_domain "github.com/alextorq/dns-filter/allow-domain"
 	blocked_domain "github.com/alextorq/dns-filter/blocked-domain"
 	"github.com/alextorq/dns-filter/cache"
+	"github.com/alextorq/dns-filter/clients"
 	"github.com/alextorq/dns-filter/db/migrate"
 	"github.com/alextorq/dns-filter/dns"
 	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/source"
+	suggest_to_block "github.com/alextorq/dns-filter/suggest-to-block"
 	usecases "github.com/alextorq/dns-filter/use-cases"
 	"github.com/alextorq/dns-filter/web"
 	dnsLib "github.com/miekg/dns"
@@ -32,13 +34,15 @@ func main() {
 	}
 
 	err = filter.UpdateFilterFromDb()
+	clients.UpdateClients()
+
 	if err != nil {
 		panic(err)
 	}
 
 	go blocked_domain.ClearOldEvent()
 	go allow_domain.ClearOldEvent()
-	// go suggest_to_block.StartCollectSuggest()
+	go suggest_to_block.StartCollectSuggest()
 	blocked_domain.StartEventWorker()
 
 	chanLogger := logger.GetLogger()

@@ -198,6 +198,21 @@ export class Api {
         const {data} = await this.transport.post<ExcludeClient>(`/exclude-clients/add`, payload);
         return data;
     }
+
+    async changeClientStatus(id: number, active: boolean) {
+        const {data} = await this.transport.post<{status: string}>(`/exclude-clients/change-status`, {
+            is_active: active,
+            id: id
+        });
+        return data;
+    }
+
+    async deleteClient(id: number) {
+        const {data} = await this.transport.post<{status: string}>(`/exclude-clients/delete`, {
+            id: id
+        });
+        return data;
+    }
 }
 
 

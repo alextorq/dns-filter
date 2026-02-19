@@ -40,6 +40,8 @@ func CreateServer() *gin.Engine {
 
 	r.POST("/api/exclude-clients", excludeClientsWeb.GetAllClients)
 	r.POST("/api/exclude-clients/add", excludeClientsWeb.AddClient)
+	r.POST("/api/exclude-clients/change-status", excludeClientsWeb.ChangeClientStatus)
+	r.POST("/api/exclude-clients/delete", excludeClientsWeb.DeleteClient)
 
 	r.GET("/api/config/db/download", dbWeb.DownloadDb)
 

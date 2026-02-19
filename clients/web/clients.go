@@ -50,3 +50,60 @@ func AddClient(c *gin.Context) {
 		"status": "ok",
 	})
 }
+
+type ChangeClientStatusRequest struct {
+	ID       uint `json:"id"`
+	IsActive bool `json:"is_active"`
+}
+
+func ChangeClientStatus(c *gin.Context) {
+	var req ChangeClientStatusRequest
+	l := logger.GetLogger()
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		l.Error(fmt.Errorf("error bind json when change record: %w", err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	err := db.UpdateClientIsActive(req.ID, req.IsActive)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+	c.JSON(200, gin.H{
+		"status": "ok",
+	})
+}
+
+type DeleteClientRequest struct {
+	ID uint `json:"id"`
+}
+
+func DeleteClient(c *gin.Context) {
+	var req DeleteClientRequest
+	l := logger.GetLogger()
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		l.Error(fmt.Errorf("error bind json when change record: %w", err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	err := db.DeleteClient(req.ID)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+	c.JSON(200, gin.H{
+		"status": "ok",
+	})
+}

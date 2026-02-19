@@ -4,6 +4,8 @@ import {api, type ExcludeClient} from "~/api";
 import {useComponentStatusWithLoading} from "~~/composables/use-component-status-with-loading";
 import {getErrorMessage} from "~~/utils/get-error-message";
 import AddClientModal from "./components/add-client-modal.vue";
+import ChangeClientStatus from "./components/change-client-status.vue";
+import DeleteClient from "./components/delete-client.vue";
 
 const toast = useToast()
 
@@ -58,6 +60,28 @@ const changePage = async (page: number) => {
 
 onMounted(fetchWithLoading)
 
+const updateActiveStatus = (item: ExcludeClient) => {
+  try {
+    const index = data.value.findIndex(record => record.id === item.id)
+    if (index !== -1) {
+      data.value.splice(index, 1, item)
+    }
+  } catch (error) {
+    console.error('Error updating status:', error)
+  }
+}
+
+const deleteClient = (item: ExcludeClient) => {
+  try {
+    const index = data.value.findIndex(record => record.id === item.id)
+    if (index !== -1) {
+      data.value.splice(index, 1)
+    }
+  } catch (error) {
+    console.error('Error deleting client:', error)
+  }
+}
+
 const columns: TableColumn<ExcludeClient>[] = [
   {
     accessorKey: 'id',
@@ -97,17 +121,29 @@ const columns: TableColumn<ExcludeClient>[] = [
     accessorKey: 'active',
     header: 'Active',
     cell: ({ row }) => {
-      return row.getValue('active') ? 'Yes' : 'No'
+      return h(ChangeClientStatus, {
+        record: row.original,
+        onUpdate: updateActiveStatus,
+      })
+    }
+  },
+  {
+    id: 'actions',
+    header: '',
+    cell: ({ row }) => {
+      return h(DeleteClient, {
+        record: row.original,
+        onDelete: deleteClient,
+      })
     }
   }
 ]
-
 </script>
 
 <template>
   <UContainer>
     <div class="w-full space-y-4 pb-4">
-      <div class="flex justify-end">
+      <div class="flex px-4 py-3.5 justify-end border-b border-accented">
         <AddClientModal @success="fetchWithLoading" />
       </div>
 

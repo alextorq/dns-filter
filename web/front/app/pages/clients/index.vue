@@ -3,7 +3,7 @@ import type { TableColumn } from '@nuxt/ui'
 import {api, type ExcludeClient} from "~/api";
 import {useComponentStatusWithLoading} from "~~/composables/use-component-status-with-loading";
 import {getErrorMessage} from "~~/utils/get-error-message";
-import AddClientModal from "~/pages/clients/components/add-client-modal.vue";
+import AddClientModal from "./components/add-client-modal.vue";
 
 const toast = useToast()
 

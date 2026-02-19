@@ -12,7 +12,7 @@ type ExcludeClient struct {
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
-	UserId    uint           `json:"user_id" gorm:"not null"`
+	UserId    string         `json:"user_id" gorm:"not null"`
 	Active    bool           `json:"active"`
 }
 
@@ -26,7 +26,7 @@ func GetAllClients() ([]ExcludeClient, error) {
 	return clients, nil
 }
 
-func AddClient(userId uint) error {
+func AddClient(userId string) error {
 	con := database.GetConnection()
 	client := ExcludeClient{
 		UserId: userId,

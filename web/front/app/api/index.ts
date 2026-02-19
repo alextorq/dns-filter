@@ -84,6 +84,29 @@ type SyncRecordsRequest = {
     offset: number;
 }
 
+export type ExcludeClient = {
+    id: number;
+    created_at: string;
+    updated_at: string;
+    deletedAt: string | null;
+    user_id: number;
+    active: boolean;
+}
+
+type ExcludeClientsResponse = {
+    list: ExcludeClient[];
+    total: number;
+}
+
+type ExcludeClientsRequest = {
+    limit: number;
+    offset: number;
+}
+
+type AddClientRequest = {
+    user_id: string;
+}
+
 export class Api {
     private transport: AxiosInstance;
 
@@ -164,6 +187,16 @@ export class Api {
             id: id
         });
         return data.record;
+    }
+
+    async getAllExcludeClients(payload: ExcludeClientsRequest, abortSignal: AbortSignal) {
+        const {data} = await this.transport.post<ExcludeClientsResponse>(`/exclude-clients`, payload, {signal: abortSignal});
+        return data;
+    }
+
+    async addExcludeClient(payload: AddClientRequest) {
+        const {data} = await this.transport.post<ExcludeClient>(`/exclude-clients/add`, payload);
+        return data;
     }
 }
 

@@ -15,12 +15,12 @@ const {status} = useComponentStatus()
 const validationError = ref('')
 
 const state = reactive({
-  user_id: 0
+  user_id: ''
 })
 
 const validation = (): string | null => {
-  if (state.user_id <= 0) {
-    return 'User ID must be a positive number.'
+  if (state.user_id.length <= 0) {
+    return 'User ID must be '
   }
   return null
 }
@@ -87,10 +87,9 @@ const onSubmit = async (e: Event) => {
               required>
             <UInput
                 size="xl"
-                type="number"
                 @change="validateUserId"
                 v-model="state.user_id"
-                placeholder="123"
+                placeholder="192.168.88.88"
                 required />
 
             <div v-if="validationError">

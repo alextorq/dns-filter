@@ -21,6 +21,11 @@ const items = ref([
     to: '/suggest',
   },
   {
+    label: 'Clients',
+    icon: 'i-lucide-user',
+    to: '/clients',
+  },
+  {
     label: 'Settings',
     icon: 'i-lucide-settings',
     to: '/settings',

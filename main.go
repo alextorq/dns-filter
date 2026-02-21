@@ -16,10 +16,14 @@ import (
 	dnsLib "github.com/miekg/dns"
 )
 
-type Handlers struct{}
+type Handlers struct {
+	allowHandler func(domain string)
+}
 
-func (h Handlers) Allowed(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
-	allow_domain.AllowDomain(w, r)
+func (h Handlers) Allowed(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
+	first := r.Question[0]
+	domain := first.Name
+	h.allowHandler(domain)
 }
 
 func (h Handlers) Blocked(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
@@ -48,8 +52,11 @@ func main() {
 	chanLogger := logger.GetLogger()
 	cacheWithMetric := cache.GetCacheWithMetric()
 	metricInstance := dns.CreateMetric()
-	handlers := Handlers{}
-	s := dns.CreateServer(chanLogger, cacheWithMetric, usecases.CheckBlock, metricInstance, handlers)
+	allowWorker := allow_domain.CreateAllowDomainEventStore(100)
+
+	s := dns.CreateServer(chanLogger, cacheWithMetric, usecases.CheckBlock, metricInstance, Handlers{
+		allowHandler: allowWorker.SendAllowDomainEvent,
+	})
 	web.CreateServer()
 	s.Serve()
 }

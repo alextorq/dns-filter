@@ -61,11 +61,24 @@ const changePage = async (page: number) => {
   pagination.value.pageIndex = page - 1
   await fetchWithLoading()
 }
+
+const currentPage = computed({
+  get: () => pagination.value.pageIndex + 1,
+  set: changePage
+})
+
 onMounted(fetchWithLoading)
 
 const createDomain = async (item: SuggestBlock) => {
   try {
     await api.addSuggestToBlock(item)
+
+    const newTotal = pagination.value.total - 1
+    const pageCount = Math.ceil(newTotal / pagination.value.pageSize) || 1
+    if (pagination.value.pageIndex >= pageCount) {
+      pagination.value.pageIndex = Math.max(0, pageCount - 1)
+    }
+
     await fetchWithLoading()
     toast.add({
       title: 'Success',
@@ -145,10 +158,9 @@ const columns: TableColumn<SuggestBlock>[] = [
 
       <div class="flex justify-center border-t border-default pt-4">
         <UPagination
-            :default-page="(pagination.pageIndex) + 1"
+            v-model="currentPage"
             :items-per-page="pagination.pageSize"
             :total="pagination.total"
-            @update:page="changePage"
         />
       </div>
     </div>

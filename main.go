@@ -18,6 +18,7 @@ import (
 
 type Handlers struct {
 	allowHandler func(domain string)
+	blockHandler func(domain string)
 }
 
 func (h Handlers) Allowed(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
@@ -26,8 +27,10 @@ func (h Handlers) Allowed(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
 	h.allowHandler(domain)
 }
 
-func (h Handlers) Blocked(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
-	blocked_domain.BlockDomain(w, r)
+func (h Handlers) Blocked(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
+	first := r.Question[0]
+	domain := first.Name
+	h.blockHandler(domain)
 }
 
 func main() {
@@ -47,15 +50,16 @@ func main() {
 	go blocked_domain.ClearOldEvent()
 	go allow_domain.ClearOldEvent()
 	go suggest_to_block.StartCollectSuggest()
-	blocked_domain.StartEventWorker()
 
 	chanLogger := logger.GetLogger()
 	cacheWithMetric := cache.GetCacheWithMetric()
 	metricInstance := dns.CreateMetric()
 	allowWorker := allow_domain.CreateAllowDomainEventStore(100)
+	blockWorker := blocked_domain.CreateBlockDomainEventStore(100)
 
 	s := dns.CreateServer(chanLogger, cacheWithMetric, usecases.CheckBlock, metricInstance, Handlers{
 		allowHandler: allowWorker.SendAllowDomainEvent,
+		blockHandler: blockWorker.SendBlockDomainEvent,
 	})
 	web.CreateServer()
 	s.Serve()

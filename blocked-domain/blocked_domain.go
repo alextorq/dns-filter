@@ -6,7 +6,6 @@ import (
 	blocked_domain_use_cases_create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
 	blocked_domain_use_cases_update_dns_record "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/update-dns-record"
 	"github.com/alextorq/dns-filter/blocked-domain/db"
-	dnsLib "github.com/miekg/dns"
 )
 
 // ===== Block Event Tracking (original blocked-domain functions) =====
@@ -15,12 +14,8 @@ func ClearOldEvent() {
 	blocked_domain_use_cases_clear_events.ClearEvent()
 }
 
-func StartEventWorker() {
-	go blocked_domain_use_cases_block_domain.StartWorker()
-}
-
-func BlockDomain(w dnsLib.ResponseWriter, r *dnsLib.Msg) {
-	blocked_domain_use_cases_block_domain.BlockDomain(w, r)
+func CreateBlockDomainEventStore(capacity int) *blocked_domain_use_cases_block_domain.BlockDomainEventStore {
+	return blocked_domain_use_cases_block_domain.CreateBlockDomainEventStore(capacity)
 }
 
 // ===== Blocklist Management (moved from dns-records) =====

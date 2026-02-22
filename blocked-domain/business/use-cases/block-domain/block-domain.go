@@ -6,58 +6,57 @@ import (
 
 	blacklists "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
-	dnsLib "github.com/miekg/dns"
 )
 
-const (
-	batchSize     = 100
-	flushInterval = 20 * time.Second
-	chanSize      = 5000
-)
+type BlockDomainEventStore struct {
+	buf      []string
+	ch       chan string
+	capacity int
+}
 
-var eventChan = make(chan string, chanSize)
-
-func StartWorker() {
-	l := logger.GetLogger()
-	buffer := make([]string, 0, batchSize)
-	ticker := time.NewTicker(flushInterval)
-	defer ticker.Stop()
-
-	saveFunc := func() {
-		if len(buffer) == 0 {
-			return
-		}
-		if err := blacklists.BatchCreateBlockDomainEvents(buffer); err != nil {
-			l.Error(fmt.Errorf("error processing batch block events: %w", err))
-		}
-		// Очищаем буфер, сохраняя capacity
-		buffer = buffer[:0]
+func CreateBlockDomainEventStore(capacity int) *BlockDomainEventStore {
+	s := &BlockDomainEventStore{
+		buf:      make([]string, 0),
+		ch:       make(chan string, 5000),
+		capacity: capacity,
 	}
 
-	l.Info("Block event worker started")
+	go s.start()
+
+	return s
+}
+
+func (e *BlockDomainEventStore) start() {
+	listen := func() {
+		domains := e.buf
+		e.buf = make([]string, 0, e.capacity)
+		err := blacklists.BatchCreateBlockDomainEvents(domains)
+		if err != nil {
+			l := logger.GetLogger()
+			l.Error(fmt.Errorf("error processing batch block events: %w", err))
+		}
+	}
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
-		case domain := <-eventChan:
-			buffer = append(buffer, domain)
-			if len(buffer) >= batchSize {
-				saveFunc()
+		case domain := <-e.ch:
+			e.buf = append(e.buf, domain)
+			if len(e.buf) >= e.capacity {
+				listen()
 			}
 		case <-ticker.C:
-			saveFunc()
+			if len(e.buf) != 0 {
+				listen()
+			}
 		}
 	}
 }
 
-func BlockDomain(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
-	if len(r.Question) == 0 {
-		return
-	}
-	first := r.Question[0]
-	domain := first.Name
-
+func (e *BlockDomainEventStore) SendBlockDomainEvent(domain string) {
 	select {
-	case eventChan <- domain:
+	case e.ch <- domain:
 	default:
 		// Если канал переполнен, лучше потерять лог, чем заблокировать DNS запрос
 		logger.GetLogger().Warn("Block event channel full, dropping event for: " + domain)

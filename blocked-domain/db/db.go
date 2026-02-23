@@ -112,20 +112,6 @@ func DomainNotExist(domain string) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
-func GetDomainByName(domain string) (BlockList, error) {
-	conn := db.GetConnection()
-	var blockList BlockList
-	err := conn.Where("url = ?", domain).First(&blockList).Error
-	return blockList, err
-}
-
-func GetAmountRecords() int64 {
-	conn := db.GetConnection()
-	var count int64
-	conn.Model(&BlockList{}).Count(&count)
-	return count
-}
-
 func CreateDNSRecordsByDomains(urls []string, source string) error {
 	conn := db.GetConnection()
 	const chunkSize = 500 // безопасный размер для SQLite (лимит 999)
@@ -189,19 +175,6 @@ func CreateDomain(domain string, source string) error {
 		Source: source,
 	}
 	return conn.Create(&newEntry).Error
-}
-
-func CreateBlockDomainEvent(domainId uint) error {
-	conn := db.GetConnection()
-
-	event := BlockDomainEvent{
-		DomainId: domainId,
-	}
-
-	if err := conn.Create(&event).Error; err != nil {
-		return err
-	}
-	return nil
 }
 
 func BatchCreateBlockDomainEvents(domains []string) error {

@@ -8,6 +8,7 @@ import (
 	"github.com/alextorq/dns-filter/logger"
 )
 
+// TODO after disable or enable domain clear cache
 func CheckCacheOrDb(domain string) bool {
 	c := cache.GetCache()
 	l := logger.GetLogger()

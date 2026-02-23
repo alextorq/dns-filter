@@ -2,6 +2,7 @@ package db
 
 import (
 	"github.com/alextorq/dns-filter/db"
+	"gorm.io/gorm/clause"
 )
 
 type SuggestBlock struct {
@@ -12,22 +13,17 @@ type SuggestBlock struct {
 	Active bool   `gorm:"default:true" json:"active"`
 }
 
-func CreateSuggestBlock(domain string, reason string, score int) error {
-	conn := db.GetConnection()
-	suggest := SuggestBlock{
-		Domain: domain,
-		Score:  score,
-		Reason: reason,
-	}
-	// Check for existing record to avoid duplicates
-	var existingSuggest SuggestBlock
-
-	if conn.Where("domain = ?", domain).Limit(1).Find(&existingSuggest).RowsAffected > 0 {
-		// Запись существует, ничего не делаем
+func CreateSuggestBlockBatch(suggests []SuggestBlock) error {
+	if len(suggests) == 0 {
 		return nil
 	}
-
-	return conn.Create(&suggest).Error
+	conn := db.GetConnection()
+	// clause.OnConflict{DoNothing: true} говорит БД:
+	// "Если запись с таким uniqueIndex уже есть, просто пропусти ее и не выдавай ошибку"
+	// Используем CreateInBatches для безопасной вставки больших объемов данных (SQLite limit)
+	return conn.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "domain"}},
+		DoNothing: true,
+	}).CreateInBatches(&suggests, 100).Error
 }
 
 func DeleteSuggestBlock(domain string) error {

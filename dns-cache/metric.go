@@ -1,8 +1,9 @@
-package cache
+package dns_cache
 
 import (
 	"sync"
 
+	lru_cache "github.com/alextorq/dns-filter/lru-cache"
 	"github.com/alextorq/dns-filter/metric"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,13 +38,13 @@ func init() {
 }
 
 type CacheWithMetrics struct {
-	inner *LRUCache
+	inner *lru_cache.LRUCache[*dns.Msg]
 	cap   int
 }
 
 func NewCacheWithMetrics(cap int) *CacheWithMetrics {
 	return &CacheWithMetrics{
-		inner: CreateCache(cap),
+		inner: lru_cache.CreateCache[*dns.Msg](cap),
 		cap:   cap,
 	}
 }

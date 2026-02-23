@@ -3,15 +3,14 @@ package main
 import (
 	allow_domain "github.com/alextorq/dns-filter/allow-domain"
 	blocked_domain "github.com/alextorq/dns-filter/blocked-domain"
-	"github.com/alextorq/dns-filter/cache"
 	"github.com/alextorq/dns-filter/clients"
 	"github.com/alextorq/dns-filter/db/migrate"
 	"github.com/alextorq/dns-filter/dns"
+	dns_cache "github.com/alextorq/dns-filter/dns-cache"
 	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/source"
 	suggest_to_block "github.com/alextorq/dns-filter/suggest-to-block"
-	usecases "github.com/alextorq/dns-filter/use-cases"
 	"github.com/alextorq/dns-filter/web"
 	dnsLib "github.com/miekg/dns"
 )
@@ -52,12 +51,12 @@ func main() {
 	go suggest_to_block.StartCollectSuggest()
 
 	chanLogger := logger.GetLogger()
-	cacheWithMetric := cache.GetCacheWithMetric()
+	cacheWithMetric := dns_cache.GetCacheWithMetric()
 	metricInstance := dns.CreateMetric()
 	allowWorker := allow_domain.CreateAllowDomainEventStore(100)
 	blockWorker := blocked_domain.CreateBlockDomainEventStore(100)
 
-	s := dns.CreateServer(chanLogger, cacheWithMetric, usecases.CheckBlock, metricInstance, Handlers{
+	s := dns.CreateServer(chanLogger, cacheWithMetric, filter.CheckExist, metricInstance, Handlers{
 		allowHandler: allowWorker.SendAllowDomainEvent,
 		blockHandler: blockWorker.SendBlockDomainEvent,
 	})

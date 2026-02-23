@@ -5,12 +5,18 @@ import (
 	"strconv"
 
 	blacklists "github.com/alextorq/dns-filter/blocked-domain/db"
-	filter_use_cases_change_filter_dns_records "github.com/alextorq/dns-filter/filter/business/use-cases/change-filter-dns-records"
+	filterusecaseschangefilterdnsrecords "github.com/alextorq/dns-filter/filter/business/use-cases/change-filter-dns-records"
+	checkexist "github.com/alextorq/dns-filter/filter/business/use-cases/check-exist"
+	filter2 "github.com/alextorq/dns-filter/filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 )
 
 func ChangeFilterDnsRecords() bool {
-	return filter_use_cases_change_filter_dns_records.ChangeFilterDnsRecords()
+	return filterusecaseschangefilterdnsrecords.ChangeFilterDnsRecords()
+}
+
+func CheckExist(domain string) bool {
+	return checkexist.CheckBlock(domain)
 }
 
 func UpdateFilterFromDb() error {
@@ -20,7 +26,7 @@ func UpdateFilterFromDb() error {
 	}
 	l := logger.GetLogger()
 	l.Info("Фильтр обновлён из БД, записей: " + strconv.Itoa(len(list)))
-	f := GetFilter()
+	f := filter2.GetFilter()
 	f.UpdateFilter(list)
 	return nil
 }

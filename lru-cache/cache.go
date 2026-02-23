@@ -1,26 +1,24 @@
-package cache
+package lru_cache
 
 import (
 	"container/list"
 	"sync"
-
-	"github.com/miekg/dns"
 )
 
-type entry struct {
+type entry[T any] struct {
 	key string
-	val *dns.Msg
+	val T
 }
 
-type LRUCache struct {
-	capacity int // максимальный размер
+type LRUCache[T any] struct {
+	capacity int // Максимальный размер
 	items    map[string]*list.Element
 	list     *list.List // двусвязный список (container/list)
-	mu       sync.Mutex // защита от гонок
+	mu       sync.Mutex // Защита от гонок
 }
 
-func CreateCache(capacity int) *LRUCache {
-	storage := LRUCache{
+func CreateCache[T any](capacity int) *LRUCache[T] {
+	storage := LRUCache[T]{
 		capacity: capacity,
 		list:     list.New(),
 		items:    make(map[string]*list.Element),
@@ -33,7 +31,7 @@ type AddReturn struct {
 	Size    int
 }
 
-func (c *LRUCache) Add(key string, val *dns.Msg) AddReturn {
+func (c *LRUCache[T]) Add(key string, val T) AddReturn {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	res := AddReturn{
@@ -43,11 +41,11 @@ func (c *LRUCache) Add(key string, val *dns.Msg) AddReturn {
 
 	if el, ok := c.items[key]; ok {
 		c.list.MoveToFront(el)
-		el.Value.(*entry).val = val // обновляем значение
+		el.Value.(*entry[T]).val = val // обновляем значение
 		res.Size = c.list.Len()
 		return res
 	}
-	first := c.list.PushFront(&entry{
+	first := c.list.PushFront(&entry[T]{
 		key: key,
 		val: val,
 	})
@@ -56,7 +54,7 @@ func (c *LRUCache) Add(key string, val *dns.Msg) AddReturn {
 	if c.list.Len() > c.capacity {
 		last := c.list.Back()
 		c.list.Remove(last)
-		delete(c.items, last.Value.(*entry).key)
+		delete(c.items, last.Value.(*entry[T]).key)
 		res.Evicted = true
 	}
 
@@ -64,24 +62,13 @@ func (c *LRUCache) Add(key string, val *dns.Msg) AddReturn {
 	return res
 }
 
-func (c *LRUCache) Get(key string) (*dns.Msg, bool) {
+func (c *LRUCache[T]) Get(key string) (T, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if item, found := c.items[key]; found {
 		c.list.MoveToFront(item)
-		return item.Value.(*entry).val, true
+		return item.Value.(*entry[T]).val, true
 	}
-	return nil, false
-}
-
-var (
-	globalCache *LRUCache
-	once        sync.Once
-)
-
-func GetCache() *LRUCache {
-	once.Do(func() {
-		globalCache = CreateCache(10000)
-	})
-	return globalCache
+	var zero T
+	return zero, false
 }

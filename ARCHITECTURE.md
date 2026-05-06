@@ -53,7 +53,7 @@ dns-filter/
 3. Проверяет IP клиента в списке исключений (`clients`)
 4. Если клиент НЕ в исключениях → вызывает `filter.CheckExist()`
 5. Если домен заблокирован → возвращает NXDOMAIN
-6. Если разрешён → запрашивает upstream (8.8.8.8:53 по умолчанию)
+6. Если разрешён → запрашивает upstream через DNS-over-HTTPS (Cloudflare DoH по умолчанию)
 7. Кэширует ответ в `dns-cache`
 8. Возвращает ответ клиенту
 
@@ -238,7 +238,7 @@ flowchart TB
     end
 
     subgraph Upstream["Upstream Resolver"]
-        Up["8.8.8.8:53<br/>или DoH"]
+        Up["Cloudflare DoH<br/>https://cloudflare-dns.com/dns-query"]
     end
 
     subgraph Persistence["Персистентность"]
@@ -299,7 +299,7 @@ sequenceDiagram
     participant BF as Bloom Filter
     participant Cache as Check Cache
     participant DB as blocked-domain DB
-    participant Up as Upstream (8.8.8.8:53)
+    participant Up as Upstream DoH
     participant DnsCache as DNS Cache
     participant Metric as Metrics
 
@@ -353,7 +353,8 @@ sequenceDiagram
 
 | Переменная | Описание | Значение по умолчанию |
 |------------|----------|----------------------|
-| `DNS_FILTER_UPSTREAM` | Upstream DNS сервер | `8.8.8.8:53` |
+| `DNS_FILTER_DOH_UPSTREAM` | Upstream DoH endpoint | `https://cloudflare-dns.com/dns-query` |
+| `DNS_FILTER_DOH_BOOTSTRAP_IPS` | IP-адреса DoH endpoint для подключения без системного DNS | `1.1.1.1,1.0.0.1` |
 | `DNS_FILTER_DBPATH` | Путь к SQLite | `./filter.sqlite` |
 | `DNS_FILTER_LOG_LEVEL` | Уровень логирования | `INFO` |
 | `DNS_FILTER_METRIC_ENABLE` | Включить метрики | `false` |

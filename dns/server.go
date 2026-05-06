@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -12,8 +13,6 @@ import (
 	"github.com/miekg/dns"
 )
 
-var conf = config.GetConfig()
-
 type DnsServer struct {
 	Address  string
 	Port     int
@@ -21,6 +20,7 @@ type DnsServer struct {
 	Logger   Logger
 	Cache    Cache
 	Filter   func(string2 string) bool
+	Upstream UpstreamResolver
 	Metric   Metric
 	Handlers DnsRequestHandlers
 }
@@ -50,7 +50,7 @@ type Filter interface {
 	CheckBlock(domain string) bool
 }
 
-func (s *DnsServer) GetFromCacheOrCreateRequest(question dns.Question, id uint16) (r *dns.Msg, err error) {
+func (s *DnsServer) GetFromCacheOrCreateRequest(ctx context.Context, question dns.Question, id uint16) (r *dns.Msg, err error) {
 	qtype := dns.TypeToString[question.Qtype]
 	name := question.Name
 	cacheKey := name + ":" + qtype
@@ -59,15 +59,15 @@ func (s *DnsServer) GetFromCacheOrCreateRequest(question dns.Question, id uint16
 	fromCache, found := s.Cache.Get(cacheKey)
 	if found {
 		s.Logger.Debug("Из кэша:", name, "Тип:", qtype)
-		// Возвращаем кэшированный ответ
-		return fromCache, nil
+		cached := fromCache.Copy()
+		cached.Id = id
+		return cached, nil
 	}
 
-	// Если не в блоклисте → ходим на апстрим
-	resp, err := dns.Exchange(&dns.Msg{
+	resp, err := s.Upstream.Exchange(ctx, &dns.Msg{
 		MsgHdr:   dns.MsgHdr{Id: id, RecursionDesired: true},
 		Question: []dns.Question{question},
-	}, conf.Upstream)
+	})
 
 	if err != nil {
 		return nil, err
@@ -102,11 +102,14 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			s.Handlers.Blocked(w, r)
 		} else {
 			s.Logger.Debug("Запрос:", qname, "Тип:", qtype)
-			resp, err := s.GetFromCacheOrCreateRequest(q, r.Id)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			resp, err := s.GetFromCacheOrCreateRequest(ctx, q, r.Id)
+			cancel()
 			if err != nil {
 				s.Logger.Error(fmt.Errorf("ошибка апстрима для %s: %w", qname, err))
 				m.Rcode = dns.RcodeServerFailure
 			} else {
+				m.Rcode = resp.Rcode
 				// Добавляем все ответы из апстрима в общий ответ
 				m.Answer = append(m.Answer, resp.Answer...)
 				m.Ns = append(m.Ns, resp.Ns...)
@@ -139,10 +142,16 @@ func (s *DnsServer) Serve() {
 }
 
 func CreateServer(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers) *DnsServer {
+	conf := config.GetConfig()
+	return CreateServerWithResolver(logger, cache, filter, metric, handlers, NewDoHResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...))
+}
+
+func CreateServerWithResolver(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers, upstream UpstreamResolver) *DnsServer {
 	return &DnsServer{
 		Logger:   logger,
 		Cache:    cache,
 		Filter:   filter,
+		Upstream: upstream,
 		Metric:   metric,
 		Handlers: handlers,
 	}

@@ -9,6 +9,9 @@ services:
       - "53:53/tcp"
       - "2112:2112/tcp"
       - "8080:8080/tcp"
+    environment:
+      - DNS_FILTER_DOH_UPSTREAM=https://cloudflare-dns.com/dns-query
+      - DNS_FILTER_DOH_BOOTSTRAP_IPS=1.1.1.1,1.0.0.1
     restart: unless-stopped
     volumes:
       - dns-filter-data:/app/data

@@ -8,7 +8,7 @@ sequenceDiagram
 autonumber
 participant C as Device (Client)
 participant DNS as Your DNS Server (Sinkhole)
-participant Upstream as Upstream DNS (Google, Cloudflare)
+participant Upstream as Upstream DoH (Cloudflare)
 participant Web as Legitimate Website
 participant Ad as Ad Server
 
@@ -36,6 +36,7 @@ participant Ad as Ad Server
 ## Features
 
 - DNS filtering with block lists
+- DNS-over-HTTPS upstream resolver
 - Web-based management interface (Vue.js frontend)
 - RESTful API (Go backend)
 - Event metrics (Prometheus)

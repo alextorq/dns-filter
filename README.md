@@ -1,4 +1,21 @@
+```
+██████╗ ███╗   ██╗███████╗      ███████╗██╗██╗  ████████╗███████╗██████╗ 
+██╔══██╗████╗  ██║██╔════╝      ██╔════╝██║██║  ╚══██╔══╝██╔════╝██╔══██╗
+██║  ██║██╔██╗ ██║███████╗█████╗█████╗  ██║██║     ██║   █████╗  ██████╔╝
+██║  ██║██║╚██╗██║╚════██║╚════╝██╔══╝  ██║██║     ██║   ██╔══╝  ██╔══██╗
+██████╔╝██║ ╚████║███████║      ██║     ██║███████╗██║   ███████╗██║  ██║
+╚═════╝ ╚═╝  ╚═══╝╚══════╝      ╚═╝     ╚═╝╚══════╝╚═╝   ╚══════╝╚═╝  ╚═╝
+```
+
 # DNS Filter
+
+[![Tests](https://github.com/alextorq/dns-filter/actions/workflows/test.yml/badge.svg)](https://github.com/alextorq/dns-filter/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/alextorq/dns-filter/branch/main/graph/badge.svg)](https://codecov.io/gh/alextorq/dns-filter)
+[![Go Report Card](https://goreportcard.com/badge/github.com/alextorq/dns-filter)](https://goreportcard.com/report/github.com/alextorq/dns-filter)
+[![Go version](https://img.shields.io/github/go-mod/go-version/alextorq/dns-filter)](https://github.com/alextorq/dns-filter/blob/main/go.mod)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Last commit](https://img.shields.io/github/last-commit/alextorq/dns-filter)](https://github.com/alextorq/dns-filter/commits/main)
+[![GitHub stars](https://img.shields.io/github/stars/alextorq/dns-filter?style=social)](https://github.com/alextorq/dns-filter/stargazers)
 
 it is simple dns service for block advertisement and malicious
 you need seed block domains and set it server like dns in your network
@@ -31,8 +48,29 @@ participant Ad as Ad Server
     Note left of Ad: Ad or tracker fails to load
 ```
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/alextorq/dns-filter/actions/workflows/test.yml/badge.svg)](https://github.com/alextorq/dns-filter/actions/workflows/test.yml)
+## Architecture
+
+The DNS path uses a three-tier check designed to keep the hot path off the database — most queries are answered without ever touching SQLite. Block/allow events are emitted asynchronously so DB writes never block the DNS reply.
+
+```mermaid
+flowchart TD
+    Q[DNS Query] --> CK{Client in<br/>exclusion list?}
+    CK -->|no| BF{Bloom filter<br/>10M elements<br/>0.1% false-positive}
+    BF -->|miss| DC{Response cache<br/>LRU 1500}
+    CK -->|yes| DC
+    BF -->|hit| LRU{Verdict cache<br/>LRU 1500}
+    LRU -->|allowed| DC
+    LRU -->|blocked| NX[NXDOMAIN]
+    LRU -->|miss| DB[(SQLite<br/>blocked_domain)]
+    DB -->|found| NX
+    DB -->|not found| DC
+    DC -->|hit| RESP[DNS response]
+    DC -->|miss| DOH[DoH upstream<br/>Cloudflare]
+    DOH --> RESP
+    NX -. async .-> EV[(events log)]
+    RESP -. async .-> EV
+```
+
 ## Features
 
 - DNS filtering with block lists

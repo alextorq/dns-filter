@@ -5,11 +5,6 @@ FROM golang:1.25-alpine AS backend-builder
 
 WORKDIR /app
 
-# Устанавливаем зависимости для CGO и SQLite
-RUN --mount=type=cache,target=/etc/apk/cache \
-    sed -i 's|dl-cdn.alpinelinux.org|mirror.yandex.ru|g' /etc/apk/repositories \
- && apk add gcc musl-dev
-
 # Скопируем go.mod и go.sum для кеширования зависимостей
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -28,7 +23,7 @@ RUN swag init -g main.go -o ./docs --parseDependency
 # Соберем бинарник
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 go build -ldflags "-X main.BuildTime=$(date -u +'%Y-%m-%d_%H:%M:%S')" -o dns-filter .
+    CGO_ENABLED=0 go build -ldflags "-X main.BuildTime=$(date -u +'%Y-%m-%d_%H:%M:%S')" -o dns-filter .
 
 
 # =========================

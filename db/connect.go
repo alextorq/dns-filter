@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/alextorq/dns-filter/config"
-	"gorm.io/driver/sqlite" // Sqlite driver based on CGO
+	"github.com/glebarez/sqlite" // Pure-Go SQLite driver (modernc.org/sqlite)
 	"gorm.io/gorm"
 )
 

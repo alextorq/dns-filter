@@ -6,9 +6,9 @@ import type {
     WebGetAllSuggestBlocksRequest,
 } from "./generated/data-contracts";
 
-export const API_HOST = import.meta.env.DEV ? "http://localhost:8080/api" : "/api";
+export const API_HOST = import.meta.env.DEV ? "http://192.168.88.62:8080/api" : "/api";
 
-const CLIENT_BASE_URL = import.meta.env.DEV ? "http://localhost:8080" : "";
+const CLIENT_BASE_URL = import.meta.env.DEV ? "http://192.168.88.62:8080" : "";
 
 class Api {
     private client = new GeneratedApi({ baseURL: CLIENT_BASE_URL });

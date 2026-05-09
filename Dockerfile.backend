@@ -6,7 +6,9 @@ FROM golang:1.25-alpine AS backend-builder
 WORKDIR /app
 
 # Устанавливаем зависимости для CGO и SQLite
-RUN apk add --no-cache gcc musl-dev
+RUN --mount=type=cache,target=/etc/apk/cache \
+    sed -i 's|dl-cdn.alpinelinux.org|mirror.yandex.ru|g' /etc/apk/repositories \
+ && apk add gcc musl-dev
 
 # Скопируем go.mod и go.sum для кеширования зависимостей
 COPY go.mod go.sum ./

@@ -13,22 +13,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetAllDnsRecords returns a paginated, filterable slice of the block list.
+// @Summary      List blocked DNS records
+// @Tags         dns-records
+// @Accept       json
+// @Produce      json
+// @Param        body body     GetAllDnsRecordsRequest true "Pagination and filtering"
+// @Success      200  {object} GetAllDnsRecordsResponse
+// @Failure      400  {object} ErrorResponse
+// @Failure      500  {object} ErrorResponse
+// @Router       /api/dns-records [post]
 func GetAllDnsRecords(c *gin.Context) {
 	l := logger.GetLogger()
-	type RequestBody struct {
-		Limit  int    `json:"limit"`
-		Offset int    `json:"offset"`
-		Filter string `json:"filter"`
-		Source string `json:"source"`
-	}
 
-	var req RequestBody
+	var req GetAllDnsRecordsRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		l.Error(fmt.Errorf("error bind json when change record: %w", err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
@@ -40,17 +42,25 @@ func GetAllDnsRecords(c *gin.Context) {
 	})
 	if err != nil {
 		l.Error(fmt.Errorf("error get dns records from db: %w", err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"list":  res.List,
-		"total": res.Total,
+	c.JSON(http.StatusOK, GetAllDnsRecordsResponse{
+		List:  res.List,
+		Total: res.Total,
 	})
 }
 
+// CreateDnsRecords adds a user-managed domain to the block list.
+// @Summary      Create a blocked DNS record
+// @Tags         dns-records
+// @Accept       json
+// @Produce      json
+// @Param        body body     create_domain.RequestBody true "Domain to block"
+// @Success      200  {object} MessageResponse
+// @Failure      400  {object} ErrorResponse
+// @Failure      500  {object} ErrorResponse
+// @Router       /api/dns-records/create [post]
 func CreateDnsRecords(c *gin.Context) {
 	l := logger.GetLogger()
 
@@ -58,9 +68,7 @@ func CreateDnsRecords(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		l.Error(fmt.Errorf("error bind json when change record: %w", err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
@@ -71,43 +79,44 @@ func CreateDnsRecords(c *gin.Context) {
 
 	if err != nil {
 		l.Error(fmt.Errorf("error create new dns record: %w", err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "domain created",
-	})
-
+	c.JSON(http.StatusOK, MessageResponse{Message: "domain created"})
 }
 
+// ChangeDnsRecordActive toggles the active flag on a block-list record.
+// @Summary      Update a blocked DNS record
+// @Tags         dns-records
+// @Accept       json
+// @Produce      json
+// @Param        body body     update_dns_record.UpdateBlockList true "Record id and target active state"
+// @Success      200  {object} UpdateDnsRecordResponse
+// @Failure      400  {object} ErrorResponse
+// @Failure      500  {object} ErrorResponse
+// @Router       /api/dns-records/update [post]
 func ChangeDnsRecordActive(c *gin.Context) {
 	l := logger.GetLogger()
 	var updateData update_dns_record.UpdateBlockList
 
 	if err := c.ShouldBindJSON(&updateData); err != nil {
 		l.Error(fmt.Errorf("error bind json when change record: %w", err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
 	record, err := blocked_domain.UpdateDnsRecord(updateData)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
 
 	l.Info("Record updated:")
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "record updated",
-		"record":  record,
+	c.JSON(http.StatusOK, UpdateDnsRecordResponse{
+		Message: "record updated",
+		Record:  record,
 	})
 }

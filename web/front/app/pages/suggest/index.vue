@@ -1,169 +1,180 @@
 <script setup lang="ts">
-import type { TableColumn,  } from '@nuxt/ui'
-import {api, type SuggestBlock} from "~/api";
-import {useComponentStatusWithLoading} from "~~/composables/use-component-status-with-loading";
-import {UButton} from "#components";
-import {getErrorMessage} from "~~/utils/get-error-message";
+import type { TableColumn } from "@nuxt/ui";
+import { api } from "~/api";
+import type { DbSuggestBlock } from "~/api/generated/data-contracts";
+import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
+import { UButton } from "#components";
+import { getErrorMessage } from "~~/utils/get-error-message";
 
 useHead({
-  title: 'Suggest',
-})
+    title: "Suggest",
+});
 
-let lastFetchController: AbortController | null = null
+let lastFetchController: AbortController | null = null;
 
-const records = ref<SuggestBlock[]>([])
-const globalFilter = ref('')
+const records = ref<DbSuggestBlock[]>([]);
+const globalFilter = ref("");
 
-const {isLoading, createLoadingRequest} = useComponentStatusWithLoading()
+const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
 
 const pagination = ref({
-  pageIndex: 0,
-  pageSize: 12,
-  total: 0,
-})
+    pageIndex: 0,
+    pageSize: 12,
+    total: 0,
+});
 
 const fetchData = async () => {
-  try {
-    if (lastFetchController) lastFetchController.abort()
-    lastFetchController = new AbortController()
-    const response = await api.getAllSuggestRecords({
-      limit: pagination.value.pageSize,
-      offset: pagination.value.pageIndex * pagination.value.pageSize || 0,
-      filter: globalFilter.value,
-      active: true,
-    }, lastFetchController.signal)
+    try {
+        if (lastFetchController) lastFetchController.abort();
+        lastFetchController = new AbortController();
+        const response = await api.getAllSuggestRecords(
+            {
+                limit: pagination.value.pageSize,
+                offset: pagination.value.pageIndex * pagination.value.pageSize || 0,
+                filter: globalFilter.value,
+                active: true,
+            },
+            lastFetchController.signal,
+        );
 
-    records.value = response.list
-    pagination.value = {
-      ...pagination.value,
-      total: response.total,
+        records.value = response.list ?? [];
+        pagination.value = {
+            ...pagination.value,
+            total: response.total ?? 0,
+        };
+    } catch (error) {
+        const message = getErrorMessage(error);
+        toast.add({
+            title: "Error",
+            description: message,
+            duration: 5000,
+            color: "error",
+        });
+        console.error("Error fetching data:", error);
     }
-  } catch (error) {
-    const message = getErrorMessage(error)
-    toast.add({
-      title: 'Error',
-      description: message,
-      duration: 5000,
-      color: 'error',
-    })
-    console.error('Error fetching data:', error)
-  }
-}
-const toast = useToast()
-const fetchWithLoading = createLoadingRequest(fetchData)
+};
+const toast = useToast();
+const fetchWithLoading = createLoadingRequest(fetchData);
 
 const changeFilter = async () => {
-  pagination.value.pageIndex = 0
-  await fetchWithLoading()
-}
+    pagination.value.pageIndex = 0;
+    await fetchWithLoading();
+};
 
 const changePage = async (page: number) => {
-  pagination.value.pageIndex = page - 1
-  await fetchWithLoading()
-}
+    pagination.value.pageIndex = page - 1;
+    await fetchWithLoading();
+};
 
 const currentPage = computed({
-  get: () => pagination.value.pageIndex + 1,
-  set: changePage
-})
+    get: () => pagination.value.pageIndex + 1,
+    set: changePage,
+});
 
-onMounted(fetchWithLoading)
+onMounted(fetchWithLoading);
 
-const createDomain = async (item: SuggestBlock) => {
-  try {
-    await api.addSuggestToBlock(item)
+const createDomain = async (item: DbSuggestBlock) => {
+    try {
+        await api.addSuggestToBlock(item);
 
-    const newTotal = pagination.value.total - 1
-    const pageCount = Math.ceil(newTotal / pagination.value.pageSize) || 1
-    if (pagination.value.pageIndex >= pageCount) {
-      pagination.value.pageIndex = Math.max(0, pageCount - 1)
+        const newTotal = pagination.value.total - 1;
+        const pageCount = Math.ceil(newTotal / pagination.value.pageSize) || 1;
+        if (pagination.value.pageIndex >= pageCount) {
+            pagination.value.pageIndex = Math.max(0, pageCount - 1);
+        }
+
+        await fetchWithLoading();
+        toast.add({
+            title: "Success",
+            description: "New domain was added.",
+            duration: 3000,
+        });
+    } catch (e) {
+        toast.add({
+            title: "Error",
+            description: getErrorMessage(e),
+            duration: 5000,
+            color: "error",
+        });
+        console.error("Error creating domain:", e);
     }
+};
 
-    await fetchWithLoading()
-    toast.add({
-      title: 'Success',
-      description: 'New domain was added.',
-      duration: 3000,
-    })
-  }catch (e) {
-    toast.add({
-      title: 'Error',
-      description: getErrorMessage(e),
-      duration: 5000,
-      color: 'error',
-    })
-    console.error('Error creating domain:', e)
-  }
-}
-
-const columns: TableColumn<SuggestBlock>[] = [
-  {
-    accessorKey: 'id',
-    header: 'id',
-  },
-  {
-    accessorKey: 'domain',
-    header: 'Domain'
-  },
-  {
-    accessorKey: 'score',
-    header: 'Score'
-  },
-  {
-    accessorKey: 'reasons',
-    header: () => h('div', 'Reason'),
-    cell: (props) => {
-      return h('ul', props.row.original.reasons.split('\n').map((reason: string) => {
-        return h('li', reason)
-      }))
-    }
-  }, {
-    accessorKey: '1',
-    header: () => h('div', 'Actions'),
-    cell: (props) => {
-      return h('div', [
-        h(UButton, {
-          size: 'sm',
-          color: 'primary',
-          onClick: async () => {
-            await createDomain(props.row.original)
-          }
-        }, () => 'Apply Domain'),
-      ])
-    }
-  }
-]
-
+const columns: TableColumn<DbSuggestBlock>[] = [
+    {
+        accessorKey: "id",
+        header: "id",
+    },
+    {
+        accessorKey: "domain",
+        header: "Domain",
+    },
+    {
+        accessorKey: "score",
+        header: "Score",
+    },
+    {
+        accessorKey: "reasons",
+        header: () => h("div", "Reason"),
+        cell: (props) => {
+            return h(
+                "ul",
+                (props.row.original.reasons ?? "").split("\n").map((reason: string) => {
+                    return h("li", reason);
+                }),
+            );
+        },
+    },
+    {
+        accessorKey: "1",
+        header: () => h("div", "Actions"),
+        cell: (props) => {
+            return h("div", [
+                h(
+                    UButton,
+                    {
+                        size: "sm",
+                        color: "primary",
+                        onClick: async () => {
+                            await createDomain(props.row.original);
+                        },
+                    },
+                    () => "Apply Domain",
+                ),
+            ]);
+        },
+    },
+];
 </script>
 
 <template>
-  <UContainer>
-      <div class="w-full space-y-4 pb-4">
-        <div class="flex px-4 py-3.5 justify-between border-b border-accented">
-          <UInput
-              @change="changeFilter"
-              v-model="globalFilter"
-              class="max-w-sm"
-              placeholder="Search" />
+    <UContainer>
+        <div class="w-full space-y-4 pb-4">
+            <div class="flex px-4 py-3.5 justify-between border-b border-accented">
+                <UInput
+                    v-model="globalFilter"
+                    class="max-w-sm"
+                    placeholder="Search"
+                    @change="changeFilter"
+                />
+            </div>
+
+            <UTable
+                v-model:pagination="pagination"
+                :loading="isLoading"
+                empty="No data"
+                :data="records"
+                :columns="columns"
+                class="flex-1"
+            />
+
+            <div class="flex justify-center border-t border-default pt-4">
+                <UPagination
+                    v-model="currentPage"
+                    :items-per-page="pagination.pageSize"
+                    :total="pagination.total"
+                />
+            </div>
         </div>
-
-        <UTable
-          :loading="isLoading"
-          empty="No data"
-          v-model:pagination="pagination"
-          :data="records"
-          :columns="columns"
-          class="flex-1"
-      />
-
-      <div class="flex justify-center border-t border-default pt-4">
-        <UPagination
-            v-model="currentPage"
-            :items-per-page="pagination.pageSize"
-            :total="pagination.total"
-        />
-      </div>
-    </div>
-  </UContainer>
-
+    </UContainer>
 </template>

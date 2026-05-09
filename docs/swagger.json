@@ -1,0 +1,1136 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "HTTP API for the DNS filter: managing block lists, sources, clients, suggestions and runtime config.",
+        "title": "DNS Filter API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/api/config/db/download": {
+            "get": {
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Download database file",
+                "responses": {
+                    "200": {
+                        "description": "filter.sqlite",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/logger/change-level": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Change log level",
+                "parameters": [
+                    {
+                        "description": "Target log level",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.UpdateConfigData"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_logger_web.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_logger_web.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/logger/get-level": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Get log level",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.LogLevelResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/dns-records": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dns-records"
+                ],
+                "summary": "List blocked DNS records",
+                "parameters": [
+                    {
+                        "description": "Pagination and filtering",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.GetAllDnsRecordsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.GetAllDnsRecordsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/dns-records/create": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dns-records"
+                ],
+                "summary": "Create a blocked DNS record",
+                "parameters": [
+                    {
+                        "description": "Domain to block",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/create_domain.RequestBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/dns-records/update": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dns-records"
+                ],
+                "summary": "Update a blocked DNS record",
+                "parameters": [
+                    {
+                        "description": "Record id and target active state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/update_dns_record.UpdateBlockList"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.UpdateDnsRecordResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events/block/amount": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Total block events",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.GetAmountResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events/block/amount-by-group": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Block events grouped by domain",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.GetAmountByDomainResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/exclude-clients": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exclude-clients"
+                ],
+                "summary": "List exclude clients",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.GetAllClientsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/exclude-clients/add": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exclude-clients"
+                ],
+                "summary": "Add exclude client",
+                "parameters": [
+                    {
+                        "description": "Client to add",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.AddClientRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.StatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.BadRequestResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/exclude-clients/change-status": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exclude-clients"
+                ],
+                "summary": "Change exclude-client active state",
+                "parameters": [
+                    {
+                        "description": "Target state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.ChangeClientStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.StatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.BadRequestResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/exclude-clients/delete": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exclude-clients"
+                ],
+                "summary": "Delete exclude client",
+                "parameters": [
+                    {
+                        "description": "Client id",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.DeleteClientRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.StatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.BadRequestResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/filter/change-status": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "filter"
+                ],
+                "summary": "Toggle the DNS filter",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.FilterStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/filter/status": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "filter"
+                ],
+                "summary": "Get filter status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.FilterStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/sources": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sources"
+                ],
+                "summary": "List block-list sources",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.GetAllSourcesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_source_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/sources/change-status": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sources"
+                ],
+                "summary": "Toggle a block-list source",
+                "parameters": [
+                    {
+                        "description": "Source id and target active state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.ChangeSourceActiveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.ChangeSourceActiveResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_source_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_source_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/suggest-to-block": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "suggest-to-block"
+                ],
+                "summary": "List suggested-to-block domains",
+                "parameters": [
+                    {
+                        "description": "Pagination and filtering",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.GetAllSuggestBlocksRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.GetAllSuggestBlocksResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/suggest-to-block/add-to-block": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "suggest-to-block"
+                ],
+                "summary": "Promote suggestion to block list",
+                "parameters": [
+                    {
+                        "description": "Suggestion id and domain",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.AddToBlockRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/suggest-to-block/change-status": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "suggest-to-block"
+                ],
+                "summary": "Toggle suggestion active state",
+                "parameters": [
+                    {
+                        "description": "Suggestion id and target active state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.ChangeSuggestStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "create_domain.RequestBody": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "db.BlockDomainEvent": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "domainId": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "db.BlockList": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "blocked-events": {
+                    "description": "One-to-Many",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/db.BlockDomainEvent"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deletedAt": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "db.BlockListSource": {
+            "type": "string",
+            "enum": [
+                "StevenBlack",
+                "EasyList",
+                "User",
+                "SuggestedToBlock"
+            ],
+            "x-enum-varnames": [
+                "SourceStevenBlack",
+                "SourceEasyList",
+                "SourceUser",
+                "SourceSuggestedToBlock"
+            ]
+        },
+        "db.DomainCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "domain": {
+                    "type": "string"
+                }
+            }
+        },
+        "db.ExcludeClient": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deletedAt": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "db.Source": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deletedAt": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "$ref": "#/definitions/db.BlockListSource"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "db.SuggestBlock": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "reasons": {
+                    "type": "string"
+                },
+                "score": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_blocked-domain_web.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_clients_web.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_logger_web.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_source_web.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_suggest-to-block_web.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "gorm.DeletedAt": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "type": "string"
+                },
+                "valid": {
+                    "description": "Valid is true if Time is not NULL",
+                    "type": "boolean"
+                }
+            }
+        },
+        "update_dns_record.UpdateBlockList": {
+            "type": "object",
+            "required": [
+                "id"
+            ],
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.AddClientRequest": {
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.AddToBlockRequest": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.BadRequestResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.ChangeClientStatusRequest": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "web.ChangeSourceActiveRequest": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.ChangeSourceActiveResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "record": {
+                    "$ref": "#/definitions/db.Source"
+                }
+            }
+        },
+        "web.ChangeSuggestStatusRequest": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.DeleteClientRequest": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.FilterStatusResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "web.GetAllClientsResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/db.ExcludeClient"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.GetAllDnsRecordsRequest": {
+            "type": "object",
+            "properties": {
+                "filter": {
+                    "type": "string"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.GetAllDnsRecordsResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/db.BlockList"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.GetAllSourcesResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/db.Source"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.GetAllSuggestBlocksRequest": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "filter": {
+                    "type": "string"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.GetAllSuggestBlocksResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/db.SuggestBlock"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.GetAmountByDomainResponse": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/db.DomainCount"
+                    }
+                }
+            }
+        },
+        "web.GetAmountResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.LogLevelResponse": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.StatusResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.UpdateConfigData": {
+            "type": "object",
+            "properties": {
+                "logLevel": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.UpdateDnsRecordResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "record": {
+                    "$ref": "#/definitions/db.BlockList"
+                }
+            }
+        }
+    }
+}

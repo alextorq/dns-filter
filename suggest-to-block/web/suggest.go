@@ -14,22 +14,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetAllSuggestBlocks lists collected domain suggestions awaiting moderation.
+// @Summary      List suggested-to-block domains
+// @Tags         suggest-to-block
+// @Accept       json
+// @Produce      json
+// @Param        body body     GetAllSuggestBlocksRequest true "Pagination and filtering"
+// @Success      200  {object} GetAllSuggestBlocksResponse
+// @Failure      400  {object} ErrorResponse
+// @Failure      500  {object} ErrorResponse
+// @Router       /api/suggest-to-block [post]
 func GetAllSuggestBlocks(c *gin.Context) {
 	l := logger.GetLogger()
-	type RequestBody struct {
-		Limit  int    `json:"limit"`
-		Offset int    `json:"offset"`
-		Filter string `json:"filter"`
-		Active *bool  `json:"active"`
-	}
 
-	var req RequestBody
+	var req GetAllSuggestBlocksRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		l.Error(fmt.Errorf("error bind json when getting suggest blocks: %w", err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
@@ -41,31 +43,33 @@ func GetAllSuggestBlocks(c *gin.Context) {
 	})
 	if err != nil {
 		l.Error(fmt.Errorf("error get suggest blocks from db: %w", err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"list":  res.List,
-		"total": res.Total,
+	c.JSON(http.StatusOK, GetAllSuggestBlocksResponse{
+		List:  res.List,
+		Total: res.Total,
 	})
 }
 
+// AddToBlock promotes a suggestion into the active block list.
+// @Summary      Promote suggestion to block list
+// @Tags         suggest-to-block
+// @Accept       json
+// @Produce      json
+// @Param        body body     AddToBlockRequest true "Suggestion id and domain"
+// @Success      200  {object} MessageResponse
+// @Failure      400  {object} ErrorResponse
+// @Failure      500  {object} ErrorResponse
+// @Router       /api/suggest-to-block/add-to-block [post]
 func AddToBlock(c *gin.Context) {
 	l := logger.GetLogger()
-	type RequestBody struct {
-		ID     uint   `json:"id"`
-		Domain string `json:"domain"`
-	}
 
-	var req RequestBody
+	var req AddToBlockRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		l.Error(fmt.Errorf("error bind json suggest block: %w", err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
@@ -76,18 +80,14 @@ func AddToBlock(c *gin.Context) {
 
 	if err != nil {
 		l.Error(fmt.Errorf("error change status suggest block: %w", err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
 
 	err = suggest_to_block.ChangeActiveStatus(req.ID, false)
 	if err != nil {
 		l.Error(fmt.Errorf("error change status suggest block: %w", err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
 
@@ -95,31 +95,31 @@ func AddToBlock(c *gin.Context) {
 
 	if err != nil {
 		l.Error(fmt.Errorf("error change status suggest block: %w", err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "suggest block add to blocklist",
-	})
+	c.JSON(http.StatusOK, MessageResponse{Message: "suggest block add to blocklist"})
 }
 
+// ChangeActiveStatus toggles a suggestion's active flag.
+// @Summary      Toggle suggestion active state
+// @Tags         suggest-to-block
+// @Accept       json
+// @Produce      json
+// @Param        body body     ChangeSuggestStatusRequest true "Suggestion id and target active state"
+// @Success      200  {object} MessageResponse
+// @Failure      400  {object} ErrorResponse
+// @Failure      500  {object} ErrorResponse
+// @Router       /api/suggest-to-block/change-status [post]
 func ChangeActiveStatus(c *gin.Context) {
 	l := logger.GetLogger()
-	type RequestBody struct {
-		ID     uint `json:"id"`
-		Active bool `json:"active"`
-	}
 
-	var req RequestBody
+	var req ChangeSuggestStatusRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		l.Error(fmt.Errorf("error bind json when change suggest block status: %w", err))
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
@@ -127,13 +127,9 @@ func ChangeActiveStatus(c *gin.Context) {
 
 	if err != nil {
 		l.Error(fmt.Errorf("error change suggest block status: %w", err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "suggest block status changed",
-	})
+	c.JSON(http.StatusOK, MessageResponse{Message: "suggest block status changed"})
 }

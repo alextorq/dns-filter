@@ -4,12 +4,15 @@ import (
 	eventsWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	excludeClientsWeb "github.com/alextorq/dns-filter/clients/web"
 	dbWeb "github.com/alextorq/dns-filter/db/web"
+	_ "github.com/alextorq/dns-filter/docs"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
 	syncWeb "github.com/alextorq/dns-filter/source/web"
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func CreateServer() *gin.Engine {
@@ -44,6 +47,8 @@ func CreateServer() *gin.Engine {
 	r.POST("/api/exclude-clients/delete", excludeClientsWeb.DeleteClient)
 
 	r.GET("/api/config/db/download", dbWeb.DownloadDb)
+
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	go func() {
 		r.Run(":8080")

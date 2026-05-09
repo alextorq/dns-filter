@@ -1,0 +1,732 @@
+basePath: /
+definitions:
+  create_domain.RequestBody:
+    properties:
+      domain:
+        type: string
+      source:
+        type: string
+    type: object
+  db.BlockDomainEvent:
+    properties:
+      created_at:
+        type: string
+      domainId:
+        type: integer
+      id:
+        type: integer
+    type: object
+  db.BlockList:
+    properties:
+      active:
+        type: boolean
+      blocked-events:
+        description: One-to-Many
+        items:
+          $ref: '#/definitions/db.BlockDomainEvent'
+        type: array
+      created_at:
+        type: string
+      deletedAt:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        type: integer
+      source:
+        type: string
+      updated_at:
+        type: string
+      url:
+        type: string
+    type: object
+  db.BlockListSource:
+    enum:
+    - StevenBlack
+    - EasyList
+    - User
+    - SuggestedToBlock
+    type: string
+    x-enum-varnames:
+    - SourceStevenBlack
+    - SourceEasyList
+    - SourceUser
+    - SourceSuggestedToBlock
+  db.DomainCount:
+    properties:
+      count:
+        type: integer
+      domain:
+        type: string
+    type: object
+  db.ExcludeClient:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      deletedAt:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  db.Source:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      deletedAt:
+        $ref: '#/definitions/gorm.DeletedAt'
+      id:
+        type: integer
+      name:
+        $ref: '#/definitions/db.BlockListSource'
+      updated_at:
+        type: string
+    type: object
+  db.SuggestBlock:
+    properties:
+      active:
+        type: boolean
+      domain:
+        type: string
+      id:
+        type: integer
+      reasons:
+        type: string
+      score:
+        type: integer
+    type: object
+  github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_blocked-domain_web.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_clients_web.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_logger_web.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_source_web.ErrorResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_suggest-to-block_web.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+  update_dns_record.UpdateBlockList:
+    properties:
+      active:
+        type: boolean
+      id:
+        type: integer
+    required:
+    - id
+    type: object
+  web.AddClientRequest:
+    properties:
+      user_id:
+        type: string
+    type: object
+  web.AddToBlockRequest:
+    properties:
+      domain:
+        type: string
+      id:
+        type: integer
+    type: object
+  web.BadRequestResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  web.ChangeClientStatusRequest:
+    properties:
+      id:
+        type: integer
+      is_active:
+        type: boolean
+    type: object
+  web.ChangeSourceActiveRequest:
+    properties:
+      active:
+        type: boolean
+      id:
+        type: integer
+    type: object
+  web.ChangeSourceActiveResponse:
+    properties:
+      message:
+        type: string
+      record:
+        $ref: '#/definitions/db.Source'
+    type: object
+  web.ChangeSuggestStatusRequest:
+    properties:
+      active:
+        type: boolean
+      id:
+        type: integer
+    type: object
+  web.DeleteClientRequest:
+    properties:
+      id:
+        type: integer
+    type: object
+  web.FilterStatusResponse:
+    properties:
+      status:
+        type: boolean
+    type: object
+  web.GetAllClientsResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/db.ExcludeClient'
+        type: array
+      total:
+        type: integer
+    type: object
+  web.GetAllDnsRecordsRequest:
+    properties:
+      filter:
+        type: string
+      limit:
+        type: integer
+      offset:
+        type: integer
+      source:
+        type: string
+    type: object
+  web.GetAllDnsRecordsResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/db.BlockList'
+        type: array
+      total:
+        type: integer
+    type: object
+  web.GetAllSourcesResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/db.Source'
+        type: array
+      total:
+        type: integer
+    type: object
+  web.GetAllSuggestBlocksRequest:
+    properties:
+      active:
+        type: boolean
+      filter:
+        type: string
+      limit:
+        type: integer
+      offset:
+        type: integer
+    type: object
+  web.GetAllSuggestBlocksResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/db.SuggestBlock'
+        type: array
+      total:
+        type: integer
+    type: object
+  web.GetAmountByDomainResponse:
+    properties:
+      groups:
+        items:
+          $ref: '#/definitions/db.DomainCount'
+        type: array
+    type: object
+  web.GetAmountResponse:
+    properties:
+      amount:
+        type: integer
+    type: object
+  web.LogLevelResponse:
+    properties:
+      level:
+        type: string
+    type: object
+  web.StatusResponse:
+    properties:
+      status:
+        type: string
+    type: object
+  web.UpdateConfigData:
+    properties:
+      logLevel:
+        type: string
+    type: object
+  web.UpdateDnsRecordResponse:
+    properties:
+      message:
+        type: string
+      record:
+        $ref: '#/definitions/db.BlockList'
+    type: object
+info:
+  contact: {}
+  description: 'HTTP API for the DNS filter: managing block lists, sources, clients,
+    suggestions and runtime config.'
+  title: DNS Filter API
+  version: "1.0"
+paths:
+  /api/config/db/download:
+    get:
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: filter.sqlite
+          schema:
+            type: file
+      summary: Download database file
+      tags:
+      - config
+  /api/config/logger/change-level:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Target log level
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.UpdateConfigData'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_logger_web.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_logger_web.MessageResponse'
+      summary: Change log level
+      tags:
+      - config
+  /api/config/logger/get-level:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.LogLevelResponse'
+      summary: Get log level
+      tags:
+      - config
+  /api/dns-records:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Pagination and filtering
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.GetAllDnsRecordsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.GetAllDnsRecordsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse'
+      summary: List blocked DNS records
+      tags:
+      - dns-records
+  /api/dns-records/create:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Domain to block
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/create_domain.RequestBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse'
+      summary: Create a blocked DNS record
+      tags:
+      - dns-records
+  /api/dns-records/update:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Record id and target active state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/update_dns_record.UpdateBlockList'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.UpdateDnsRecordResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse'
+      summary: Update a blocked DNS record
+      tags:
+      - dns-records
+  /api/events/block/amount:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.GetAmountResponse'
+      summary: Total block events
+      tags:
+      - events
+  /api/events/block/amount-by-group:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.GetAmountByDomainResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse'
+      summary: Block events grouped by domain
+      tags:
+      - events
+  /api/exclude-clients:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.GetAllClientsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: List exclude clients
+      tags:
+      - exclude-clients
+  /api/exclude-clients/add:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Client to add
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.AddClientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.StatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.BadRequestResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: Add exclude client
+      tags:
+      - exclude-clients
+  /api/exclude-clients/change-status:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Target state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.ChangeClientStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.StatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.BadRequestResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: Change exclude-client active state
+      tags:
+      - exclude-clients
+  /api/exclude-clients/delete:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Client id
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.DeleteClientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.StatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.BadRequestResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: Delete exclude client
+      tags:
+      - exclude-clients
+  /api/filter/change-status:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.FilterStatusResponse'
+      summary: Toggle the DNS filter
+      tags:
+      - filter
+  /api/filter/status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.FilterStatusResponse'
+      summary: Get filter status
+      tags:
+      - filter
+  /api/sources:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.GetAllSourcesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_source_web.ErrorResponse'
+      summary: List block-list sources
+      tags:
+      - sources
+  /api/sources/change-status:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Source id and target active state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.ChangeSourceActiveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.ChangeSourceActiveResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_source_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_source_web.ErrorResponse'
+      summary: Toggle a block-list source
+      tags:
+      - sources
+  /api/suggest-to-block:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Pagination and filtering
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.GetAllSuggestBlocksRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.GetAllSuggestBlocksResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse'
+      summary: List suggested-to-block domains
+      tags:
+      - suggest-to-block
+  /api/suggest-to-block/add-to-block:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Suggestion id and domain
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.AddToBlockRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse'
+      summary: Promote suggestion to block list
+      tags:
+      - suggest-to-block
+  /api/suggest-to-block/change-status:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Suggestion id and target active state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.ChangeSuggestStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse'
+      summary: Toggle suggestion active state
+      tags:
+      - suggest-to-block
+swagger: "2.0"

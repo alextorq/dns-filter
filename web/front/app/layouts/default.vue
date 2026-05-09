@@ -44,7 +44,10 @@ const onLogout = async () => {
 
 <template>
     <UApp>
-        <UHeader title="DNS FILTER" to="/">
+        <UHeader to="/">
+            <template #title>
+                <AppLogo />
+            </template>
             <UNavigationMenu :items="items" />
             <template #right>
                 <UColorModeButton />

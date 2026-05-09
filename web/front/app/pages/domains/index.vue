@@ -113,8 +113,8 @@ const columns: TableColumn<DbBlockList>[] = [
 </script>
 
 <template>
-    <UContainer>
-        <div class="w-full space-y-4 pb-4">
+    <div class="h-[calc(100vh-var(--ui-header-height))] flex flex-col">
+        <UContainer class="shrink-0 pt-4">
             <div class="flex px-4 py-3.5 justify-between border-b border-accented">
                 <div class="flex items-center space-x-3">
                     <UInput
@@ -141,16 +141,23 @@ const columns: TableColumn<DbBlockList>[] = [
                 </div>
                 <AddDomainModal />
             </div>
+        </UContainer>
 
-            <UTable
-                v-model:pagination="pagination"
-                :loading="isLoading"
-                empty="No data"
-                :data="data"
-                :columns="columns"
-                class="flex-1"
-            />
+        <div class="flex-1 min-h-0 overflow-auto">
+            <UContainer>
+                <UTable
+                    v-model:pagination="pagination"
+                    :loading="isLoading"
+                    sticky="header"
+                    empty="No data"
+                    :data="data"
+                    :columns="columns"
+                    :ui="{ root: 'relative' }"
+                />
+            </UContainer>
+        </div>
 
+        <UContainer class="shrink-0 pb-4">
             <div class="flex justify-center border-t border-default pt-4">
                 <UPagination
                     :default-page="pagination.pageIndex + 1"
@@ -159,6 +166,6 @@ const columns: TableColumn<DbBlockList>[] = [
                     @update:page="changePage"
                 />
             </div>
-        </div>
-    </UContainer>
+        </UContainer>
+    </div>
 </template>

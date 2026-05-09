@@ -73,7 +73,7 @@ onMounted(loadLogLevel);
 
             <UFormField label="Log level" name="level">
                 <USelect
-                    v-model="level!"
+                    v-model="level"
                     :loading="isLoading"
                     :disabled="isLoading || level === null"
                     size="lg"

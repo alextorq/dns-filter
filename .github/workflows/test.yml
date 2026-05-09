@@ -91,3 +91,6 @@ jobs:
 
       - name: Type check
         run: npx --yes nuxt typecheck
+
+      - name: Build
+        run: npm run build

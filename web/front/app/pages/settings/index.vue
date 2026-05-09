@@ -12,12 +12,12 @@ useHead({
 });
 
 const items = ["DEBUG", "INFO", "WARN", "ERROR"];
-const level = ref<string | null>(null);
+const level = ref<string | undefined>(undefined);
 
 const getLogLevel = async () => {
     try {
         const data = await api.getLogLevel();
-        level.value = data.level ?? null;
+        level.value = data.level ?? undefined;
     } catch (error) {
         toast.add({
             title: "Error",
@@ -75,7 +75,7 @@ onMounted(loadLogLevel);
                 <USelect
                     v-model="level"
                     :loading="isLoading"
-                    :disabled="isLoading || level === null"
+                    :disabled="isLoading || level === undefined"
                     size="lg"
                     class="max-w-xs"
                     :items="items"

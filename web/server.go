@@ -1,6 +1,7 @@
 package web
 
 import (
+	authWeb "github.com/alextorq/dns-filter/auth/web"
 	eventsWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	excludeClientsWeb "github.com/alextorq/dns-filter/clients/web"
 	dbWeb "github.com/alextorq/dns-filter/db/web"
@@ -19,34 +20,49 @@ func CreateServer() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode) // или gin.DebugMode
 	r := gin.Default()
 	//TODO: configure CORS
-	r.Use(cors.Default())
+	r.Use(cors.New(cors.Config{
+		AllowOriginFunc:  func(origin string) bool { return true },
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowCredentials: true,
+	}))
 
-	r.POST("/api/dns-records", eventsWeb.GetAllDnsRecords)
-	r.POST("/api/dns-records/create", eventsWeb.CreateDnsRecords)
-	r.POST("/api/dns-records/update", eventsWeb.ChangeDnsRecordActive)
+	// Public auth endpoints — login is the only way in.
+	r.POST("/api/auth/login", authWeb.Login)
 
-	r.GET("/api/filter/status", filterWeb.GetFilterStatus)
-	r.POST("/api/filter/change-status", filterWeb.ChangeFilterStatus)
+	// Everything else under /api/* requires a valid session.
+	api := r.Group("/api", authWeb.RequireAuth())
+	{
+		api.POST("/auth/logout", authWeb.Logout)
+		api.GET("/auth/me", authWeb.Me)
 
-	r.POST("/api/events/block/amount", eventsWeb.GetAmount)
-	r.POST("/api/events/block/amount-by-group", eventsWeb.GetAmountByDomain)
+		api.POST("/dns-records", eventsWeb.GetAllDnsRecords)
+		api.POST("/dns-records/create", eventsWeb.CreateDnsRecords)
+		api.POST("/dns-records/update", eventsWeb.ChangeDnsRecordActive)
 
-	r.POST("/api/suggest-to-block", suggestWeb.GetAllSuggestBlocks)
-	r.POST("/api/suggest-to-block/add-to-block", suggestWeb.AddToBlock)
-	r.POST("/api/suggest-to-block/change-status", suggestWeb.ChangeActiveStatus)
+		api.GET("/filter/status", filterWeb.GetFilterStatus)
+		api.POST("/filter/change-status", filterWeb.ChangeFilterStatus)
 
-	r.POST("/api/config/logger/change-level", loggerWeb.ChangeLogLevel)
-	r.POST("/api/config/logger/get-level", loggerWeb.GetLogLevel)
+		api.POST("/events/block/amount", eventsWeb.GetAmount)
+		api.POST("/events/block/amount-by-group", eventsWeb.GetAmountByDomain)
 
-	r.POST("/api/sources", syncWeb.GetAllSources)
-	r.POST("/api/sources/change-status", syncWeb.ChangeSourceActive)
+		api.POST("/suggest-to-block", suggestWeb.GetAllSuggestBlocks)
+		api.POST("/suggest-to-block/add-to-block", suggestWeb.AddToBlock)
+		api.POST("/suggest-to-block/change-status", suggestWeb.ChangeActiveStatus)
 
-	r.POST("/api/exclude-clients", excludeClientsWeb.GetAllClients)
-	r.POST("/api/exclude-clients/add", excludeClientsWeb.AddClient)
-	r.POST("/api/exclude-clients/change-status", excludeClientsWeb.ChangeClientStatus)
-	r.POST("/api/exclude-clients/delete", excludeClientsWeb.DeleteClient)
+		api.POST("/config/logger/change-level", loggerWeb.ChangeLogLevel)
+		api.POST("/config/logger/get-level", loggerWeb.GetLogLevel)
 
-	r.GET("/api/config/db/download", dbWeb.DownloadDb)
+		api.POST("/sources", syncWeb.GetAllSources)
+		api.POST("/sources/change-status", syncWeb.ChangeSourceActive)
+
+		api.POST("/exclude-clients", excludeClientsWeb.GetAllClients)
+		api.POST("/exclude-clients/add", excludeClientsWeb.AddClient)
+		api.POST("/exclude-clients/change-status", excludeClientsWeb.ChangeClientStatus)
+		api.POST("/exclude-clients/delete", excludeClientsWeb.DeleteClient)
+
+		api.GET("/config/db/download", dbWeb.DownloadDb)
+	}
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 

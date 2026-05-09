@@ -1,4 +1,6 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+declare const process: { env: Record<string, string | undefined> };
+
 export default defineNuxtConfig({
     compatibilityDate: "2025-07-15",
     ssr: false,
@@ -16,6 +18,12 @@ export default defineNuxtConfig({
     },
     nitro: {
         preset: "static",
+        devProxy: {
+            "/api": {
+                target: process.env.NUXT_DEV_API_TARGET || "http://192.168.88.62:8080/api",
+                changeOrigin: true,
+            },
+        },
     },
 
     // Указать, какие страницы нужно пререндерить

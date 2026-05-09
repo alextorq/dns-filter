@@ -78,6 +78,7 @@ onMounted(async () => {
     <div class="ops">
         <div class="ops__grid" aria-hidden="true"></div>
 
+        <UContainer class="ops__inner">
         <header class="ops__top">
             <div class="ops__top-left">
                 <span class="ops__sigil-mark">◆</span>
@@ -198,13 +199,14 @@ onMounted(async () => {
             <span class="ops__foot-mid">SINKHOLE · NXDOMAIN · UDP/TCP:53</span>
             <span>SRC: STEVENBLACK · EASYLIST · USER</span>
         </footer>
+        </UContainer>
     </div>
 </template>
 
 <style scoped>
 .ops {
     --bg: var(--ui-bg);
-    --bg-elev: var(--ui-bg-muted);
+    --bg-elev: var(--ui-bg-elevated);
     --bg-accent: var(--ui-bg-accented);
     --line: var(--ui-border);
     --line-soft: var(--ui-border-muted);
@@ -223,12 +225,19 @@ onMounted(async () => {
         var(--bg);
     color: var(--body);
     font-family: "Instrument Serif", "Times New Roman", Georgia, serif;
-    padding: clamp(1.25rem, 3.5vw, 2.75rem);
+    padding: clamp(1.25rem, 3vw, 2rem) 0;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+}
+
+.ops__inner {
     display: grid;
     grid-template-rows: auto 1fr auto auto;
     gap: clamp(1.25rem, 2.5vw, 2rem);
+    width: 100%;
     position: relative;
-    overflow: hidden;
+    z-index: 1;
 }
 
 .ops__grid {
@@ -498,6 +507,7 @@ onMounted(async () => {
     border: 1px solid var(--line);
     padding: clamp(1.25rem, 2.5vw, 2rem) clamp(1.25rem, 3vw, 2.5rem);
     position: relative;
+    box-shadow: 0 1px 0 0 color-mix(in srgb, var(--text) 4%, transparent);
 }
 
 .ops__panel-corner {

@@ -20,6 +20,11 @@ type Config struct {
 
 	MetricEnable bool
 	MetricPort   string
+
+	AdminLogin    string
+	AdminPassword string
+	CookieSecure  bool
+	CookieSameSite string
 }
 
 func (c *Config) UpdateLogLevel(l string) {
@@ -87,6 +92,11 @@ func GetConfig() *Config {
 
 			LogLevel: getEnv("DNS_FILTER_LOG_LEVEL", ""),
 			Enabled:  true,
+
+			AdminLogin:     os.Getenv("DNS_FILTER_ADMIN_LOGIN"),
+			AdminPassword:  os.Getenv("DNS_FILTER_ADMIN_PASSWORD"),
+			CookieSecure:   os.Getenv("DNS_FILTER_COOKIE_SECURE") == "true",
+			CookieSameSite: getEnv("DNS_FILTER_COOKIE_SAMESITE", "Lax"),
 		}
 	})
 

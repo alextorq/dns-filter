@@ -1,26 +1,18 @@
 <script setup lang="ts">
 import { API_HOST } from "~/api";
 import { downloadFile } from "~~/utils/download";
-const toast = useToast();
 
-const downloadDb = async () => {
-    try {
-        downloadFile(API_HOST + "/config/db/download", "db.sqlite"); // Use
-        toast.add({
-            title: "Success",
-            description: "Database download initiated.",
-            duration: 3000,
-        });
-    } catch (error) {
-        console.error("Error updating log level:", error);
-    }
+const downloadDb = () => {
+    downloadFile(API_HOST + "/config/db/download", "filter.sqlite");
 };
 </script>
 
 <template>
-    <div class="w-full space-y-4 pb-4">
-        <div class="flex px-4 py-3.5 justify-between border-b border-accented">
-            <UButton size="xl" @click="downloadDb">Download Database</UButton>
-        </div>
-    </div>
+    <UButton
+        size="lg"
+        icon="i-lucide-download"
+        variant="soft"
+        label="Download SQLite snapshot"
+        @click="downloadDb"
+    />
 </template>

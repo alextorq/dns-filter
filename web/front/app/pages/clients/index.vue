@@ -3,7 +3,9 @@ import type { TableColumn } from "@nuxt/ui";
 import { api } from "~/api";
 import type { DbExcludeClient } from "~/api/generated/data-contracts";
 import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
+import { formatDate } from "~~/utils/format-date";
 import { getErrorMessage } from "~~/utils/get-error-message";
+import { isAbortError } from "~~/utils/is-abort-error";
 import AddClientModal from "./components/add-client-modal.vue";
 import ChangeClientStatus from "./components/change-client-status.vue";
 import DeleteClient from "./components/delete-client.vue";
@@ -13,6 +15,7 @@ const toast = useToast();
 let lastFetchController: AbortController | null = null;
 
 const data = ref<DbExcludeClient[]>([]);
+const globalFilter = ref("");
 
 const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
 
@@ -26,6 +29,23 @@ const pagination = ref({
     total: 0,
 });
 
+const filtered = computed(() => {
+    const q = globalFilter.value.trim().toLowerCase();
+    if (!q) return data.value;
+    return data.value.filter((c) => (c.user_id ?? "").toLowerCase().includes(q));
+});
+
+const paginated = computed(() => {
+    const start = pagination.value.pageIndex * pagination.value.pageSize;
+    return filtered.value.slice(start, start + pagination.value.pageSize);
+});
+
+const filteredTotal = computed(() => filtered.value.length);
+
+watch(globalFilter, () => {
+    pagination.value.pageIndex = 0;
+});
+
 const fetchData = async () => {
     try {
         if (lastFetchController) lastFetchController.abort();
@@ -35,13 +55,13 @@ const fetchData = async () => {
         data.value = response.list ?? [];
         pagination.value = {
             ...pagination.value,
-            total: response.total ?? 0,
+            total: response.total ?? data.value.length,
         };
     } catch (error) {
-        const message = getErrorMessage(error);
+        if (isAbortError(error)) return;
         toast.add({
             title: "Error",
-            description: message,
+            description: getErrorMessage(error),
             duration: 5000,
             color: "error",
         });
@@ -51,89 +71,80 @@ const fetchData = async () => {
 
 const fetchWithLoading = createLoadingRequest(fetchData);
 
-const changePage = async (page: number) => {
+const changePage = (page: number) => {
     pagination.value.pageIndex = page - 1;
-    await fetchWithLoading();
 };
 
 onMounted(fetchWithLoading);
 
 const updateActiveStatus = (item: DbExcludeClient) => {
-    try {
-        const index = data.value.findIndex((record) => record.id === item.id);
-        if (index !== -1) {
-            data.value.splice(index, 1, item);
-        }
-    } catch (error) {
-        console.error("Error updating status:", error);
+    const index = data.value.findIndex((record) => record.id === item.id);
+    if (index !== -1) {
+        data.value.splice(index, 1, item);
     }
 };
 
 const deleteClient = (item: DbExcludeClient) => {
-    try {
-        const index = data.value.findIndex((record) => record.id === item.id);
-        if (index !== -1) {
-            data.value.splice(index, 1);
-        }
-    } catch (error) {
-        console.error("Error deleting client:", error);
+    const index = data.value.findIndex((record) => record.id === item.id);
+    if (index !== -1) {
+        data.value.splice(index, 1);
     }
+    toast.add({
+        title: "Deleted",
+        description: `${item.user_id} removed from exclusions.`,
+        duration: 3000,
+    });
 };
 
 const columns: TableColumn<DbExcludeClient>[] = [
     {
         accessorKey: "id",
         header: "ID",
+        meta: { class: { td: "tabular-nums text-muted" } },
     },
     {
         accessorKey: "user_id",
-        header: "User ID",
+        header: "Client IP",
+        cell: ({ row }) => {
+            const id = row.original.user_id ?? "";
+            return h("span", { class: "font-mono", title: id }, id);
+        },
     },
     {
         accessorKey: "created_at",
-        header: "Created At",
-        cell: ({ row }) => {
-            return new Date(row.getValue("created_at")).toLocaleString("en-En", {
-                day: "numeric",
-                month: "short",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-            });
-        },
+        header: "Created",
+        cell: ({ row }) => formatDate(row.getValue("created_at")),
     },
     {
         accessorKey: "updated_at",
-        header: "Updated At",
-        cell: ({ row }) => {
-            return new Date(row.getValue("updated_at")).toLocaleString("en-En", {
-                day: "numeric",
-                month: "short",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-            });
-        },
+        header: "Updated",
+        cell: ({ row }) => formatDate(row.getValue("updated_at")),
     },
     {
         accessorKey: "active",
-        header: "Active",
-        cell: ({ row }) => {
-            return h(ChangeClientStatus, {
-                record: row.original,
-                onUpdate: updateActiveStatus,
-            });
-        },
+        header: () => h("div", { class: "text-right" }, "Active"),
+        cell: ({ row }) =>
+            h(
+                "div",
+                { class: "flex justify-end" },
+                h(ChangeClientStatus, {
+                    record: row.original,
+                    onUpdate: updateActiveStatus,
+                }),
+            ),
     },
     {
         id: "actions",
         header: "",
-        cell: ({ row }) => {
-            return h(DeleteClient, {
-                record: row.original,
-                onDelete: deleteClient,
-            });
-        },
+        cell: ({ row }) =>
+            h(
+                "div",
+                { class: "flex justify-end" },
+                h(DeleteClient, {
+                    record: row.original,
+                    onDelete: deleteClient,
+                }),
+            ),
     },
 ];
 </script>
@@ -141,7 +152,13 @@ const columns: TableColumn<DbExcludeClient>[] = [
 <template>
     <div class="h-[calc(100vh-var(--ui-header-height))] flex flex-col">
         <UContainer class="shrink-0 pt-4">
-            <div class="flex px-4 py-3.5 justify-end border-b border-accented">
+            <div class="flex flex-wrap gap-3 px-4 py-3.5 justify-between items-center border-b border-accented">
+                <UInput
+                    v-model="globalFilter"
+                    class="max-w-sm"
+                    icon="i-lucide-search"
+                    placeholder="Search by IP"
+                />
                 <AddClientModal @success="fetchWithLoading" />
             </div>
         </UContainer>
@@ -149,11 +166,10 @@ const columns: TableColumn<DbExcludeClient>[] = [
         <div class="flex-1 min-h-0 overflow-auto">
             <UContainer>
                 <UTable
-                    v-model:pagination="pagination"
                     :loading="isLoading"
                     sticky="header"
-                    empty="No data"
-                    :data="data"
+                    empty="No clients"
+                    :data="paginated"
                     :columns="columns"
                     :ui="{ root: 'relative' }"
                 />
@@ -163,9 +179,10 @@ const columns: TableColumn<DbExcludeClient>[] = [
         <UContainer class="shrink-0 pb-4">
             <div class="flex justify-center border-t border-default pt-4">
                 <UPagination
+                    v-if="filteredTotal > pagination.pageSize"
                     :default-page="pagination.pageIndex + 1"
                     :items-per-page="pagination.pageSize"
-                    :total="pagination.total"
+                    :total="filteredTotal"
                     @update:page="changePage"
                 />
             </div>

@@ -2,6 +2,7 @@ package migrate
 
 import (
 	allow_domain_db "github.com/alextorq/dns-filter/allow-domain/db"
+	auth_db "github.com/alextorq/dns-filter/auth/db"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	exclude_clients "github.com/alextorq/dns-filter/clients/db"
 	"github.com/alextorq/dns-filter/db"
@@ -18,6 +19,8 @@ func Migrate() {
 		&allow_domain_db.AllowDomainEvent{},
 		&exclude_clients.ExcludeClient{},
 		&syncDb.Source{},
+		&auth_db.User{},
+		&auth_db.Session{},
 	)
 	if err != nil {
 		panic(err)

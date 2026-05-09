@@ -6,6 +6,7 @@ package main
 
 import (
 	allow_domain "github.com/alextorq/dns-filter/allow-domain"
+	authBusiness "github.com/alextorq/dns-filter/auth/business"
 	blocked_domain "github.com/alextorq/dns-filter/blocked-domain"
 	"github.com/alextorq/dns-filter/clients"
 	"github.com/alextorq/dns-filter/db/migrate"
@@ -38,6 +39,9 @@ func (h Handlers) Blocked(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
 
 func main() {
 	migrate.Migrate()
+	if err := authBusiness.BootstrapAdmin(); err != nil {
+		panic(err)
+	}
 	err := source.Sync()
 	if err != nil {
 		panic(err)
@@ -53,6 +57,7 @@ func main() {
 	go blocked_domain.ClearOldEvent()
 	go allow_domain.ClearOldEvent()
 	go suggest_to_block.StartCollectSuggest()
+	go authBusiness.ClearExpiredSessions()
 
 	chanLogger := logger.GetLogger()
 	cacheWithMetric := dns_cache.GetCacheWithMetric()

@@ -3,12 +3,16 @@ import type { TableColumn } from "@nuxt/ui";
 import { api } from "~/api";
 import type { DbSuggestBlock } from "~/api/generated/data-contracts";
 import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
+import { useDebounceFn } from "~~/composables/use-debounce-fn";
 import { UButton } from "#components";
 import { getErrorMessage } from "~~/utils/get-error-message";
+import { isAbortError } from "~~/utils/is-abort-error";
 
 useHead({
     title: "Suggest",
 });
+
+const toast = useToast();
 
 let lastFetchController: AbortController | null = null;
 
@@ -43,17 +47,17 @@ const fetchData = async () => {
             total: response.total ?? 0,
         };
     } catch (error) {
-        const message = getErrorMessage(error);
+        if (isAbortError(error)) return;
         toast.add({
             title: "Error",
-            description: message,
+            description: getErrorMessage(error),
             duration: 5000,
             color: "error",
         });
         console.error("Error fetching data:", error);
     }
 };
-const toast = useToast();
+
 const fetchWithLoading = createLoadingRequest(fetchData);
 
 const changeFilter = async () => {
@@ -61,32 +65,23 @@ const changeFilter = async () => {
     await fetchWithLoading();
 };
 
+const { debounced: debouncedFilter } = useDebounceFn(changeFilter, 300);
+watch(globalFilter, () => debouncedFilter());
+
 const changePage = async (page: number) => {
     pagination.value.pageIndex = page - 1;
     await fetchWithLoading();
 };
 
-const currentPage = computed({
-    get: () => pagination.value.pageIndex + 1,
-    set: changePage,
-});
-
 onMounted(fetchWithLoading);
 
-const createDomain = async (item: DbSuggestBlock) => {
+const blockDomain = async (item: DbSuggestBlock) => {
     try {
         await api.addSuggestToBlock(item);
-
-        const newTotal = pagination.value.total - 1;
-        const pageCount = Math.ceil(newTotal / pagination.value.pageSize) || 1;
-        if (pagination.value.pageIndex >= pageCount) {
-            pagination.value.pageIndex = Math.max(0, pageCount - 1);
-        }
-
         await fetchWithLoading();
         toast.add({
-            title: "Success",
-            description: "New domain was added.",
+            title: "Blocked",
+            description: `${item.domain} added to the blocklist.`,
             duration: 3000,
         });
     } catch (e) {
@@ -103,47 +98,57 @@ const createDomain = async (item: DbSuggestBlock) => {
 const columns: TableColumn<DbSuggestBlock>[] = [
     {
         accessorKey: "id",
-        header: "id",
+        header: "ID",
+        meta: { class: { td: "tabular-nums text-muted" } },
     },
     {
         accessorKey: "domain",
         header: "Domain",
-    },
-    {
-        accessorKey: "score",
-        header: "Score",
-    },
-    {
-        accessorKey: "reasons",
-        header: () => h("div", "Reason"),
-        cell: (props) => {
+        cell: ({ row }) => {
+            const domain = row.original.domain ?? "";
             return h(
-                "ul",
-                { class: "whitespace-normal break-words" },
-                (props.row.original.reasons ?? "").split("\n").map((reason: string) => {
-                    return h("li", reason);
-                }),
+                "span",
+                { class: "block max-w-[28ch] truncate font-mono", title: domain },
+                domain,
             );
         },
     },
     {
-        accessorKey: "1",
-        header: () => h("div", "Actions"),
-        cell: (props) => {
-            return h("div", [
+        accessorKey: "score",
+        header: "Score",
+        meta: { class: { td: "tabular-nums" } },
+    },
+    {
+        accessorKey: "reasons",
+        header: "Reason",
+        cell: ({ row }) =>
+            h(
+                "ul",
+                { class: "whitespace-normal break-words text-xs space-y-0.5" },
+                (row.original.reasons ?? "")
+                    .split("\n")
+                    .filter(Boolean)
+                    .map((reason: string) => h("li", reason)),
+            ),
+    },
+    {
+        id: "actions",
+        header: () => h("div", { class: "text-right" }, "Actions"),
+        cell: ({ row }) =>
+            h(
+                "div",
+                { class: "flex justify-end" },
                 h(
                     UButton,
                     {
                         size: "sm",
                         color: "primary",
-                        onClick: async () => {
-                            await createDomain(props.row.original);
-                        },
+                        icon: "i-lucide-shield-x",
+                        label: "Block",
+                        onClick: () => blockDomain(row.original),
                     },
-                    () => "Apply Domain",
                 ),
-            ]);
-        },
+            ),
     },
 ];
 </script>
@@ -155,8 +160,8 @@ const columns: TableColumn<DbSuggestBlock>[] = [
                 <UInput
                     v-model="globalFilter"
                     class="max-w-sm"
-                    placeholder="Search"
-                    @change="changeFilter"
+                    icon="i-lucide-search"
+                    placeholder="Search domain"
                 />
             </div>
         </UContainer>
@@ -167,7 +172,7 @@ const columns: TableColumn<DbSuggestBlock>[] = [
                     v-model:pagination="pagination"
                     :loading="isLoading"
                     sticky="header"
-                    empty="No data"
+                    empty="No suggested domains"
                     :data="records"
                     :columns="columns"
                     :ui="{ root: 'relative' }"
@@ -178,9 +183,11 @@ const columns: TableColumn<DbSuggestBlock>[] = [
         <UContainer class="shrink-0 pb-4">
             <div class="flex justify-center border-t border-default pt-4">
                 <UPagination
-                    v-model="currentPage"
+                    v-if="pagination.total > pagination.pageSize"
+                    :default-page="pagination.pageIndex + 1"
                     :items-per-page="pagination.pageSize"
                     :total="pagination.total"
+                    @update:page="changePage"
                 />
             </div>
         </UContainer>

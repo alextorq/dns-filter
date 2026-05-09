@@ -4,7 +4,9 @@ import { api } from "~/api";
 import type { DbSource } from "~/api/generated/data-contracts";
 import ChangeSyncStatus from "~/sync/change-sync-status/components/change-sync-status.vue";
 import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
+import { formatDate } from "~~/utils/format-date";
 import { getErrorMessage } from "~~/utils/get-error-message";
+import { isAbortError } from "~~/utils/is-abort-error";
 
 const toast = useToast();
 
@@ -36,10 +38,10 @@ const fetchData = async () => {
             total: response.total ?? 0,
         };
     } catch (error) {
-        const message = getErrorMessage(error);
+        if (isAbortError(error)) return;
         toast.add({
             title: "Error",
-            description: message,
+            description: getErrorMessage(error),
             duration: 5000,
             color: "error",
         });
@@ -57,33 +59,22 @@ const changePage = async (page: number) => {
 onMounted(fetchWithLoading);
 
 const updateActiveStatus = (item: DbSource) => {
-    try {
-        const index = data.value.findIndex((record) => record.id === item.id);
-        if (index !== -1) {
-            data.value.splice(index, 1, item);
-        }
-    } catch (error) {
-        console.error("Error updating status:", error);
+    const index = data.value.findIndex((record) => record.id === item.id);
+    if (index !== -1) {
+        data.value.splice(index, 1, item);
     }
 };
 
 const columns: TableColumn<DbSource>[] = [
     {
         accessorKey: "id",
-        header: "id",
+        header: "ID",
+        meta: { class: { td: "tabular-nums text-muted" } },
     },
     {
         accessorKey: "created_at",
-        header: "Date of creation",
-        cell: ({ row }) => {
-            return new Date(row.getValue("created_at")).toLocaleString("en-En", {
-                day: "numeric",
-                month: "short",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-            });
-        },
+        header: "Created",
+        cell: ({ row }) => formatDate(row.getValue("created_at")),
     },
     {
         accessorKey: "name",
@@ -92,16 +83,27 @@ const columns: TableColumn<DbSource>[] = [
     {
         accessorKey: "url",
         header: "URL",
+        cell: ({ row }) => {
+            const url = row.original.name ?? "";
+            return h(
+                "span",
+                { class: "block max-w-[36ch] truncate font-mono text-xs", title: url },
+                url,
+            );
+        },
     },
     {
         accessorKey: "active",
         header: () => h("div", { class: "text-right" }, "Active"),
-        cell: ({ row }) => {
-            return h(ChangeSyncStatus, {
-                record: row.original,
-                onUpdate: updateActiveStatus,
-            });
-        },
+        cell: ({ row }) =>
+            h(
+                "div",
+                { class: "flex justify-end" },
+                h(ChangeSyncStatus, {
+                    record: row.original,
+                    onUpdate: updateActiveStatus,
+                }),
+            ),
     },
 ];
 </script>
@@ -125,6 +127,7 @@ const columns: TableColumn<DbSource>[] = [
         <UContainer class="shrink-0 pb-4">
             <div class="flex justify-center border-t border-default pt-4">
                 <UPagination
+                    v-if="pagination.total > pagination.pageSize"
                     :default-page="pagination.pageIndex + 1"
                     :items-per-page="pagination.pageSize"
                     :total="pagination.total"

@@ -72,3 +72,15 @@ func (c *LRUCache[T]) Get(key string) (T, bool) {
 	var zero T
 	return zero, false
 }
+
+func (c *LRUCache[T]) Delete(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.items[key]
+	if !ok {
+		return false
+	}
+	c.list.Remove(el)
+	delete(c.items, key)
+	return true
+}

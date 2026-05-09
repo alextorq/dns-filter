@@ -3,6 +3,7 @@ import { api } from "~/api";
 import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
 import DownloadDb from "~/db/components/download-db/index.vue";
 import { getErrorMessage } from "~~/utils/get-error-message";
+
 const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
 const toast = useToast();
 
@@ -10,37 +11,43 @@ useHead({
     title: "Settings",
 });
 
+const items = ["DEBUG", "INFO", "WARN", "ERROR"];
+const level = ref<string | null>(null);
+
 const getLogLevel = async () => {
     try {
         const data = await api.getLogLevel();
-        level.value = data.level ?? "";
+        level.value = data.level ?? null;
     } catch (error) {
-        console.error("Error updating log level:", error);
+        toast.add({
+            title: "Error",
+            description: getErrorMessage(error),
+            duration: 5000,
+            color: "error",
+        });
+        console.error("Error loading log level:", error);
     }
 };
 
 const loadLogLevel = createLoadingRequest(getLogLevel);
 
-const items = ref(["DEBUG", "INFO", "WARN", "ERROR"]);
-const level = ref("");
-
 const changeLogLevel = async () => {
+    if (!level.value) return;
     try {
         await api.changeLogLevel(level.value);
         toast.add({
-            title: "Success",
-            description: "Log level was updated.",
+            title: "Saved",
+            description: `Log level set to ${level.value}.`,
             duration: 3000,
         });
     } catch (error) {
-        console.error("Error updating log level:", error);
-        const message = getErrorMessage(error);
         toast.add({
             title: "Error",
-            description: message,
+            description: getErrorMessage(error),
             duration: 5000,
             color: "error",
         });
+        console.error("Error updating log level:", error);
     }
 };
 
@@ -48,25 +55,47 @@ onMounted(loadLogLevel);
 </script>
 
 <template>
-    <UContainer>
-        <h2>Log Level</h2>
-        <div class="w-full space-y-4 pb-4">
-            <div class="flex px-4 py-3.5 justify-between border-b border-accented">
-                <USelect
-                    v-model="level"
-                    :loading="isLoading"
-                    size="xl"
-                    :items="items"
-                    @change="changeLogLevel"
-                />
-            </div>
-        </div>
+    <UContainer class="py-8 space-y-6">
+        <header class="space-y-1">
+            <h1 class="text-2xl font-semibold text-highlighted">Settings</h1>
+            <p class="text-sm text-muted">Runtime configuration for the resolver.</p>
+        </header>
 
-        <h2>Database</h2>
-        <div class="w-full space-y-4">
-            <div class="flex justify-between border-accented">
-                <DownloadDb></DownloadDb>
-            </div>
-        </div>
+        <UCard>
+            <template #header>
+                <div class="space-y-1">
+                    <h2 class="text-base font-semibold text-highlighted">Logging</h2>
+                    <p class="text-sm text-muted">
+                        Verbosity of the server log stream. Changes apply immediately.
+                    </p>
+                </div>
+            </template>
+
+            <UFormField label="Log level" name="level">
+                <USelect
+                    v-model="level!"
+                    :loading="isLoading"
+                    :disabled="isLoading || level === null"
+                    size="lg"
+                    class="max-w-xs"
+                    :items="items"
+                    @update:model-value="changeLogLevel"
+                />
+            </UFormField>
+        </UCard>
+
+        <UCard>
+            <template #header>
+                <div class="space-y-1">
+                    <h2 class="text-base font-semibold text-highlighted">Database</h2>
+                    <p class="text-sm text-muted">
+                        Export the SQLite database used by the filter (block lists, events,
+                        clients).
+                    </p>
+                </div>
+            </template>
+
+            <DownloadDb />
+        </UCard>
     </UContainer>
 </template>

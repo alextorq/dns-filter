@@ -5,13 +5,63 @@ import type {
     WebGetAllDnsRecordsRequest,
     WebGetAllSuggestBlocksRequest,
 } from "./generated/data-contracts";
+import { useAuth } from "~~/composables/use-auth";
 
-export const API_HOST = import.meta.env.DEV ? "http://192.168.88.62:8080/api" : "/api";
+// Nitro devProxy proxies /api to the backend, so we can always use relative URLs
+// — cookies are then treated as same-origin and SameSite=Lax just works.
+export const API_HOST = "/api";
 
-const CLIENT_BASE_URL = import.meta.env.DEV ? "http://192.168.88.62:8080" : "";
+const CLIENT_BASE_URL = "";
+
+export type CurrentUser = { id: number; login: string };
 
 class Api {
-    private client = new GeneratedApi({ baseURL: CLIENT_BASE_URL });
+    private client = new GeneratedApi({
+        baseURL: CLIENT_BASE_URL,
+        withCredentials: true,
+    });
+
+    constructor() {
+        this.client.instance.interceptors.response.use(
+            (response) => response,
+            (error) => {
+                const url: string = error?.config?.url ?? "";
+                const isAuthProbe = url.includes("/api/auth/");
+                if (error?.response?.status === 401 && !isAuthProbe) {
+                    void this.handleUnauthenticated();
+                }
+                return Promise.reject(error);
+            },
+        );
+    }
+
+    private handleUnauthenticated = async () => {
+        if (typeof window === "undefined") return;
+        if (window.location.pathname.startsWith("/auth")) return;
+        const nuxtApp = useNuxtApp();
+        await nuxtApp.runWithContext(() => {
+            const { setUnauthenticated } = useAuth();
+            setUnauthenticated();
+            return navigateTo("/auth");
+        });
+    };
+
+    login = async (login: string, password: string): Promise<CurrentUser> => {
+        const res = await this.client.instance.post<CurrentUser>("/api/auth/login", {
+            login,
+            password,
+        });
+        return res.data;
+    };
+
+    logout = async () => {
+        await this.client.instance.post("/api/auth/logout");
+    };
+
+    me = async (): Promise<CurrentUser> => {
+        const res = await this.client.instance.get<CurrentUser>("/api/auth/me");
+        return res.data;
+    };
 
     getAllDnsRecords = (payload: WebGetAllDnsRecordsRequest, abortSignal: AbortSignal) =>
         this.client.dnsRecordsCreate(payload, { signal: abortSignal });

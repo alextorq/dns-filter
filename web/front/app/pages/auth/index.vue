@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import * as z from "zod";
 import type { FormSubmitEvent } from "@nuxt/ui";
+import { getErrorMessage } from "~~/utils/get-error-message";
+import { useAuth } from "~~/composables/use-auth";
+
+definePageMeta({ layout: "auth" });
 
 useHead({
     title: "Auth",
@@ -8,10 +12,10 @@ useHead({
 
 const fields = [
     {
-        name: "email",
+        name: "login",
         type: "text" as const,
-        label: "Email",
-        placeholder: "Enter your email",
+        label: "Login",
+        placeholder: "Enter your login",
         required: true,
     },
     {
@@ -19,23 +23,32 @@ const fields = [
         label: "Password",
         type: "password" as const,
         placeholder: "Enter your password",
-    },
-    {
-        name: "remember",
-        label: "Remember me",
-        type: "checkbox" as const,
+        required: true,
     },
 ];
 
 const schema = z.object({
-    email: z.string().email("Invalid email"),
-    password: z.string().min(8, "Must be at least 8 characters"),
+    login: z.string().min(1, "Required"),
+    password: z.string().min(1, "Required"),
 });
 
 type Schema = z.output<typeof schema>;
 
-function onSubmit(payload: FormSubmitEvent<Schema>) {
-    console.log("Submitted", payload);
+const toast = useToast();
+const { login } = useAuth();
+
+async function onSubmit(payload: FormSubmitEvent<Schema>) {
+    try {
+        await login(payload.data.login, payload.data.password);
+        await navigateTo("/");
+    } catch (error) {
+        toast.add({
+            title: "Login failed",
+            description: getErrorMessage(error),
+            duration: 4000,
+            color: "error",
+        });
+    }
 }
 </script>
 

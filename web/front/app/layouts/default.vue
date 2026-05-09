@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAuth } from "~~/composables/use-auth";
+
 const items = ref([
     {
         label: "Domains",
@@ -31,12 +33,30 @@ const items = ref([
         to: "/settings",
     },
 ]);
+
+const { user, logout } = useAuth();
+
+const onLogout = async () => {
+    await logout();
+    await navigateTo("/auth");
+};
 </script>
 
 <template>
     <UApp>
-        <UHeader title="DNS FILTER">
+        <UHeader title="DNS FILTER" to="/">
             <UNavigationMenu :items="items" />
+            <template #right>
+                <UColorModeButton />
+                <UButton
+                    v-if="user"
+                    icon="i-lucide-log-out"
+                    variant="ghost"
+                    color="neutral"
+                    :label="user.login"
+                    @click="onLogout"
+                />
+            </template>
             <template #body>
                 <UNavigationMenu :items="items" />
             </template>

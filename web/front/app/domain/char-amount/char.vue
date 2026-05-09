@@ -1,29 +1,28 @@
 <script setup lang="ts">
-import {api} from '~/api';
-import {onMounted, ref} from 'vue';
+import { api } from "~/api";
+import { onMounted, ref } from "vue";
 
-const allAmount = ref(0)
+const allAmount = ref(0);
 
 const loadData = async () => {
-  return await api.getBlockDomainsAmount();
+    return await api.getBlockDomainsAmount();
 };
 
 const loadDataAndCreateChart = async () => {
-  const data = await loadData();
-  allAmount.value = data.amount;
+    const data = await loadData();
+    allAmount.value = data.amount ?? 0;
 };
 
-onMounted(loadDataAndCreateChart)
-
+onMounted(loadDataAndCreateChart);
 </script>
 
 <template>
-  {{ allAmount }}
+    {{ allAmount }}
 </template>
 
 <style scoped>
 canvas {
-  width: 400px;
-  height: 400px;
+    width: 400px;
+    height: 400px;
 }
 </style>

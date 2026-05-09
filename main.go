@@ -1,3 +1,7 @@
+// @title           DNS Filter API
+// @version         1.0
+// @description     HTTP API for the DNS filter: managing block lists, sources, clients, suggestions and runtime config.
+// @BasePath        /
 package main
 
 import (

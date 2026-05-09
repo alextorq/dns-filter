@@ -1,4 +1,4 @@
-import {ref} from "vue";
+import { ref } from "vue";
 
 export const useToggle = (initialValue: boolean = false) => {
     const isActive = ref(initialValue);
@@ -19,6 +19,6 @@ export const useToggle = (initialValue: boolean = false) => {
         openHandler,
         toggle,
         closeHandler,
-        isActive
+        isActive,
     };
-}
+};

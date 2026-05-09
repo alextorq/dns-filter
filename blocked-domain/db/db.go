@@ -229,8 +229,8 @@ func GetAmountRows() int64 {
 }
 
 type DomainCount struct {
-	Domain string
-	Count  int64
+	Domain string `json:"domain"`
+	Count  int64  `json:"count"`
 }
 
 func GetRowsByDomains() ([]DomainCount, error) {

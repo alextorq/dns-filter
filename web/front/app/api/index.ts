@@ -1,219 +1,72 @@
-import axios, {type AxiosInstance} from "axios";
+import { Api as GeneratedApi } from "./generated/Api";
+import type {
+    WebAddClientRequest,
+    WebAddToBlockRequest,
+    WebGetAllDnsRecordsRequest,
+    WebGetAllSuggestBlocksRequest,
+} from "./generated/data-contracts";
 
-export const API_HOST = import.meta.env.DEV 
-    ? "http://localhost:8080/api" 
-    : "/api"
+export const API_HOST = import.meta.env.DEV ? "http://192.168.88.62:8080/api" : "/api";
 
-export type DNSRecord = {
-    id: number;
-    active: boolean;
-    createdAt: string;
-    url: string;
-    source: string;
-}
+const CLIENT_BASE_URL = import.meta.env.DEV ? "http://192.168.88.62:8080" : "";
 
-export type SuggestBlock = {
-    id: number;
-    domain: string;
-    reasons: string;
-    score: number;
-}
+class Api {
+    private client = new GeneratedApi({ baseURL: CLIENT_BASE_URL });
 
-type DNSRecordsResponse = {
-    list: DNSRecord[];
-    total: number
-}
+    getAllDnsRecords = (payload: WebGetAllDnsRecordsRequest, abortSignal: AbortSignal) =>
+        this.client.dnsRecordsCreate(payload, { signal: abortSignal });
 
-type SuggestRecordsResponse = {
-    list: SuggestBlock[];
-    total: number
-}
+    getAllSuggestRecords = (payload: WebGetAllSuggestBlocksRequest, abortSignal: AbortSignal) =>
+        this.client.suggestToBlockCreate(payload, { signal: abortSignal });
 
-type DnsRecordsRequest = {
-    limit: number;
-    offset: number;
-    filter: string;
-    source: string;
-}
+    addSuggestToBlock = (params: WebAddToBlockRequest) =>
+        this.client.suggestToBlockAddToBlockCreate(params);
 
-type SuggestRecordsRequest = {
-    limit: number;
-    offset: number;
-    filter: string;
-    active: boolean | null;
-}
-
-
-type AddSuggestToBlockRequest = {
-    id: number;
-    domain: string;
-}
-
-type DNSRecordUpdateResponse = {
-    record: DNSRecord;
-}
-
-
-type FilterStatusResponse = {
-    status: boolean;
-}
-
-export type DomainBlockWithCount = {
-    Domain: string;
-    Count: number;
-}
-
-export type DomainsBlockGroup = {
-    groups: DomainBlockWithCount[];
-}
-
-export type SyncRecord = {
-    id: number;
-    active: boolean;
-    created_at: string;
-    name: string;
-}
-
-type SyncRecordsResponse = {
-    list: SyncRecord[];
-    total: number
-}
-
-type SyncRecordsRequest = {
-    limit: number;
-    offset: number;
-}
-
-export type ExcludeClient = {
-    id: number;
-    created_at: string;
-    updated_at: string;
-    deletedAt: string | null;
-    user_id: number;
-    active: boolean;
-}
-
-type ExcludeClientsResponse = {
-    list: ExcludeClient[];
-    total: number;
-}
-
-type ExcludeClientsRequest = {
-    limit: number;
-    offset: number;
-}
-
-type AddClientRequest = {
-    user_id: string;
-}
-
-export class Api {
-    private transport: AxiosInstance;
-
-    constructor() {
-        this.transport = axios.create({
-            baseURL: API_HOST,
-        })
-    }
-
-    async getAllDnsRecords(payload: DnsRecordsRequest, abortSignal: AbortSignal) {
-        const {data} = await this.transport.post<DNSRecordsResponse>(`/dns-records`, payload, {signal: abortSignal});
-        return data;
-    }
-
-    async getAllSuggestRecords(payload: SuggestRecordsRequest, abortSignal: AbortSignal) {
-        const {data} = await this.transport.post<SuggestRecordsResponse>(`/suggest-to-block`, payload, {signal: abortSignal});
-        return data;
-    }
-
-    async addSuggestToBlock(params: AddSuggestToBlockRequest) {
-        const {data} = await this.transport.post<DNSRecordUpdateResponse>(`/suggest-to-block/add-to-block`, params);
+    changeDnsRecordStatus = async (id: number, active: boolean) => {
+        const data = await this.client.dnsRecordsUpdateCreate({ id, active });
         return data.record;
-    }
+    };
 
-    async changeDnsRecordStatus(id: number, active: boolean) {
-        const {data} = await this.transport.post<DNSRecordUpdateResponse>(`/dns-records/update`, {
-            active: active,
-            id: id
-        });
-        return data.record;
-    }
-
-
-    async getFilterStatus() {
-        const {data} = await this.transport.get<FilterStatusResponse>(`/filter/status`);
+    getFilterStatus = async () => {
+        const data = await this.client.filterStatusList();
         return data.status;
-    }
+    };
 
-    async changeFilterStatus() {
-        const {data} = await this.transport.post<FilterStatusResponse>(`/filter/change-status`);
+    changeFilterStatus = async () => {
+        const data = await this.client.filterChangeStatusCreate();
         return data.status;
-    }
+    };
 
+    createDomain = (domain: string) => this.client.dnsRecordsCreateCreate({ domain });
 
-    async createDomain(domain: string) {
-        const {data} = await this.transport.post<DNSRecord>(`/dns-records/create`, {domain: domain});
-        return data;
-    }
+    getBlockDomainsGroups = () => this.client.eventsBlockAmountByGroupCreate();
 
-    async getBlockDomainsGroups() {
-        const {data} = await this.transport.post<DomainsBlockGroup>(`/events/block/amount-by-group`);
-        return data;
-    }
+    getBlockDomainsAmount = () => this.client.eventsBlockAmountCreate();
 
-    async getBlockDomainsAmount() {
-        const {data} = await this.transport.post<{amount: number}>(`/events/block/amount`);
-        return data;
-    }
+    changeLogLevel = async (level: string) => {
+        await this.client.configLoggerChangeLevelCreate({ logLevel: level });
+    };
 
+    getLogLevel = () => this.client.configLoggerGetLevelCreate();
 
-    async changeLogLevel(level: string) {
-        const {data} = await this.transport.post<{message: string}>(`/config/logger/change-level`, {logLevel: level});
-    }
+    getAllSyncRecords = (abortSignal: AbortSignal) =>
+        this.client.sourcesCreate({ signal: abortSignal });
 
-    async getLogLevel() {
-        const {data} = await this.transport.post<{level: string}>(`/config/logger/get-level`);
-        return data;
-    }
-
-    async getAllSyncRecords(payload: SyncRecordsRequest, abortSignal: AbortSignal) {
-        const {data} = await this.transport.post<SyncRecordsResponse>(`/sources`, payload, {signal: abortSignal});
-        return data;
-    }
-
-    async changeSyncRecordStatus(id: number, active: boolean) {
-        const {data} = await this.transport.post<{record: SyncRecord}>(`/sources/change-status`, {
-            active: active,
-            id: id
-        });
+    changeSyncRecordStatus = async (id: number, active: boolean) => {
+        const data = await this.client.sourcesChangeStatusCreate({ id, active });
         return data.record;
-    }
+    };
 
-    async getAllExcludeClients(payload: ExcludeClientsRequest, abortSignal: AbortSignal) {
-        const {data} = await this.transport.post<ExcludeClientsResponse>(`/exclude-clients`, payload, {signal: abortSignal});
-        return data;
-    }
+    getAllExcludeClients = (abortSignal: AbortSignal) =>
+        this.client.excludeClientsCreate({ signal: abortSignal });
 
-    async addExcludeClient(payload: AddClientRequest) {
-        const {data} = await this.transport.post<ExcludeClient>(`/exclude-clients/add`, payload);
-        return data;
-    }
+    addExcludeClient = (payload: WebAddClientRequest) =>
+        this.client.excludeClientsAddCreate(payload);
 
-    async changeClientStatus(id: number, active: boolean) {
-        const {data} = await this.transport.post<{status: string}>(`/exclude-clients/change-status`, {
-            is_active: active,
-            id: id
-        });
-        return data;
-    }
+    changeClientStatus = (id: number, active: boolean) =>
+        this.client.excludeClientsChangeStatusCreate({ id, is_active: active });
 
-    async deleteClient(id: number) {
-        const {data} = await this.transport.post<{status: string}>(`/exclude-clients/delete`, {
-            id: id
-        });
-        return data;
-    }
+    deleteClient = (id: number) => this.client.excludeClientsDeleteCreate({ id });
 }
-
 
 export const api = new Api();

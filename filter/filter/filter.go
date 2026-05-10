@@ -6,6 +6,15 @@ import (
 	"github.com/bits-and-blooms/bloom/v3"
 )
 
+// expectedDomains is the design target documented in CLAUDE.md (10M items
+// at 0.1% FP). It is also used as the floor in UpdateFilter so the bloom
+// never collapses to zero capacity when the block list is small or empty —
+// bloom.NewWithEstimates(0, _) produces a zero-bit filter that panics on Add.
+const (
+	expectedDomains = 10_000_000
+	falsePositive   = 0.001
+)
+
 type Filter struct {
 	mu    sync.RWMutex
 	Bloom *bloom.BloomFilter
@@ -18,7 +27,7 @@ func GetFilter() *Filter {
 	once.Do(func() {
 		if filter == nil {
 			filter = &Filter{
-				Bloom: bloom.NewWithEstimates(10, 0.001),
+				Bloom: bloom.NewWithEstimates(expectedDomains, falsePositive),
 			}
 		}
 	})
@@ -32,7 +41,8 @@ func (f *Filter) DomainExist(domain string) bool {
 }
 
 func (f *Filter) UpdateFilter(rows []string) *Filter {
-	filter := bloom.NewWithEstimates(uint(len(rows)), 0.001)
+	n := max(uint(len(rows)), expectedDomains)
+	filter := bloom.NewWithEstimates(n, falsePositive)
 	for _, item := range rows {
 		filter.Add([]byte(item))
 	}

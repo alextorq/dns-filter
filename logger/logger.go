@@ -115,12 +115,16 @@ func (l *ChanLogger) Error(err error) {
 	l.send("ERROR", traceError(err))
 }
 
-// send — отправка в канал
+// send — non-blocking, drops the message if the channel is full so the
+// DNS hot-path is never stalled by a slow handler (e.g. Loki over the network).
 func (l *ChanLogger) send(level, msg string) {
-	l.logChan <- log.LogStruct{
+	select {
+	case l.logChan <- log.LogStruct{
 		Level:   level,
 		Message: strings.TrimSpace(msg),
 		Time:    time.Now(),
+	}:
+	default:
 	}
 }
 

@@ -115,11 +115,10 @@ func TestCollectSuggest_RiskyTLDPushesOverThreshold(t *testing.T) {
 		t.Fatalf("score %d should clear threshold %d",
 			got.Score, ThresholdToSuggestBlocking)
 	}
-	// Reason должен явно упоминать TLD-сигнал, иначе модератор не
-	// поймёт, почему домен попал в список. Сравниваем с константой,
-	// чтобы при изменении формулировки тест и код двигались синхронно.
-	if !strings.Contains(got.Reason, ReasonRiskyTLD) {
-		t.Errorf("reason missing TLD hint %q in %q", ReasonRiskyTLD, got.Reason)
+	// Reasons должны явно содержать risky-TLD код, иначе модератор не
+	// поймёт, почему домен попал в список.
+	if !hasCode(got.Reasons, CodeRiskyTLD) {
+		t.Errorf("reasons missing TLD code %q in %+v", CodeRiskyTLD, got.Reasons)
 	}
 }
 

@@ -1,5 +1,14 @@
 basePath: /
 definitions:
+  collect.SignalDescriptor:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      label:
+        type: string
+    type: object
   create_domain.RequestBody:
     properties:
       domain:
@@ -102,9 +111,30 @@ definitions:
       id:
         type: integer
       reasons:
-        type: string
+        items:
+          $ref: '#/definitions/db.SuggestBlockReason'
+        type: array
       score:
         type: integer
+    type: object
+  db.SuggestBlockReason:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      match:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_auth_web.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_auth_web.StatusResponse:
+    properties:
+      status:
+        type: string
     type: object
   github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse:
     properties:
@@ -119,6 +149,11 @@ definitions:
   github_com_alextorq_dns-filter_clients_web.ErrorResponse:
     properties:
       error:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_clients_web.StatusResponse:
+    properties:
+      status:
         type: string
     type: object
   github_com_alextorq_dns-filter_logger_web.MessageResponse:
@@ -255,6 +290,10 @@ definitions:
     properties:
       active:
         type: boolean
+      codes:
+        items:
+          type: string
+        type: array
       filter:
         type: string
       limit:
@@ -283,15 +322,27 @@ definitions:
       amount:
         type: integer
     type: object
+  web.GetSignalCodesResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/collect.SignalDescriptor'
+        type: array
+    type: object
   web.LogLevelResponse:
     properties:
       level:
         type: string
     type: object
-  web.StatusResponse:
+  web.LoginRequest:
     properties:
-      status:
+      login:
         type: string
+      password:
+        type: string
+    required:
+    - login
+    - password
     type: object
   web.UpdateConfigData:
     properties:
@@ -305,6 +356,13 @@ definitions:
       record:
         $ref: '#/definitions/db.BlockList'
     type: object
+  web.UserResponse:
+    properties:
+      id:
+        type: integer
+      login:
+        type: string
+    type: object
 info:
   contact: {}
   description: 'HTTP API for the DNS filter: managing block lists, sources, clients,
@@ -312,6 +370,63 @@ info:
   title: DNS Filter API
   version: "1.0"
 paths:
+  /api/auth/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.UserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_auth_web.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_auth_web.ErrorResponse'
+      summary: Login
+      tags:
+      - auth
+  /api/auth/logout:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_auth_web.StatusResponse'
+      summary: Logout
+      tags:
+      - auth
+  /api/auth/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.UserResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_auth_web.ErrorResponse'
+      summary: Current user
+      tags:
+      - auth
   /api/config/db/download:
     get:
       produces:
@@ -509,7 +624,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/web.StatusResponse'
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse'
         "400":
           description: Bad Request
           schema:
@@ -538,7 +653,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/web.StatusResponse'
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse'
         "400":
           description: Bad Request
           schema:
@@ -567,7 +682,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/web.StatusResponse'
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse'
         "400":
           description: Bad Request
           schema:
@@ -733,6 +848,18 @@ paths:
           schema:
             $ref: '#/definitions/github_com_alextorq_dns-filter_suggest-to-block_web.ErrorResponse'
       summary: Toggle suggestion active state
+      tags:
+      - suggest-to-block
+  /api/suggest-to-block/codes:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.GetSignalCodesResponse'
+      summary: List reason codes
       tags:
       - suggest-to-block
 swagger: "2.0"

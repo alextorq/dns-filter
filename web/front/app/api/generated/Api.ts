@@ -10,11 +10,14 @@
  * ---------------------------------------------------------------
  */
 
-import type {
+import {
   CreateDomainRequestBody,
+  GithubComAlextorqDnsFilterAuthWebErrorResponse,
+  GithubComAlextorqDnsFilterAuthWebStatusResponse,
   GithubComAlextorqDnsFilterBlockedDomainWebErrorResponse,
   GithubComAlextorqDnsFilterBlockedDomainWebMessageResponse,
   GithubComAlextorqDnsFilterClientsWebErrorResponse,
+  GithubComAlextorqDnsFilterClientsWebStatusResponse,
   GithubComAlextorqDnsFilterLoggerWebMessageResponse,
   GithubComAlextorqDnsFilterSourceWebErrorResponse,
   GithubComAlextorqDnsFilterSuggestToBlockWebErrorResponse,
@@ -37,17 +40,71 @@ import type {
   WebGetAllSuggestBlocksResponse,
   WebGetAmountByDomainResponse,
   WebGetAmountResponse,
+  WebGetSignalCodesResponse,
   WebLogLevelResponse,
-  WebStatusResponse,
+  WebLoginRequest,
   WebUpdateConfigData,
   WebUpdateDnsRecordResponse,
+  WebUserResponse,
 } from "./data-contracts";
-import { ContentType, HttpClient } from "./http-client";
-import type { RequestParams } from "./http-client";
+import { ContentType, HttpClient, RequestParams } from "./http-client";
 
 export class Api<
   SecurityDataType = unknown,
 > extends HttpClient<SecurityDataType> {
+  /**
+   * No description
+   *
+   * @tags auth
+   * @name AuthLoginCreate
+   * @summary Login
+   * @request POST:/api/auth/login
+   */
+  authLoginCreate = (body: WebLoginRequest, params: RequestParams = {}) =>
+    this.request<
+      WebUserResponse,
+      GithubComAlextorqDnsFilterAuthWebErrorResponse
+    >({
+      path: `/api/auth/login`,
+      method: "POST",
+      body: body,
+      type: ContentType.Json,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags auth
+   * @name AuthLogoutCreate
+   * @summary Logout
+   * @request POST:/api/auth/logout
+   */
+  authLogoutCreate = (params: RequestParams = {}) =>
+    this.request<GithubComAlextorqDnsFilterAuthWebStatusResponse, any>({
+      path: `/api/auth/logout`,
+      method: "POST",
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags auth
+   * @name AuthMeList
+   * @summary Current user
+   * @request GET:/api/auth/me
+   */
+  authMeList = (params: RequestParams = {}) =>
+    this.request<
+      WebUserResponse,
+      GithubComAlextorqDnsFilterAuthWebErrorResponse
+    >({
+      path: `/api/auth/me`,
+      method: "GET",
+      format: "json",
+      ...params,
+    });
   /**
    * No description
    *
@@ -233,7 +290,7 @@ export class Api<
     params: RequestParams = {},
   ) =>
     this.request<
-      WebStatusResponse,
+      GithubComAlextorqDnsFilterClientsWebStatusResponse,
       WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
     >({
       path: `/api/exclude-clients/add`,
@@ -256,7 +313,7 @@ export class Api<
     params: RequestParams = {},
   ) =>
     this.request<
-      WebStatusResponse,
+      GithubComAlextorqDnsFilterClientsWebStatusResponse,
       WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
     >({
       path: `/api/exclude-clients/change-status`,
@@ -279,7 +336,7 @@ export class Api<
     params: RequestParams = {},
   ) =>
     this.request<
-      WebStatusResponse,
+      GithubComAlextorqDnsFilterClientsWebStatusResponse,
       WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
     >({
       path: `/api/exclude-clients/delete`,
@@ -426,6 +483,21 @@ export class Api<
       method: "POST",
       body: body,
       type: ContentType.Json,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags suggest-to-block
+   * @name SuggestToBlockCodesList
+   * @summary List reason codes
+   * @request GET:/api/suggest-to-block/codes
+   */
+  suggestToBlockCodesList = (params: RequestParams = {}) =>
+    this.request<WebGetSignalCodesResponse, any>({
+      path: `/api/suggest-to-block/codes`,
+      method: "GET",
       format: "json",
       ...params,
     });

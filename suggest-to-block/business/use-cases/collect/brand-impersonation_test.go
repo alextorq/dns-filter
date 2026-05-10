@@ -243,13 +243,13 @@ func TestCollectSuggest_BrandImpersonationPlusSubdomain(t *testing.T) {
 		t.Fatalf("score %d should clear threshold %d",
 			got.Score, ThresholdToSuggestBlocking)
 	}
-	if !strings.Contains(got.Reason, ReasonBrandImpersonation) {
-		t.Errorf("reason missing brand hint %q in %q",
-			ReasonBrandImpersonation, got.Reason)
+	if !hasCode(got.Reasons, CodeBrandImpersonation) {
+		t.Errorf("reasons missing brand code %q in %+v",
+			CodeBrandImpersonation, got.Reasons)
 	}
-	if !strings.Contains(got.Reason, ReasonSubdomainOfBlocked) {
-		t.Errorf("reason missing subdomain hint %q in %q",
-			ReasonSubdomainOfBlocked, got.Reason)
+	if !hasCode(got.Reasons, CodeSubdomainOfBlocked) {
+		t.Errorf("reasons missing subdomain code %q in %+v",
+			CodeSubdomainOfBlocked, got.Reasons)
 	}
 }
 
@@ -272,12 +272,12 @@ func TestCollectSuggest_BrandImpersonationAccumulatesWithSubdomainAndNumericRun(
 		t.Fatalf("score = %d, want %d (subdomain+brand+numeric accumulated)",
 			res[0].Score, want)
 	}
-	if !strings.Contains(res[0].Reason, ReasonBrandImpersonation) {
-		t.Errorf("reason missing brand hint %q in %q",
-			ReasonBrandImpersonation, res[0].Reason)
+	if !hasCode(res[0].Reasons, CodeBrandImpersonation) {
+		t.Errorf("reasons missing brand code %q in %+v",
+			CodeBrandImpersonation, res[0].Reasons)
 	}
-	if !strings.Contains(res[0].Reason, ReasonNumericRun) {
-		t.Errorf("reason missing numeric-run hint %q in %q",
-			ReasonNumericRun, res[0].Reason)
+	if !hasCode(res[0].Reasons, CodeNumericRun) {
+		t.Errorf("reasons missing numeric-run code %q in %+v",
+			CodeNumericRun, res[0].Reasons)
 	}
 }

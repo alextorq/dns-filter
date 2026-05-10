@@ -2,18 +2,67 @@ package db
 
 import (
 	"github.com/alextorq/dns-filter/db"
+	"gorm.io/gorm"
 )
 
 type SuggestBlock struct {
-	ID     uint   `gorm:"primarykey" json:"id"`
-	Domain string `json:"domain" gorm:"uniqueIndex"`
-	Score  int    `json:"score"`
-	Reason string `json:"reasons"`
-	Active bool   `gorm:"default:true" json:"active"`
+	ID      uint                 `gorm:"primarykey" json:"id"`
+	Domain  string               `json:"domain" gorm:"uniqueIndex"`
+	Score   int                  `json:"score"`
+	Active  bool                 `gorm:"default:true" json:"active"`
+	Reasons []SuggestBlockReason `gorm:"foreignKey:SuggestID;constraint:OnDelete:CASCADE" json:"reasons"`
 }
 
+type SuggestBlockReason struct {
+	ID         uint   `gorm:"primarykey" json:"id"`
+	SuggestID  uint   `gorm:"index;not null" json:"-"`
+	Code       string `gorm:"index;not null" json:"code"`
+	MatchValue string `json:"match,omitempty"`
+}
+
+// CreateSuggestBlockBatch inserts only suggestions whose Domain is not yet
+// stored — preserving the previous "do nothing on conflict" semantics.
+// The reasons attached to a Suggestion are inserted via GORM associations
+// in the same transaction, so existing rows keep their original reasons
+// and never accumulate duplicates across collector runs.
 func CreateSuggestBlockBatch(suggests []SuggestBlock) error {
-	return db.BatchUpsert(suggests, 100, "domain")
+	return createSuggestBlockBatchOn(db.GetConnection(), suggests)
+}
+
+func createSuggestBlockBatchOn(conn *gorm.DB, suggests []SuggestBlock) error {
+	if len(suggests) == 0 {
+		return nil
+	}
+	return conn.Transaction(func(tx *gorm.DB) error {
+		domains := make([]string, 0, len(suggests))
+		for _, s := range suggests {
+			domains = append(domains, s.Domain)
+		}
+
+		var existing []string
+		if err := tx.Model(&SuggestBlock{}).
+			Where("domain IN ?", domains).
+			Pluck("domain", &existing).Error; err != nil {
+			return err
+		}
+
+		taken := make(map[string]struct{}, len(existing))
+		for _, d := range existing {
+			taken[d] = struct{}{}
+		}
+
+		toCreate := make([]SuggestBlock, 0, len(suggests))
+		for _, s := range suggests {
+			if _, ok := taken[s.Domain]; ok {
+				continue
+			}
+			toCreate = append(toCreate, s)
+		}
+		if len(toCreate) == 0 {
+			return nil
+		}
+		return tx.CreateInBatches(toCreate, 100).Error
+	})
 }
 
 func DeleteSuggestBlock(domain string) error {
@@ -37,6 +86,10 @@ type GetAllParams struct {
 	Offset int
 	Filter string
 	Active *bool
+	// Codes filters by reason codes (OR semantic). Empty/nil = no filter.
+	// Implemented via EXISTS over suggest_block_reasons so Reasons preload
+	// still returns ALL reasons of a matched suggest, not just the matched ones.
+	Codes []string
 }
 
 type GetAllResult struct {
@@ -45,8 +98,10 @@ type GetAllResult struct {
 }
 
 func GetAllSuggestBlocks(params GetAllParams) (*GetAllResult, error) {
-	conn := db.GetConnection()
+	return getAllSuggestBlocksOn(db.GetConnection(), params)
+}
 
+func getAllSuggestBlocksOn(conn *gorm.DB, params GetAllParams) (*GetAllResult, error) {
 	var suggests []SuggestBlock
 	query := conn.Model(&SuggestBlock{})
 	var total int64
@@ -61,10 +116,20 @@ func GetAllSuggestBlocks(params GetAllParams) (*GetAllResult, error) {
 		query = query.Where("active = ?", *params.Active)
 	}
 
+	// Filter by reason codes (OR): keep suggests that have at least one
+	// reason whose code is in the requested set.
+	if len(params.Codes) > 0 {
+		query = query.Where(
+			"EXISTS (SELECT 1 FROM suggest_block_reasons r WHERE r.suggest_id = suggest_blocks.id AND r.code IN ?)",
+			params.Codes,
+		)
+	}
+
 	// сначала считаем количество
 	query.Count(&total)
 
 	err := query.
+		Preload("Reasons").
 		Order("score DESC, id DESC").
 		Limit(params.Limit).
 		Offset(params.Offset).

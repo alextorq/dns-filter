@@ -72,6 +72,9 @@ class Api {
     addSuggestToBlock = (params: WebAddToBlockRequest) =>
         this.client.suggestToBlockAddToBlockCreate(params);
 
+    getSuggestSignalCodes = (abortSignal: AbortSignal) =>
+        this.client.suggestToBlockCodesList({ signal: abortSignal });
+
     changeDnsRecordStatus = async (id: number, active: boolean) => {
         const data = await this.client.dnsRecordsUpdateCreate({ id, active });
         return data.record;

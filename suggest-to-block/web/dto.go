@@ -1,6 +1,9 @@
 package web
 
-import suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
+import (
+	collect "github.com/alextorq/dns-filter/suggest-to-block/business/use-cases/collect"
+	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
+)
 
 type ErrorResponse struct {
 	Message string `json:"message"`
@@ -11,10 +14,15 @@ type MessageResponse struct {
 }
 
 type GetAllSuggestBlocksRequest struct {
-	Limit  int    `json:"limit"`
-	Offset int    `json:"offset"`
-	Filter string `json:"filter"`
-	Active *bool  `json:"active"`
+	Limit  int      `json:"limit"`
+	Offset int      `json:"offset"`
+	Filter string   `json:"filter"`
+	Active *bool    `json:"active"`
+	Codes  []string `json:"codes"`
+}
+
+type GetSignalCodesResponse struct {
+	List []collect.SignalDescriptor `json:"list"`
 }
 
 type GetAllSuggestBlocksResponse struct {

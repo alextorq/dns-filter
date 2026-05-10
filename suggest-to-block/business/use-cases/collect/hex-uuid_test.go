@@ -138,9 +138,9 @@ func TestCollectSuggest_HexUUIDPlusSubdomain_Suggested(t *testing.T) {
 	if res[0].Score != want {
 		t.Fatalf("score = %d, want %d", res[0].Score, want)
 	}
-	if !strings.Contains(res[0].Reason, ReasonHexUUIDLabel) {
-		t.Errorf("reason missing hex-uuid hint %q in %q",
-			ReasonHexUUIDLabel, res[0].Reason)
+	if !hasCode(res[0].Reasons, CodeHexUUID) {
+		t.Errorf("reasons missing hex-uuid code %q in %+v",
+			CodeHexUUID, res[0].Reasons)
 	}
 }
 

@@ -20,6 +20,12 @@ export enum DbBlockListSource {
   SourceSuggestedToBlock = "SuggestedToBlock",
 }
 
+export interface CollectSignalDescriptor {
+  code?: string;
+  description?: string;
+  label?: string;
+}
+
 export interface CreateDomainRequestBody {
   domain?: string;
   source?: string;
@@ -70,8 +76,22 @@ export interface DbSuggestBlock {
   active?: boolean;
   domain?: string;
   id?: number;
-  reasons?: string;
+  reasons?: DbSuggestBlockReason[];
   score?: number;
+}
+
+export interface DbSuggestBlockReason {
+  code?: string;
+  id?: number;
+  match?: string;
+}
+
+export interface GithubComAlextorqDnsFilterAuthWebErrorResponse {
+  error?: string;
+}
+
+export interface GithubComAlextorqDnsFilterAuthWebStatusResponse {
+  status?: string;
 }
 
 export interface GithubComAlextorqDnsFilterBlockedDomainWebErrorResponse {
@@ -84,6 +104,10 @@ export interface GithubComAlextorqDnsFilterBlockedDomainWebMessageResponse {
 
 export interface GithubComAlextorqDnsFilterClientsWebErrorResponse {
   error?: string;
+}
+
+export interface GithubComAlextorqDnsFilterClientsWebStatusResponse {
+  status?: string;
 }
 
 export interface GithubComAlextorqDnsFilterLoggerWebMessageResponse {
@@ -178,6 +202,7 @@ export interface WebGetAllSourcesResponse {
 
 export interface WebGetAllSuggestBlocksRequest {
   active?: boolean;
+  codes?: string[];
   filter?: string;
   limit?: number;
   offset?: number;
@@ -196,12 +221,17 @@ export interface WebGetAmountResponse {
   amount?: number;
 }
 
+export interface WebGetSignalCodesResponse {
+  list?: CollectSignalDescriptor[];
+}
+
 export interface WebLogLevelResponse {
   level?: string;
 }
 
-export interface WebStatusResponse {
-  status?: string;
+export interface WebLoginRequest {
+  login: string;
+  password: string;
 }
 
 export interface WebUpdateConfigData {
@@ -211,4 +241,9 @@ export interface WebUpdateConfigData {
 export interface WebUpdateDnsRecordResponse {
   message?: string;
   record?: DbBlockList;
+}
+
+export interface WebUserResponse {
+  id?: number;
+  login?: string;
 }

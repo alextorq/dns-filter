@@ -1,16 +1,42 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
 import { api } from "~/api";
-import type { DbSuggestBlock } from "~/api/generated/data-contracts";
+import type {
+    CollectSignalDescriptor,
+    DbSuggestBlock,
+    DbSuggestBlockReason,
+} from "~/api/generated/data-contracts";
 import { usePaginatedList } from "~~/composables/use-paginated-list";
 import { UButton } from "#components";
 import { getErrorMessage } from "~~/utils/get-error-message";
+import { isAbortError } from "~~/utils/is-abort-error";
 
-useHead({
-    title: "Suggest",
-});
+useHead({ title: "Suggest" });
 
 const toast = useToast();
+
+// Catalog of reason codes (label + description) is owned by the backend.
+// Frontend just renders what comes from /api/suggest-to-block/codes.
+const signalCatalog = ref<CollectSignalDescriptor[]>([]);
+const labelByCode = computed(() => {
+    const map: Record<string, string> = {};
+    for (const s of signalCatalog.value) {
+        if (s.code) map[s.code] = s.label ?? s.code;
+    }
+    return map;
+});
+const labelForReason = (r: DbSuggestBlockReason): string => {
+    const base = labelByCode.value[r.code ?? ""] ?? r.code ?? "";
+    return r.match ? `${base}: ${r.match}` : base;
+};
+
+// Multi-select filter — stores the chosen reason codes.
+const selectedCodes = ref<string[]>([]);
+const codeItems = computed(() =>
+    signalCatalog.value
+        .filter((s) => Boolean(s.code))
+        .map((s) => ({ label: s.label ?? s.code!, value: s.code! })),
+);
 
 const {
     data: records,
@@ -18,12 +44,43 @@ const {
     pagination,
     isLoading,
     refresh,
+    resetAndFetch,
     changePage,
 } = usePaginatedList<DbSuggestBlock>(({ limit, offset, filter, signal }) =>
-    api.getAllSuggestRecords({ limit, offset, filter, active: true }, signal),
+    api.getAllSuggestRecords(
+        {
+            limit,
+            offset,
+            filter,
+            active: true,
+            codes: selectedCodes.value.length ? selectedCodes.value : undefined,
+        },
+        signal,
+    ),
 );
 
-onMounted(refresh);
+watch(selectedCodes, () => resetAndFetch());
+
+let catalogFetchController: AbortController | null = null;
+
+const fetchSignalCatalog = async () => {
+    if (catalogFetchController) catalogFetchController.abort();
+    catalogFetchController = new AbortController();
+    try {
+        const response = await api.getSuggestSignalCodes(catalogFetchController.signal);
+        signalCatalog.value = response.list ?? [];
+    } catch (error) {
+        if (isAbortError(error)) return;
+        console.error("Error fetching signal catalog:", error);
+    }
+};
+
+onScopeDispose(() => catalogFetchController?.abort());
+
+onMounted(() => {
+    refresh();
+    fetchSignalCatalog();
+});
 
 const blockDomain = async (item: DbSuggestBlock) => {
     try {
@@ -75,10 +132,7 @@ const columns: TableColumn<DbSuggestBlock>[] = [
             h(
                 "ul",
                 { class: "whitespace-normal break-words text-xs space-y-0.5" },
-                (row.original.reasons ?? "")
-                    .split("\n")
-                    .filter(Boolean)
-                    .map((reason: string) => h("li", reason)),
+                (row.original.reasons ?? []).map((reason) => h("li", labelForReason(reason))),
             ),
     },
     {
@@ -103,13 +157,24 @@ const columns: TableColumn<DbSuggestBlock>[] = [
 <template>
     <div class="h-[calc(100vh-var(--ui-header-height))] flex flex-col">
         <UContainer class="shrink-0 pt-4">
-            <div class="flex px-4 py-3.5 justify-between border-b border-accented">
-                <UInput
-                    v-model="globalFilter"
-                    class="max-w-sm"
-                    icon="i-lucide-search"
-                    placeholder="Search domain"
-                />
+            <div class="flex flex-wrap gap-3 px-4 py-3.5 justify-between border-b border-accented">
+                <div class="flex flex-wrap items-center gap-3">
+                    <UInput
+                        v-model="globalFilter"
+                        class="max-w-sm"
+                        icon="i-lucide-search"
+                        placeholder="Search domain"
+                    />
+
+                    <USelectMenu
+                        v-model="selectedCodes"
+                        multiple
+                        class="min-w-60"
+                        placeholder="Filter by reasons"
+                        :items="codeItems"
+                        value-key="value"
+                    />
+                </div>
             </div>
         </UContainer>
 

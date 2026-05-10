@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
 import { api } from "~/api";
-import type { DbBlockList } from "~/api/generated/data-contracts";
-import type { DbSource } from "~/api/generated/data-contracts";
+import type { DbBlockList, DbBlockListSource, DbSource } from "~/api/generated/data-contracts";
 import AddDomainModal from "~/domain/add-new-domain/components/add-domain-modal.vue";
 import ChangeStatus from "~/domain/change-domain-status/components/change-status.vue";
 import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
@@ -24,7 +23,7 @@ const sourceItems = computed(() => [
     { label: "All", value: null as string | null },
     ...sources.value
         .map((s) => s.name)
-        .filter((name): name is string => Boolean(name))
+        .filter((name): name is DbBlockListSource => Boolean(name))
         .map((name) => ({ label: name, value: name })),
 ]);
 

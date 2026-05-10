@@ -59,13 +59,22 @@ func TestIsDomainActivelyBlocked(t *testing.T) {
 		t.Fatalf("deactivate: %v", err)
 	}
 
-	if !IsDomainActivelyBlocked(activeDomain) {
+	mustCheck := func(domain string) bool {
+		t.Helper()
+		got, err := IsDomainActivelyBlocked(domain)
+		if err != nil {
+			t.Fatalf("IsDomainActivelyBlocked(%s): unexpected error %v", domain, err)
+		}
+		return got
+	}
+
+	if !mustCheck(activeDomain) {
 		t.Errorf("active domain must be reported as blocked")
 	}
-	if IsDomainActivelyBlocked(inactiveDomain) {
+	if mustCheck(inactiveDomain) {
 		t.Errorf("inactive domain must NOT be reported as blocked (issue #25)")
 	}
-	if IsDomainActivelyBlocked(missingDomain) {
+	if mustCheck(missingDomain) {
 		t.Errorf("missing domain must NOT be reported as blocked")
 	}
 
@@ -73,7 +82,7 @@ func TestIsDomainActivelyBlocked(t *testing.T) {
 	if err := conn.Model(&BlockList{}).Where("url = ?", activeDomain).Update("active", false).Error; err != nil {
 		t.Fatalf("flip active: %v", err)
 	}
-	if IsDomainActivelyBlocked(activeDomain) {
+	if mustCheck(activeDomain) {
 		t.Errorf("after deactivation domain must NOT be reported as blocked")
 	}
 }

@@ -32,7 +32,7 @@ func DomainNotExist(domain string) bool {
 	return db.DomainNotExist(domain)
 }
 
-func IsDomainActivelyBlocked(domain string) bool {
+func IsDomainActivelyBlocked(domain string) (bool, error) {
 	return db.IsDomainActivelyBlocked(domain)
 }
 

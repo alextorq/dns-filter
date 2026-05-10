@@ -2,6 +2,7 @@ package change_status
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	clients "github.com/alextorq/dns-filter/clients/client"
@@ -102,5 +103,44 @@ func TestChangeClientStatus_ReactivateAddsToMemory(t *testing.T) {
 func TestChangeClientStatus_MissingIDReturnsError(t *testing.T) {
 	if err := ChangeClientStatus(99999, false); err == nil {
 		t.Fatal("expected error for unknown id, got nil")
+	}
+}
+
+// Locks in the P2 review fix: concurrent toggles on the same id must leave
+// DB and the in-memory dict in agreement. Without the package-level mutex the
+// loser's dict mutation could land after the winner's — DB says active=true
+// but the IP is missing from the dict (or vice versa).
+func TestChangeClientStatus_ConcurrentTogglesAgree(t *testing.T) {
+	const ip = "10.0.27.99"
+	t.Cleanup(func() { cleanup(t, ip) })
+
+	id := seed(t, ip)
+
+	const goroutines = 16
+	const iters = 100
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for g := range goroutines {
+		go func(seed int) {
+			defer wg.Done()
+			for i := range iters {
+				active := (seed+i)%2 == 0
+				if err := ChangeClientStatus(id, active); err != nil {
+					t.Errorf("toggle: %v", err)
+					return
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+
+	stored, err := db.GetClientById(id)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	inMem := clients.GetClients().ClientExist(ip)
+	if stored.Active != inMem {
+		t.Fatalf("DB Active=%v but in-memory presence=%v after concurrent toggles", stored.Active, inMem)
 	}
 }

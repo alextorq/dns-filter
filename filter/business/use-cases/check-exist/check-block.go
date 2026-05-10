@@ -1,6 +1,8 @@
 package check_exist_domain
 
 import (
+	"fmt"
+
 	blacklists "github.com/alextorq/dns-filter/blocked-domain"
 	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/filter/cache"
@@ -19,7 +21,13 @@ func CheckCacheOrDb(domain string) bool {
 		return val
 	}
 	l.Debug("get block domain check from db: ", domain)
-	exist := blacklists.IsDomainActivelyBlocked(domain)
+	exist, err := blacklists.IsDomainActivelyBlocked(domain)
+	if err != nil {
+		// Fail-open (don't block) — but skip the cache so a transient DB blip
+		// doesn't lock in a "not blocked" verdict for the next ~1500 lookups.
+		l.Error(fmt.Errorf("IsDomainActivelyBlocked(%s): %w", domain, err))
+		return false
+	}
 	c.Add(domain, exist)
 	return exist
 }

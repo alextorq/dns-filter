@@ -264,11 +264,11 @@ func TestCollectSuggest_AccumulatesEntropyAndSubdomain(t *testing.T) {
 		t.Fatalf("score %d should clear threshold %d",
 			got.Score, ThresholdToSuggestBlocking)
 	}
-	if !strings.Contains(got.Reason, "suspicious") {
-		t.Errorf("reason missing entropy hint: %q", got.Reason)
+	if !strings.Contains(got.Reason, ReasonSuspiciousDomain) {
+		t.Errorf("reason missing entropy hint %q in %q", ReasonSuspiciousDomain, got.Reason)
 	}
-	if !strings.Contains(got.Reason, "subdomain of blocked") {
-		t.Errorf("reason missing subdomain hint: %q", got.Reason)
+	if !strings.Contains(got.Reason, ReasonSubdomainOfBlocked) {
+		t.Errorf("reason missing subdomain hint %q in %q", ReasonSubdomainOfBlocked, got.Reason)
 	}
 }
 

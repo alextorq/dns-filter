@@ -16,7 +16,19 @@ const (
 	ItemScoreContainsBadKeywords    = 5
 	ItemScoreSubdomainOfBlocked     = 20
 	ItemScoreSimilarToBlockedDomain = 15
+	ItemScoreRiskyTLD               = 5
 	ThresholdToSuggestBlocking      = 30
+)
+
+// Стабильные подстроки, которые CollectSuggest добавляет в Suggestion.Reason
+// при срабатывании соответствующего сигнала. Использование констант
+// связывает реализацию с тестами и упрощает локализацию/перевод.
+const (
+	ReasonSuspiciousDomain       = "appears to be suspicious"
+	ReasonContainsBadKeywords    = "contains keywords indicating ads or tracking"
+	ReasonSubdomainOfBlocked     = "is subdomain of blocked domain"
+	ReasonSimilarToBlockedDomain = "has same domain level and similar blocked domain as"
+	ReasonRiskyTLD               = "uses a TLD with elevated abuse rate"
 )
 
 func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
@@ -30,23 +42,28 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 
 		if IsDomainSuspicious(allowedDomain) {
 			suggestion.Score += ItemScoreSuspiciousDomain
-			suggestion.Reason += "\nappears to be suspicious; "
+			suggestion.Reason += "\n" + ReasonSuspiciousDomain + "; "
 		}
 
 		if CheckForBadKeywords(allowedDomain) {
 			suggestion.Score += ItemScoreContainsBadKeywords
-			suggestion.Reason += "\ncontains keywords indicating ads or tracking; "
+			suggestion.Reason += "\n" + ReasonContainsBadKeywords + "; "
+		}
+
+		if IsRiskyTLD(allowedDomain) {
+			suggestion.Score += ItemScoreRiskyTLD
+			suggestion.Reason += "\n" + ReasonRiskyTLD + "; "
 		}
 
 		for _, blockedDomain := range blockedDomains {
 			if CheckItIsSubDomain(blockedDomain, allowedDomain) {
 				suggestion.Score += ItemScoreSubdomainOfBlocked
-				suggestion.Reason += fmt.Sprintf("\nis subdomain of blocked domain %s; ", blockedDomain)
+				suggestion.Reason += fmt.Sprintf("\n%s %s; ", ReasonSubdomainOfBlocked, blockedDomain)
 			}
 
 			if CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain(blockedDomain, allowedDomain) {
 				suggestion.Score += ItemScoreSimilarToBlockedDomain
-				suggestion.Reason += fmt.Sprintf("\nhas same domain level and similar blocked domain as %s; ", blockedDomain)
+				suggestion.Reason += fmt.Sprintf("\n%s %s; ", ReasonSimilarToBlockedDomain, blockedDomain)
 			}
 		}
 

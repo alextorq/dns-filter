@@ -17,6 +17,7 @@ useHead({
 const totalAmount = ref(0);
 const displayAmount = ref(0);
 const groups = ref<DbDomainCount[]>([]);
+const sourcesCount = ref<number | null>(null);
 const ready = ref(false);
 const now = new Date();
 
@@ -55,13 +56,16 @@ const formattedTime = (() => {
 })();
 
 onMounted(async () => {
+    const sourcesController = new AbortController();
     try {
-        const [amountRes, groupsRes] = await Promise.all([
+        const [amountRes, groupsRes, sourcesRes] = await Promise.all([
             api.getBlockDomainsAmount(),
             api.getBlockDomainsGroups(),
+            api.getAllSyncRecords(sourcesController.signal),
         ]);
         totalAmount.value = amountRes.amount ?? 0;
         groups.value = groupsRes.groups ?? [];
+        sourcesCount.value = sourcesRes.total ?? sourcesRes.list?.length ?? 0;
         ready.value = true;
         animate(totalAmount.value);
     } catch (e) {
@@ -107,11 +111,12 @@ onMounted(async () => {
                         </div>
                         <div>
                             <dt>Sources</dt>
-                            <dd>03 + user</dd>
-                        </div>
-                        <div>
-                            <dt>Status</dt>
-                            <dd class="ops__status-ok">nominal</dd>
+                            <dd>
+                                <span v-if="sourcesCount !== null">{{
+                                    String(sourcesCount).padStart(2, "0")
+                                }}</span>
+                                <span v-else>—</span>
+                            </dd>
                         </div>
                     </dl>
                 </div>
@@ -360,26 +365,18 @@ onMounted(async () => {
 }
 
 .ops__metric {
-    font-family: "Instrument Serif", serif;
-    font-weight: 400;
-    font-size: clamp(4rem, 13vw, 11rem);
-    line-height: 0.84;
-    letter-spacing: -0.045em;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 500;
+    font-size: clamp(3.5rem, 11vw, 9rem);
+    line-height: 0.9;
+    letter-spacing: -0.07em;
     margin: 0;
 }
 
 .ops__metric-value {
     display: inline-block;
     font-variant-numeric: tabular-nums;
-    background: linear-gradient(
-        180deg,
-        var(--text) 0%,
-        var(--text) 55%,
-        color-mix(in srgb, var(--accent), var(--text) 55%) 100%
-    );
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--text);
     animation: fadeUp 0.9s 0.2s both ease-out;
 }
 
@@ -456,10 +453,6 @@ onMounted(async () => {
     font-size: 0.95rem;
     color: var(--text);
     font-variant-numeric: tabular-nums;
-}
-
-.ops__status-ok {
-    color: var(--good) !important;
 }
 
 .ops__hero-art {

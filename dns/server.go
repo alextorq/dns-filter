@@ -2,8 +2,8 @@ package dns
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"net"
 	"time"
 
@@ -16,7 +16,8 @@ import (
 type DnsServer struct {
 	Address  string
 	Port     int
-	server   *dns.Server
+	udp      *dns.Server
+	tcp      *dns.Server
 	Logger   Logger
 	Cache    Cache
 	Filter   func(string2 string) bool
@@ -129,16 +130,62 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
-func (s *DnsServer) Serve() {
-	dns.HandleFunc(".", func(writer dns.ResponseWriter, msg *dns.Msg) {
-		s.handleDNS(writer, msg)
-	})
-	s.server = &dns.Server{Addr: ":53", Net: "udp"}
-	ips := utils.GetIp()
-	for _, ip := range ips {
-		s.Logger.Info("DNS фильтр запущен на:", ip+":53")
+// Serve binds UDP and TCP listeners on s.Address (default ":53") and runs
+// both in parallel. RFC 7766 requires DNS servers to support TCP for clients
+// that retry after a truncated UDP response.
+func (s *DnsServer) Serve() error {
+	addr := s.Address
+	if addr == "" {
+		addr = ":53"
 	}
-	log.Fatal(s.server.ListenAndServe())
+
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return fmt.Errorf("resolve udp addr: %w", err)
+	}
+	udpConn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return fmt.Errorf("listen udp: %w", err)
+	}
+	tcpListener, err := net.Listen("tcp", addr)
+	if err != nil {
+		udpConn.Close()
+		return fmt.Errorf("listen tcp: %w", err)
+	}
+
+	for _, ip := range utils.GetIp() {
+		s.Logger.Info("DNS фильтр запущен на:", ip+addr)
+	}
+
+	return s.ServeWithListeners(udpConn, tcpListener)
+}
+
+// ServeWithListeners runs UDP and TCP DNS servers on pre-bound endpoints
+// and blocks until either one returns. Exposed so tests can bind to an
+// ephemeral port without racing the OS.
+func (s *DnsServer) ServeWithListeners(udpConn net.PacketConn, tcpListener net.Listener) error {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, m *dns.Msg) {
+		s.handleDNS(w, m)
+	})
+	s.udp = &dns.Server{PacketConn: udpConn, Handler: handler}
+	s.tcp = &dns.Server{Listener: tcpListener, Handler: handler}
+
+	errCh := make(chan error, 2)
+	go func() { errCh <- s.udp.ActivateAndServe() }()
+	go func() { errCh <- s.tcp.ActivateAndServe() }()
+	return <-errCh
+}
+
+// Shutdown gracefully stops both UDP and TCP listeners.
+func (s *DnsServer) Shutdown() error {
+	var err error
+	if s.udp != nil {
+		err = errors.Join(err, s.udp.Shutdown())
+	}
+	if s.tcp != nil {
+		err = errors.Join(err, s.tcp.Shutdown())
+	}
+	return err
 }
 
 func CreateServer(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers) *DnsServer {

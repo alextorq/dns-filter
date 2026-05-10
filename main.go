@@ -70,5 +70,7 @@ func main() {
 		blockHandler: blockWorker.SendBlockDomainEvent,
 	})
 	web.CreateServer()
-	s.Serve()
+	if err := s.Serve(); err != nil {
+		panic(err)
+	}
 }

@@ -57,7 +57,12 @@ const confirmDelete = createLoadingRequest(deleteClient);
 
         <template #footer>
             <div class="flex justify-end gap-2 w-full">
-                <UButton color="neutral" variant="ghost" :disabled="isLoading" @click="open = false">
+                <UButton
+                    color="neutral"
+                    variant="ghost"
+                    :disabled="isLoading"
+                    @click="open = false"
+                >
                     Cancel
                 </UButton>
                 <UButton color="error" :loading="isLoading" @click="confirmDelete">

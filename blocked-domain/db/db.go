@@ -8,7 +8,6 @@ import (
 	"github.com/alextorq/dns-filter/db"
 	"github.com/alextorq/dns-filter/utils"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type BlockList struct {
@@ -150,15 +149,7 @@ func CreateDNSRecordsByDomains(urls []string, source string) error {
 	// Лимит SQLite — 32766 параметров на statement (с 3.32+).
 	// BlockList пишет 6 колонок (id, created_at, updated_at, deleted_at, url, active, source) —
 	// 5000 строк × 7 ≈ 35k. Берём 4000 с запасом.
-	const batchSize = 4000
-
-	// Вся пачка — одна транзакция: один fsync вместо одного на каждый батч.
-	// OnConflict{DoNothing} опирается на uniqueIndex на Url и заменяет ручной pre-check.
-	conn := db.GetConnection()
-	return conn.Transaction(func(tx *gorm.DB) error {
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).
-			CreateInBatches(entries, batchSize).Error
-	})
+	return db.BatchUpsert(entries, 4000)
 }
 
 func CreateDomain(domain string, source string) error {
@@ -206,12 +197,8 @@ func BatchCreateBlockDomainEvents(domains []string) error {
 		}
 	}
 
-	if len(events) == 0 {
-		return nil
-	}
-
 	// 3. Пакетная вставка
-	return conn.CreateInBatches(events, 100).Error
+	return db.BatchInsert(events, 100)
 }
 
 func DeleteOlderThan(days int) error {

@@ -2,11 +2,9 @@
 import type { TableColumn } from "@nuxt/ui";
 import { api } from "~/api";
 import type { DbSuggestBlock } from "~/api/generated/data-contracts";
-import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
-import { useDebounceFn } from "~~/composables/use-debounce-fn";
+import { usePaginatedList } from "~~/composables/use-paginated-list";
 import { UButton } from "#components";
 import { getErrorMessage } from "~~/utils/get-error-message";
-import { isAbortError } from "~~/utils/is-abort-error";
 
 useHead({
     title: "Suggest",
@@ -14,71 +12,23 @@ useHead({
 
 const toast = useToast();
 
-let lastFetchController: AbortController | null = null;
+const {
+    data: records,
+    filter: globalFilter,
+    pagination,
+    isLoading,
+    refresh,
+    changePage,
+} = usePaginatedList<DbSuggestBlock>(({ limit, offset, filter, signal }) =>
+    api.getAllSuggestRecords({ limit, offset, filter, active: true }, signal),
+);
 
-const records = ref<DbSuggestBlock[]>([]);
-const globalFilter = ref("");
-
-const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
-
-const pagination = ref({
-    pageIndex: 0,
-    pageSize: 12,
-    total: 0,
-});
-
-const fetchData = async () => {
-    try {
-        if (lastFetchController) lastFetchController.abort();
-        lastFetchController = new AbortController();
-        const response = await api.getAllSuggestRecords(
-            {
-                limit: pagination.value.pageSize,
-                offset: pagination.value.pageIndex * pagination.value.pageSize || 0,
-                filter: globalFilter.value,
-                active: true,
-            },
-            lastFetchController.signal,
-        );
-
-        records.value = response.list ?? [];
-        pagination.value = {
-            ...pagination.value,
-            total: response.total ?? 0,
-        };
-    } catch (error) {
-        if (isAbortError(error)) return;
-        toast.add({
-            title: "Error",
-            description: getErrorMessage(error),
-            duration: 5000,
-            color: "error",
-        });
-        console.error("Error fetching data:", error);
-    }
-};
-
-const fetchWithLoading = createLoadingRequest(fetchData);
-
-const changeFilter = async () => {
-    pagination.value.pageIndex = 0;
-    await fetchWithLoading();
-};
-
-const { debounced: debouncedFilter } = useDebounceFn(changeFilter, 300);
-watch(globalFilter, () => debouncedFilter());
-
-const changePage = async (page: number) => {
-    pagination.value.pageIndex = page - 1;
-    await fetchWithLoading();
-};
-
-onMounted(fetchWithLoading);
+onMounted(refresh);
 
 const blockDomain = async (item: DbSuggestBlock) => {
     try {
         await api.addSuggestToBlock(item);
-        await fetchWithLoading();
+        await refresh();
         toast.add({
             title: "Blocked",
             description: `${item.domain} added to the blocklist.`,
@@ -138,16 +88,13 @@ const columns: TableColumn<DbSuggestBlock>[] = [
             h(
                 "div",
                 { class: "flex justify-end" },
-                h(
-                    UButton,
-                    {
-                        size: "sm",
-                        color: "primary",
-                        icon: "i-lucide-shield-x",
-                        label: "Block",
-                        onClick: () => blockDomain(row.original),
-                    },
-                ),
+                h(UButton, {
+                    size: "sm",
+                    color: "primary",
+                    icon: "i-lucide-shield-x",
+                    label: "Block",
+                    onClick: () => blockDomain(row.original),
+                }),
             ),
     },
 ];

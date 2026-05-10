@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/alextorq/dns-filter/db"
-	"gorm.io/gorm/clause"
 )
 
 type AllowDomainEvent struct {
@@ -32,12 +31,6 @@ func CreateAllowDomainEvent(domain string) error {
 }
 
 func CreateBatchDomains(domains []string) error {
-	if len(domains) == 0 {
-		return nil
-	}
-	conn := db.GetConnection()
-
-	// Подготавливаем срез структур для вставки
 	events := make([]AllowDomainEvent, 0, len(domains))
 	for _, domain := range domains {
 		events = append(events, AllowDomainEvent{
@@ -45,11 +38,7 @@ func CreateBatchDomains(domains []string) error {
 			Active: true,
 		})
 	}
-	// clause.OnConflict{DoNothing: true} говорит БД:
-	// "Если запись с таким uniqueIndex уже есть, просто пропусти ее и не выдавай ошибку"
-	return conn.Clauses(clause.OnConflict{
-		DoNothing: true,
-	}).Create(&events).Error
+	return db.BatchUpsert(events, 0)
 }
 
 func DeleteOlderThan(days int) error {

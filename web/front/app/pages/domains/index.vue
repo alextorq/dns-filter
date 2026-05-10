@@ -4,19 +4,11 @@ import { api } from "~/api";
 import type { DbBlockList, DbBlockListSource, DbSource } from "~/api/generated/data-contracts";
 import AddDomainModal from "~/domain/add-new-domain/components/add-domain-modal.vue";
 import ChangeStatus from "~/domain/change-domain-status/components/change-status.vue";
-import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
-import { useDebounceFn } from "~~/composables/use-debounce-fn";
+import { usePaginatedList } from "~~/composables/use-paginated-list";
 import { formatDate } from "~~/utils/format-date";
-import { getErrorMessage } from "~~/utils/get-error-message";
 import { isAbortError } from "~~/utils/is-abort-error";
 
-let lastFetchController: AbortController | null = null;
-
-const toast = useToast();
-
-const data = ref<DbBlockList[]>([]);
 const sources = ref<DbSource[]>([]);
-const globalFilter = ref("");
 const source = ref<string | null>(null);
 
 const sourceItems = computed(() => [
@@ -27,65 +19,23 @@ const sourceItems = computed(() => [
         .map((name) => ({ label: name, value: name })),
 ]);
 
-const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
-
-const pagination = ref({
-    pageIndex: 0,
-    pageSize: 12,
-    total: 0,
-});
-
 useHead({
     title: "Domains",
 });
 
-const fetchData = async () => {
-    try {
-        if (lastFetchController) lastFetchController.abort();
-        lastFetchController = new AbortController();
-        const response = await api.getAllDnsRecords(
-            {
-                limit: pagination.value.pageSize,
-                offset: pagination.value.pageIndex * pagination.value.pageSize || 0,
-                filter: globalFilter.value,
-                source: source.value || "",
-            },
-            lastFetchController.signal,
-        );
+const {
+    data,
+    filter: globalFilter,
+    pagination,
+    isLoading,
+    refresh,
+    resetAndFetch,
+    changePage,
+} = usePaginatedList<DbBlockList>(({ limit, offset, filter, signal }) =>
+    api.getAllDnsRecords({ limit, offset, filter, source: source.value || "" }, signal),
+);
 
-        data.value = response.list ?? [];
-        pagination.value = {
-            ...pagination.value,
-            total: response.total ?? 0,
-        };
-    } catch (error) {
-        if (isAbortError(error)) return;
-        toast.add({
-            title: "Error",
-            description: getErrorMessage(error),
-            duration: 5000,
-            color: "error",
-        });
-        console.error("Error fetching data:", error);
-    }
-};
-
-const fetchWithLoading = createLoadingRequest(fetchData);
-
-const changeFilter = async () => {
-    pagination.value.pageIndex = 0;
-    await fetchWithLoading();
-};
-
-const { debounced: debouncedFilter } = useDebounceFn(changeFilter, 300);
-
-watch(globalFilter, () => debouncedFilter());
-watch(source, () => changeFilter());
-
-const changePage = async (page: number) => {
-    pagination.value.pageIndex = page - 1;
-    await fetchWithLoading();
-};
+watch(source, () => resetAndFetch());
 
 const fetchSources = async () => {
     try {
@@ -98,7 +48,7 @@ const fetchSources = async () => {
 };
 
 onMounted(() => {
-    fetchWithLoading();
+    refresh();
     fetchSources();
 });
 
@@ -125,11 +75,7 @@ const columns: TableColumn<DbBlockList>[] = [
         header: "Domain",
         cell: ({ row }) => {
             const url = row.original.url ?? "";
-            return h(
-                "span",
-                { class: "block max-w-[28ch] truncate font-mono", title: url },
-                url,
-            );
+            return h("span", { class: "block max-w-[28ch] truncate font-mono", title: url }, url);
         },
     },
     {

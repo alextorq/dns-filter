@@ -40,7 +40,7 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 
 		for _, blockedDomain := range blockedDomains {
 			if CheckItIsSubDomain(blockedDomain, allowedDomain) {
-				suggestion.Score = +ItemScoreSubdomainOfBlocked
+				suggestion.Score += ItemScoreSubdomainOfBlocked
 				suggestion.Reason += fmt.Sprintf("\nis subdomain of blocked domain %s; ", blockedDomain)
 			}
 
@@ -50,7 +50,7 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 			}
 		}
 
-		if suggestion.Score > 0 {
+		if suggestion.Score >= ThresholdToSuggestBlocking {
 			result = append(result, suggestion)
 		}
 

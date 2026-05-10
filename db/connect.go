@@ -27,6 +27,21 @@ func GetConnection() *gorm.DB {
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		// PRAGMA для bulk-операций: WAL даёт конкурентное чтение во время записи,
+		// synchronous=NORMAL убирает fsync на каждом коммите (durable до OS-краша),
+		// cache_size=-64000 = 64 МБ страничного кэша.
+		pragmas := []string{
+			"PRAGMA journal_mode=WAL",
+			"PRAGMA synchronous=NORMAL",
+			"PRAGMA temp_store=MEMORY",
+			"PRAGMA cache_size=-64000",
+		}
+		for _, p := range pragmas {
+			if err := db.Exec(p).Error; err != nil {
+				log.Fatal(err)
+			}
+		}
 	})
 	return db
 }

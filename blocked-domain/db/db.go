@@ -8,6 +8,7 @@ import (
 	"github.com/alextorq/dns-filter/db"
 	"github.com/alextorq/dns-filter/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type BlockList struct {
@@ -113,58 +114,32 @@ func DomainNotExist(domain string) bool {
 }
 
 func CreateDNSRecordsByDomains(urls []string, source string) error {
-	conn := db.GetConnection()
-	const chunkSize = 500 // безопасный размер для SQLite (лимит 999)
+	if len(urls) == 0 {
+		return nil
+	}
 
 	dedupedUrls := utils.OnlyUniqString(urls)
-
-	// --- 1. Находим уже существующие записи чанками ---
-	var existing []string
-	for i := 0; i < len(dedupedUrls); i += chunkSize {
-		end := i + chunkSize
-		if end > len(dedupedUrls) {
-			end = len(dedupedUrls)
-		}
-
-		var part []string
-		if err := conn.Model(&BlockList{}).
-			Where("url IN ?", dedupedUrls[i:end]).
-			Pluck("url", &part).Error; err != nil {
-			return err
-		}
-		existing = append(existing, part...)
-	}
-
-	// --- 2. Делаем set из существующих ---
-	existingSet := make(map[string]struct{}, len(existing))
-	for _, e := range existing {
-		existingSet[e] = struct{}{}
-	}
-
-	// --- 3. Собираем только новые записи ---
-	var newEntries []BlockList
+	entries := make([]BlockList, 0, len(dedupedUrls))
 	for _, u := range dedupedUrls {
-		if _, found := existingSet[u]; !found {
-			newEntries = append(newEntries, BlockList{
-				Url:    u,
-				Active: true,
-				Source: source,
-			})
-		}
+		entries = append(entries, BlockList{
+			Url:    u,
+			Active: true,
+			Source: source,
+		})
 	}
 
-	// --- 4. Вставляем новые записи чанками ---
-	for i := 0; i < len(newEntries); i += chunkSize {
-		end := i + chunkSize
-		if end > len(newEntries) {
-			end = len(newEntries)
-		}
-		if err := conn.CreateInBatches(newEntries[i:end], chunkSize).Error; err != nil {
-			return err
-		}
-	}
+	// Лимит SQLite — 32766 параметров на statement (с 3.32+).
+	// BlockList пишет 6 колонок (id, created_at, updated_at, deleted_at, url, active, source) —
+	// 5000 строк × 7 ≈ 35k. Берём 4000 с запасом.
+	const batchSize = 4000
 
-	return nil
+	// Вся пачка — одна транзакция: один fsync вместо одного на каждый батч.
+	// OnConflict{DoNothing} опирается на uniqueIndex на Url и заменяет ручной pre-check.
+	conn := db.GetConnection()
+	return conn.Transaction(func(tx *gorm.DB) error {
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).
+			CreateInBatches(entries, batchSize).Error
+	})
 }
 
 func CreateDomain(domain string, source string) error {
@@ -183,17 +158,25 @@ func BatchCreateBlockDomainEvents(domains []string) error {
 		return nil
 	}
 
-	// 1. Получаем ID всех уникальных доменов из батча
+	// 1. Получаем ID всех уникальных доменов из батча.
+	// Проекция id+url вместо BlockList целиком — index-only scan по idx_theme_host.
 	uniqDomains := utils.OnlyUniqString(domains)
-	var blockLists []BlockList
-	if err := conn.Where("url IN ?", uniqDomains).Find(&blockLists).Error; err != nil {
+	type idUrl struct {
+		ID  uint
+		Url string
+	}
+	var rows []idUrl
+	if err := conn.Model(&BlockList{}).
+		Select("id", "url").
+		Where("url IN ?", uniqDomains).
+		Find(&rows).Error; err != nil {
 		return err
 	}
 
 	// Создаем карту url -> id для быстрого поиска
-	domainMap := make(map[string]uint)
-	for _, bl := range blockLists {
-		domainMap[bl.Url] = bl.ID
+	domainMap := make(map[string]uint, len(rows))
+	for _, r := range rows {
+		domainMap[r.Url] = r.ID
 	}
 
 	// 2. Формируем список событий, сохраняя исходное количество запросов

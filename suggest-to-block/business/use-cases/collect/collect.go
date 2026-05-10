@@ -16,7 +16,31 @@ const (
 	ItemScoreContainsBadKeywords    = 5
 	ItemScoreSubdomainOfBlocked     = 20
 	ItemScoreSimilarToBlockedDomain = 15
-	ThresholdToSuggestBlocking      = 30
+	ItemScoreRiskyTLD               = 5
+	ItemScoreNumericRun             = 5
+	ItemScoreHexUUID                = 10
+	ItemScoreHomograph              = 10
+	// ItemScoreBrandImpersonation намеренно ниже ThresholdToSuggestBlocking:
+	// одно сходство apex'а с брендом не доказывает фишинг (легитимные
+	// конкуренты, новые домены), поэтому typosquat должен подтверждаться
+	// вторым слабым сигналом — risky-TLD, bad-keyword, subdomain-of-blocked.
+	ItemScoreBrandImpersonation = 25
+	ThresholdToSuggestBlocking  = 30
+)
+
+// Стабильные подстроки, которые CollectSuggest добавляет в Suggestion.Reason
+// при срабатывании соответствующего сигнала. Использование констант
+// связывает реализацию с тестами и упрощает локализацию/перевод.
+const (
+	ReasonSuspiciousDomain       = "appears to be suspicious"
+	ReasonContainsBadKeywords    = "contains keywords indicating ads or tracking"
+	ReasonSubdomainOfBlocked     = "is subdomain of blocked domain"
+	ReasonSimilarToBlockedDomain = "has same domain level and similar blocked domain as"
+	ReasonRiskyTLD               = "uses a TLD with elevated abuse rate"
+	ReasonNumericRun             = "label contains a long run of digits"
+	ReasonHexUUIDLabel           = "label looks like a hex hash or UUID"
+	ReasonHomographLabel         = "label contains a mixed-script homograph"
+	ReasonBrandImpersonation     = "resembles a known brand domain but is not it"
 )
 
 func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
@@ -30,27 +54,52 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 
 		if IsDomainSuspicious(allowedDomain) {
 			suggestion.Score += ItemScoreSuspiciousDomain
-			suggestion.Reason += "\nappears to be suspicious; "
+			suggestion.Reason += "\n" + ReasonSuspiciousDomain + "; "
 		}
 
 		if CheckForBadKeywords(allowedDomain) {
 			suggestion.Score += ItemScoreContainsBadKeywords
-			suggestion.Reason += "\ncontains keywords indicating ads or tracking; "
+			suggestion.Reason += "\n" + ReasonContainsBadKeywords + "; "
+		}
+
+		if IsRiskyTLD(allowedDomain) {
+			suggestion.Score += ItemScoreRiskyTLD
+			suggestion.Reason += "\n" + ReasonRiskyTLD + "; "
+		}
+
+		if HasNumericRun(allowedDomain) {
+			suggestion.Score += ItemScoreNumericRun
+			suggestion.Reason += "\n" + ReasonNumericRun + "; "
+		}
+
+		if HasHexUUIDLabel(allowedDomain) {
+			suggestion.Score += ItemScoreHexUUID
+			suggestion.Reason += "\n" + ReasonHexUUIDLabel + "; "
+		}
+
+		if HasHomographLabel(allowedDomain) {
+			suggestion.Score += ItemScoreHomograph
+			suggestion.Reason += "\n" + ReasonHomographLabel + "; "
+		}
+
+		if IsBrandImpersonation(allowedDomain) {
+			suggestion.Score += ItemScoreBrandImpersonation
+			suggestion.Reason += "\n" + ReasonBrandImpersonation + "; "
 		}
 
 		for _, blockedDomain := range blockedDomains {
 			if CheckItIsSubDomain(blockedDomain, allowedDomain) {
-				suggestion.Score = +ItemScoreSubdomainOfBlocked
-				suggestion.Reason += fmt.Sprintf("\nis subdomain of blocked domain %s; ", blockedDomain)
+				suggestion.Score += ItemScoreSubdomainOfBlocked
+				suggestion.Reason += fmt.Sprintf("\n%s %s; ", ReasonSubdomainOfBlocked, blockedDomain)
 			}
 
 			if CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain(blockedDomain, allowedDomain) {
 				suggestion.Score += ItemScoreSimilarToBlockedDomain
-				suggestion.Reason += fmt.Sprintf("\nhas same domain level and similar blocked domain as %s; ", blockedDomain)
+				suggestion.Reason += fmt.Sprintf("\n%s %s; ", ReasonSimilarToBlockedDomain, blockedDomain)
 			}
 		}
 
-		if suggestion.Score > 0 {
+		if suggestion.Score >= ThresholdToSuggestBlocking {
 			result = append(result, suggestion)
 		}
 

@@ -36,7 +36,7 @@ func Collect() error {
 	}
 
 	forBlock := suggest_to_block_use_cases_collect.CollectSuggest(blocked, allowed)
-	suggests := make([]suggest_to_block_db.SuggestBlock, len(forBlock))
+	suggests := make([]suggest_to_block_db.SuggestBlock, 0, len(forBlock))
 
 	for _, domain := range forBlock {
 		suggests = append(suggests, suggest_to_block_db.SuggestBlock{

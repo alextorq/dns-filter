@@ -1,0 +1,522 @@
+# MAC OUI prefix → vendor lookup. Used by discovery to label discovered
+# devices ("Apple, Inc." rather than just "ac:cf:5c:...:..."). Each line is:
+#
+#   XX:XX:XX  Vendor display name
+#
+# Entries are case-insensitive on the prefix. Only the first 24 bits (OUI)
+# are used; sub-OUI assignments aren't tracked. Comments and blank lines are
+# ignored.
+#
+# This list is curated for common consumer hardware found on home LANs. For
+# devices not in the list discovery falls through to "Unknown" — the user can
+# always rename via the client's Name field. Extending the list is just a
+# matter of editing this file; the lookup re-parses it on process start.
+
+# Apple
+00:03:93  Apple
+00:0A:27  Apple
+00:14:51  Apple
+00:16:CB  Apple
+00:17:F2  Apple
+00:1B:63  Apple
+00:1C:B3  Apple
+00:1F:5B  Apple
+00:1F:F3  Apple
+00:23:12  Apple
+00:23:6C  Apple
+00:25:4B  Apple
+00:26:08  Apple
+00:26:4A  Apple
+00:26:B0  Apple
+00:26:BB  Apple
+00:88:65  Apple
+00:F4:B9  Apple
+04:0C:CE  Apple
+04:54:53  Apple
+04:DB:56  Apple
+14:8F:C6  Apple
+1C:E6:2B  Apple
+20:7D:74  Apple
+28:CF:DA  Apple
+38:F9:D3  Apple
+3C:07:54  Apple
+3C:E0:72  Apple
+40:6C:8F  Apple
+40:A6:D9  Apple
+4C:8D:79  Apple
+50:7A:55  Apple
+60:33:4B  Apple
+60:F8:1D  Apple
+68:5B:35  Apple
+6C:40:08  Apple
+70:48:0F  Apple
+74:81:14  Apple
+78:CA:39  Apple
+7C:11:BE  Apple
+84:38:35  Apple
+88:1F:A1  Apple
+8C:7B:9D  Apple
+90:B0:ED  Apple
+94:E9:6A  Apple
+9C:84:BF  Apple
+A4:67:06  Apple
+A8:5C:2C  Apple
+AC:CF:5C  Apple
+B8:53:AC  Apple
+BC:52:B7  Apple
+C0:84:7A  Apple
+DC:2B:2A  Apple
+E0:F8:47  Apple
+F0:18:98  Apple
+F0:DB:E2  Apple
+F8:1E:DF  Apple
+
+# Samsung
+00:07:AB  Samsung
+00:12:FB  Samsung
+00:1A:8A  Samsung
+00:1F:CC  Samsung
+00:24:54  Samsung
+04:18:0F  Samsung
+08:08:C2  Samsung
+18:46:17  Samsung
+28:CC:01  Samsung
+30:CD:A7  Samsung
+50:CC:F8  Samsung
+5C:0A:5B  Samsung
+74:45:8A  Samsung
+84:25:DB  Samsung
+9C:E6:E7  Samsung
+B0:72:BF  Samsung
+BC:F5:AC  Samsung
+C8:14:79  Samsung
+EC:43:F6  Samsung
+
+# Google
+00:1A:11  Google
+1C:F2:9A  Google
+28:BD:89  Google
+30:FD:38  Google
+3C:5A:B4  Google
+54:60:09  Google
+54:CD:62  Google
+6C:AD:F8  Google
+70:3A:CB  Google
+94:EB:2C  Google
+AC:8B:A9  Google
+DA:A1:19  Google
+F4:F5:D8  Google
+F8:8F:CA  Google
+F8:8F:1A  Google
+
+# Amazon
+00:FC:8B  Amazon
+0C:47:C9  Amazon
+18:74:2E  Amazon
+1C:4D:66  Amazon
+38:F7:3D  Amazon
+4C:EF:C0  Amazon
+50:DC:E7  Amazon
+6C:56:97  Amazon
+74:75:48  Amazon
+78:E1:03  Amazon
+84:D6:D0  Amazon
+88:71:E5  Amazon
+A0:02:DC  Amazon
+A4:08:01  Amazon
+AC:63:BE  Amazon
+F0:27:2D  Amazon
+F0:D2:F1  Amazon
+FC:65:DE  Amazon
+
+# Yandex
+04:0E:3C  Yandex
+30:0F:9A  Yandex
+50:14:79  Yandex
+A4:CF:99  Yandex
+
+# Microsoft
+00:03:FF  Microsoft
+00:12:5A  Microsoft
+00:15:5D  Microsoft
+00:50:F2  Microsoft
+28:18:78  Microsoft
+38:78:62  Microsoft
+60:45:BD  Microsoft
+7C:1E:52  Microsoft
+9C:AA:1B  Microsoft
+B0:5A:DA  Microsoft
+
+# Sony
+00:01:4A  Sony
+00:0E:07  Sony
+00:1F:A7  Sony
+04:62:73  Sony
+30:52:CB  Sony
+54:42:49  Sony
+5C:B5:24  Sony
+78:84:3C  Sony
+8C:B8:4A  Sony
+AC:C1:EE  Sony
+F8:DA:0C  Sony
+
+# Xiaomi
+04:9F:CA  Xiaomi
+0C:1D:AF  Xiaomi
+18:59:36  Xiaomi
+28:E3:1F  Xiaomi
+50:8F:4C  Xiaomi
+5C:F8:A1  Xiaomi
+68:DF:DD  Xiaomi
+78:11:DC  Xiaomi
+8C:BE:BE  Xiaomi
+9C:99:A0  Xiaomi
+AC:F7:F0  Xiaomi
+B0:E2:35  Xiaomi
+F0:B4:29  Xiaomi
+F4:8B:32  Xiaomi
+FC:64:BA  Xiaomi
+
+# LG
+00:1F:6B  LG
+00:E0:91  LG
+38:8C:50  LG
+58:A2:B5  LG
+64:49:7D  LG
+A8:23:FE  LG
+B8:1D:AA  LG
+CC:2D:8C  LG
+
+# Sonos
+00:0E:58  Sonos
+5C:AA:FD  Sonos
+78:28:CA  Sonos
+94:9F:3E  Sonos
+B8:E9:37  Sonos
+
+# Roku
+88:DE:A9  Roku
+AC:3A:7A  Roku
+B0:A7:37  Roku
+B8:A1:75  Roku
+CC:6D:A0  Roku
+D8:31:34  Roku
+D8:31:CF  Roku
+DC:3A:5E  Roku
+
+# Nintendo
+00:09:BF  Nintendo
+00:16:56  Nintendo
+00:17:AB  Nintendo
+00:19:1D  Nintendo
+00:1A:E9  Nintendo
+00:1B:7A  Nintendo
+00:1C:BE  Nintendo
+00:1F:32  Nintendo
+00:21:BD  Nintendo
+00:22:D7  Nintendo
+00:23:31  Nintendo
+00:24:1E  Nintendo
+00:24:F3  Nintendo
+00:25:A0  Nintendo
+00:26:59  Nintendo
+04:03:D6  Nintendo
+18:2A:7B  Nintendo
+2C:10:C1  Nintendo
+40:F4:07  Nintendo
+58:BD:A3  Nintendo
+60:6B:FF  Nintendo
+98:B6:E9  Nintendo
+A4:5C:27  Nintendo
+B8:8A:EC  Nintendo
+
+# Cisco / Linksys
+00:04:5A  Linksys
+00:06:25  Linksys
+00:0B:5F  Cisco
+00:0C:41  Linksys
+00:0E:08  Cisco
+00:14:BF  Linksys
+00:18:F8  Linksys
+00:1A:70  Linksys
+00:1C:10  Linksys
+00:1D:7E  Linksys
+00:1E:E5  Cisco
+00:22:6B  Linksys
+00:23:69  Cisco
+00:25:9C  Linksys
+
+# TP-Link
+00:1D:0F  TP-Link
+00:27:19  TP-Link
+14:CF:92  TP-Link
+18:A6:F7  TP-Link
+30:B5:C2  TP-Link
+50:BD:5F  TP-Link
+54:E6:FC  TP-Link
+64:70:02  TP-Link
+84:16:F9  TP-Link
+90:F6:52  TP-Link
+98:DA:C4  TP-Link
+AC:84:C6  TP-Link
+B0:48:7A  TP-Link
+EC:08:6B  TP-Link
+F4:F2:6D  TP-Link
+
+# ASUS
+00:0C:6E  ASUS
+00:11:2F  ASUS
+00:13:D4  ASUS
+00:15:F2  ASUS
+00:17:31  ASUS
+00:1A:92  ASUS
+00:1B:FC  ASUS
+00:1F:C6  ASUS
+00:22:15  ASUS
+00:23:54  ASUS
+00:24:8C  ASUS
+00:26:18  ASUS
+04:D9:F5  ASUS
+14:DD:A9  ASUS
+1C:87:2C  ASUS
+2C:56:DC  ASUS
+38:D5:47  ASUS
+50:46:5D  ASUS
+70:8B:CD  ASUS
+74:D0:2B  ASUS
+B0:6E:BF  ASUS
+BC:EE:7B  ASUS
+
+# Netgear
+00:09:5B  Netgear
+00:0F:B5  Netgear
+00:14:6C  Netgear
+00:1B:2F  Netgear
+00:1E:2A  Netgear
+00:1F:33  Netgear
+00:22:3F  Netgear
+00:24:B2  Netgear
+00:26:F2  Netgear
+04:A1:51  Netgear
+28:C6:8E  Netgear
+30:46:9A  Netgear
+4C:60:DE  Netgear
+6C:B0:CE  Netgear
+84:1B:5E  Netgear
+9C:3D:CF  Netgear
+9C:D3:6D  Netgear
+A4:11:62  Netgear
+B0:39:56  Netgear
+B0:7F:B9  Netgear
+C0:3F:0E  Netgear
+C4:04:15  Netgear
+E0:46:9A  Netgear
+
+# Ubiquiti
+00:15:6D  Ubiquiti
+00:27:22  Ubiquiti
+04:18:D6  Ubiquiti
+24:5A:4C  Ubiquiti
+44:D9:E7  Ubiquiti
+68:72:51  Ubiquiti
+78:8A:20  Ubiquiti
+80:2A:A8  Ubiquiti
+94:2A:6F  Ubiquiti
+B4:FB:E4  Ubiquiti
+DC:9F:DB  Ubiquiti
+F0:9F:C2  Ubiquiti
+
+# D-Link
+00:05:5D  D-Link
+00:0F:3D  D-Link
+00:13:46  D-Link
+00:15:E9  D-Link
+00:17:9A  D-Link
+00:19:5B  D-Link
+00:1B:11  D-Link
+00:1C:F0  D-Link
+00:1E:58  D-Link
+00:1F:1F  D-Link
+00:21:91  D-Link
+00:22:B0  D-Link
+00:24:01  D-Link
+00:26:5A  D-Link
+14:D6:4D  D-Link
+1C:7E:E5  D-Link
+28:10:7B  D-Link
+5C:D9:98  D-Link
+78:54:2E  D-Link
+A0:AB:1B  D-Link
+B8:A3:86  D-Link
+C8:BE:19  D-Link
+C8:D3:A3  D-Link
+CC:B2:55  D-Link
+F0:7D:68  D-Link
+FC:75:16  D-Link
+
+# Belkin
+00:11:50  Belkin
+00:1C:DF  Belkin
+00:30:BD  Belkin
+08:86:3B  Belkin
+14:91:82  Belkin
+24:F5:A2  Belkin
+64:1C:67  Belkin
+80:69:1A  Belkin
+94:10:3E  Belkin
+EC:1A:59  Belkin
+EC:23:3D  Belkin
+
+# Synology
+00:11:32  Synology
+90:09:D0  Synology
+
+# QNAP
+00:08:9B  QNAP
+24:5E:BE  QNAP
+
+# Philips Hue
+00:17:88  Philips Hue
+88:13:BF  Philips Hue
+EC:B5:FA  Philips Hue
+
+# Intel (NICs)
+00:02:B3  Intel
+00:13:02  Intel
+00:13:CE  Intel
+00:13:E8  Intel
+00:15:00  Intel
+00:15:17  Intel
+00:16:6F  Intel
+00:16:76  Intel
+00:16:EA  Intel
+00:18:DE  Intel
+00:19:D1  Intel
+00:1B:21  Intel
+00:1B:77  Intel
+00:1C:BF  Intel
+00:1D:E0  Intel
+00:1E:64  Intel
+00:1F:3B  Intel
+00:21:5C  Intel
+00:21:6A  Intel
+00:22:FA  Intel
+00:23:14  Intel
+00:24:D6  Intel
+00:26:C6  Intel
+00:27:10  Intel
+
+# Realtek
+00:08:54  Realtek
+00:0E:2E  Realtek
+00:10:18  Realtek
+00:14:78  Realtek
+00:E0:4C  Realtek
+00:E0:7D  Realtek
+
+# Raspberry Pi Foundation
+B8:27:EB  Raspberry Pi
+DC:A6:32  Raspberry Pi
+E4:5F:01  Raspberry Pi
+2C:CF:67  Raspberry Pi
+
+# Espressif (ESP32 / common in IoT)
+24:0A:C4  Espressif
+24:6F:28  Espressif
+24:B2:DE  Espressif
+30:AE:A4  Espressif
+3C:71:BF  Espressif
+8C:AA:B5  Espressif
+9C:9C:1F  Espressif
+A0:20:A6  Espressif
+A4:CF:12  Espressif
+AC:D0:74  Espressif
+BC:DD:C2  Espressif
+CC:50:E3  Espressif
+D8:A0:1D  Espressif
+D8:BF:C0  Espressif
+DC:4F:22  Espressif
+E8:9F:6D  Espressif
+E8:DB:84  Espressif
+EC:62:60  Espressif
+
+# Lenovo
+00:08:74  Lenovo
+00:09:6B  Lenovo
+00:23:B6  Lenovo
+00:24:7E  Lenovo
+28:F1:0E  Lenovo
+40:1B:0F  Lenovo
+88:53:2E  Lenovo
+F8:75:88  Lenovo
+
+# HP / HPE
+00:01:E6  HP
+00:08:02  HP
+00:0F:20  HP
+00:11:0A  HP
+00:14:38  HP
+00:17:08  HP
+00:18:71  HP
+00:1B:78  HP
+00:1F:29  HP
+00:21:5A  HP
+00:23:7D  HP
+00:25:B3  HP
+00:26:55  HP
+3C:D9:2B  HP
+
+# Dell
+00:06:5B  Dell
+00:08:74  Dell
+00:0B:DB  Dell
+00:0F:1F  Dell
+00:11:43  Dell
+00:13:72  Dell
+00:14:22  Dell
+00:18:8B  Dell
+00:1A:A0  Dell
+00:1D:09  Dell
+00:1E:4F  Dell
+00:21:9B  Dell
+00:22:19  Dell
+00:24:E8  Dell
+00:26:B9  Dell
+14:18:77  Dell
+B0:83:FE  Dell
+B8:CA:3A  Dell
+
+# AVM (Fritz!Box, popular in EU/RU)
+00:04:0E  AVM
+3C:A6:2F  AVM
+C0:25:06  AVM
+F0:9F:C2  AVM
+
+# MikroTik
+4C:5E:0C  MikroTik
+6C:3B:6B  MikroTik
+B8:69:F4  MikroTik
+CC:2D:E0  MikroTik
+DC:2C:6E  MikroTik
+
+# Tuya (smart home)
+20:6E:B4  Tuya
+50:02:91  Tuya
+68:57:2D  Tuya
+84:0D:8E  Tuya
+A4:E5:7C  Tuya
+B0:CE:18  Tuya
+D8:1F:12  Tuya
+DC:4F:22  Tuya
+
+# Ring (Amazon)
+B0:09:DA  Ring
+
+# Logitech
+00:0E:08  Logitech
+00:1F:20  Logitech
+44:73:D6  Logitech
+
+# IKEA (TRÅDFRI / smart home)
+74:DA:38  IKEA
+84:B4:DB  IKEA

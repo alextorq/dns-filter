@@ -2,5 +2,9 @@
 *.sqlite
 tmp
 *.txt
+# oui.txt is embedded into the binary via //go:embed and MUST be tracked,
+# otherwise the Dockerfile.backend build fails with "pattern oui.txt: no
+# matching files found". The broad *.txt rule above ignored it silently.
+!clients/discovery/oui.txt
 data
 .DS_Store

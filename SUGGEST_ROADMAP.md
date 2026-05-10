@@ -101,7 +101,7 @@ a7cb4c8 suggest: fix score accumulation, threshold check and slice allocation
 
 | Вход | Декодированное | Ожидание | Почему |
 |---|---|---|---|
-| `xn--ggle-jum.com` | `gооgle.com` | true | Latin g/l/e + Cyrillic о = phishing |
+| `xn--ggle-55da.com` | `gооgle.com` | true | Latin g/l/e + Cyrillic о = phishing |
 | `xn--p1ai` | `.рф` | false | TLD-only, мы пропускаем последний лейбл |
 | `xn--d1acpjx3f.xn--p1ai` | `яндекс.рф` | false | Только Cyrillic — один скрипт |
 | `xn--bcher-kva.com` | `bücher.com` | false | Только Latin (с диакритиком) |

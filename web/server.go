@@ -47,6 +47,7 @@ func CreateServer() *gin.Engine {
 		api.POST("/events/block/amount-by-group", eventsWeb.GetAmountByDomain)
 
 		api.POST("/suggest-to-block", suggestWeb.GetAllSuggestBlocks)
+		api.GET("/suggest-to-block/codes", suggestWeb.GetSignalCodes)
 		api.POST("/suggest-to-block/add-to-block", suggestWeb.AddToBlock)
 		api.POST("/suggest-to-block/change-status", suggestWeb.ChangeActiveStatus)
 

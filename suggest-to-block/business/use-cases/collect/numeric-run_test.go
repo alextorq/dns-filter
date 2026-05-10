@@ -121,9 +121,9 @@ func TestCollectSuggest_NumericRunPushesOverThreshold(t *testing.T) {
 	if got.Score != wantScore {
 		t.Fatalf("score = %d, want %d", got.Score, wantScore)
 	}
-	if !strings.Contains(got.Reason, ReasonNumericRun) {
-		t.Errorf("reason missing numeric-run hint %q in %q",
-			ReasonNumericRun, got.Reason)
+	if !hasCode(got.Reasons, CodeNumericRun) {
+		t.Errorf("reasons missing numeric-run code %q in %+v",
+			CodeNumericRun, got.Reasons)
 	}
 }
 

@@ -32,6 +32,7 @@ func TestMain(m *testing.M) {
 		&blocked_domain_db.BlockList{},
 		&blocked_domain_db.BlockDomainEvent{},
 		&suggest_to_block_db.SuggestBlock{},
+		&suggest_to_block_db.SuggestBlockReason{},
 	); err != nil {
 		os.RemoveAll(tmp)
 		panic(err)
@@ -159,6 +160,39 @@ func TestAddToBlock_DomainAlreadyInBlocklist_Returns200AndDeactivates(t *testing
 	}
 	if s.Active {
 		t.Fatal("suggestion should be deactivated even when blocklist already had the domain")
+	}
+}
+
+// TestGetSignalCodes pins the wire contract: handler returns a non-empty
+// list and every entry exposes code + label (description allowed to be empty
+// in the future). Without this, a refactor that nukes the catalog or breaks
+// JSON tags ships silently.
+func TestGetSignalCodes(t *testing.T) {
+	r := gin.New()
+	r.GET("/api/suggest-to-block/codes", GetSignalCodes)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/suggest-to-block/codes", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
+	}
+
+	var resp GetSignalCodesResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.List) == 0 {
+		t.Fatal("expected non-empty signal catalog")
+	}
+	for i, s := range resp.List {
+		if s.Code == "" {
+			t.Errorf("entry %d has empty code", i)
+		}
+		if s.Label == "" {
+			t.Errorf("entry %d (%s) has empty label", i, s.Code)
+		}
 	}
 }
 

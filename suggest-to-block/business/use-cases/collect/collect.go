@@ -1,14 +1,23 @@
 package collect
 
 import (
-	"fmt"
+	"slices"
 	"strings"
 )
 
+// Reason is a single signal that contributed to a suggestion. Code identifies
+// the signal; Match optionally carries the related blocked-domain for signals
+// that compare against the blocklist (subdomain / similar). Stored verbatim
+// in the suggest_block_reasons table — no human-readable text on the backend.
+type Reason struct {
+	Code  string
+	Match string
+}
+
 type Suggestion struct {
-	Domain string
-	Reason string
-	Score  int
+	Domain  string
+	Reasons []Reason
+	Score   int
 }
 
 const (
@@ -28,20 +37,86 @@ const (
 	ThresholdToSuggestBlocking  = 30
 )
 
-// Стабильные подстроки, которые CollectSuggest добавляет в Suggestion.Reason
-// при срабатывании соответствующего сигнала. Использование констант
-// связывает реализацию с тестами и упрощает локализацию/перевод.
+// Стабильные коды сигналов. Хранятся в БД и в API в неизменном виде —
+// при переименовании ломается история и фронт-маппинг лейблов.
 const (
-	ReasonSuspiciousDomain       = "appears to be suspicious"
-	ReasonContainsBadKeywords    = "contains keywords indicating ads or tracking"
-	ReasonSubdomainOfBlocked     = "is subdomain of blocked domain"
-	ReasonSimilarToBlockedDomain = "has same domain level and similar blocked domain as"
-	ReasonRiskyTLD               = "uses a TLD with elevated abuse rate"
-	ReasonNumericRun             = "label contains a long run of digits"
-	ReasonHexUUIDLabel           = "label looks like a hex hash or UUID"
-	ReasonHomographLabel         = "label contains a mixed-script homograph"
-	ReasonBrandImpersonation     = "resembles a known brand domain but is not it"
+	CodeSuspiciousEntropy  = "suspicious_entropy"
+	CodeBadKeywords        = "bad_keywords"
+	CodeSubdomainOfBlocked = "subdomain_of_blocked"
+	CodeSimilarToBlocked   = "similar_to_blocked"
+	CodeRiskyTLD           = "risky_tld"
+	CodeNumericRun         = "numeric_run"
+	CodeHexUUID            = "hex_uuid"
+	CodeHomograph          = "homograph"
+	CodeBrandImpersonation = "brand_impersonation"
 )
+
+// SignalDescriptor — публичное описание одного сигнала. Бек отдаёт каталог
+// на /api/suggest-to-block/codes, фронт использует его и для человеческих
+// лейблов в таблице, и для опций мульти-селекта фильтра.
+type SignalDescriptor struct {
+	Code        string `json:"code"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+// signalCatalog — единственный источник правды для лейблов сигналов.
+// Порядок здесь = порядок в UI (от самых сильных сигналов к слабым).
+// Доступ только через Catalog() — это защищает от случайной мутации
+// глобального слайса вызывающим кодом или тестами.
+var signalCatalog = []SignalDescriptor{
+	{
+		Code:        CodeBrandImpersonation,
+		Label:       "Brand impersonation",
+		Description: "Apex domain looks like a typosquat of a known brand (paypa1, goog1e).",
+	},
+	{
+		Code:        CodeSuspiciousEntropy,
+		Label:       "Suspicious entropy",
+		Description: "Label has high entropy or all-consonant ratio — looks machine-generated.",
+	},
+	{
+		Code:        CodeSubdomainOfBlocked,
+		Label:       "Subdomain of blocked",
+		Description: "Domain is a subdomain of a domain already on the blocklist.",
+	},
+	{
+		Code:        CodeSimilarToBlocked,
+		Label:       "Similar to blocked",
+		Description: "Same domain depth and ≥80% Damerau-Levenshtein similarity to a blocked domain.",
+	},
+	{
+		Code:        CodeHomograph,
+		Label:       "Homograph",
+		Description: "Label contains mixed-script characters (Cyrillic/Latin lookalikes, IDN typosquat).",
+	},
+	{
+		Code:        CodeHexUUID,
+		Label:       "Hex/UUID label",
+		Description: "Label looks like a hex hash or UUID — common for tracker/CDN endpoints.",
+	},
+	{
+		Code:        CodeRiskyTLD,
+		Label:       "Risky TLD",
+		Description: "TLD has elevated abuse rate (.tk, .xyz, .work, .click, …).",
+	},
+	{
+		Code:        CodeNumericRun,
+		Label:       "Numeric run",
+		Description: "Label contains a long run of digits — common in throwaway hostnames.",
+	},
+	{
+		Code:        CodeBadKeywords,
+		Label:       "Ad/tracker keywords",
+		Description: "Contains tokens commonly used by ad/tracking infrastructure (ad, ads, tracker, pixel, …).",
+	},
+}
+
+// Catalog returns a defensive copy of the signal catalog. Returning a clone
+// avoids leaking mutability of the package-level slice to callers.
+func Catalog() []SignalDescriptor {
+	return slices.Clone(signalCatalog)
+}
 
 func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
 	var result []Suggestion
@@ -54,48 +129,48 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 
 		if IsDomainSuspicious(allowedDomain) {
 			suggestion.Score += ItemScoreSuspiciousDomain
-			suggestion.Reason += "\n" + ReasonSuspiciousDomain + "; "
+			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeSuspiciousEntropy})
 		}
 
 		if CheckForBadKeywords(allowedDomain) {
 			suggestion.Score += ItemScoreContainsBadKeywords
-			suggestion.Reason += "\n" + ReasonContainsBadKeywords + "; "
+			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeBadKeywords})
 		}
 
 		if IsRiskyTLD(allowedDomain) {
 			suggestion.Score += ItemScoreRiskyTLD
-			suggestion.Reason += "\n" + ReasonRiskyTLD + "; "
+			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeRiskyTLD})
 		}
 
 		if HasNumericRun(allowedDomain) {
 			suggestion.Score += ItemScoreNumericRun
-			suggestion.Reason += "\n" + ReasonNumericRun + "; "
+			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeNumericRun})
 		}
 
 		if HasHexUUIDLabel(allowedDomain) {
 			suggestion.Score += ItemScoreHexUUID
-			suggestion.Reason += "\n" + ReasonHexUUIDLabel + "; "
+			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeHexUUID})
 		}
 
 		if HasHomographLabel(allowedDomain) {
 			suggestion.Score += ItemScoreHomograph
-			suggestion.Reason += "\n" + ReasonHomographLabel + "; "
+			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeHomograph})
 		}
 
 		if IsBrandImpersonation(allowedDomain) {
 			suggestion.Score += ItemScoreBrandImpersonation
-			suggestion.Reason += "\n" + ReasonBrandImpersonation + "; "
+			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeBrandImpersonation})
 		}
 
 		for _, blockedDomain := range blockedDomains {
 			if CheckItIsSubDomain(blockedDomain, allowedDomain) {
 				suggestion.Score += ItemScoreSubdomainOfBlocked
-				suggestion.Reason += fmt.Sprintf("\n%s %s; ", ReasonSubdomainOfBlocked, blockedDomain)
+				suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeSubdomainOfBlocked, Match: blockedDomain})
 			}
 
 			if CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain(blockedDomain, allowedDomain) {
 				suggestion.Score += ItemScoreSimilarToBlockedDomain
-				suggestion.Reason += fmt.Sprintf("\n%s %s; ", ReasonSimilarToBlockedDomain, blockedDomain)
+				suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeSimilarToBlocked, Match: blockedDomain})
 			}
 		}
 

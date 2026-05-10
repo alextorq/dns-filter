@@ -1,9 +1,20 @@
 package collect
 
 import (
-	"strings"
 	"testing"
 )
+
+// hasCode reports whether reasons contains a Reason with the given code.
+// Tests assert by code instead of substring search since reasons are now
+// structured records, not concatenated strings.
+func hasCode(reasons []Reason, code string) bool {
+	for _, r := range reasons {
+		if r.Code == code {
+			return true
+		}
+	}
+	return false
+}
 
 // ---- CheckItIsSubDomain ----
 
@@ -264,11 +275,11 @@ func TestCollectSuggest_AccumulatesEntropyAndSubdomain(t *testing.T) {
 		t.Fatalf("score %d should clear threshold %d",
 			got.Score, ThresholdToSuggestBlocking)
 	}
-	if !strings.Contains(got.Reason, ReasonSuspiciousDomain) {
-		t.Errorf("reason missing entropy hint %q in %q", ReasonSuspiciousDomain, got.Reason)
+	if !hasCode(got.Reasons, CodeSuspiciousEntropy) {
+		t.Errorf("reasons missing entropy code %q in %+v", CodeSuspiciousEntropy, got.Reasons)
 	}
-	if !strings.Contains(got.Reason, ReasonSubdomainOfBlocked) {
-		t.Errorf("reason missing subdomain hint %q in %q", ReasonSubdomainOfBlocked, got.Reason)
+	if !hasCode(got.Reasons, CodeSubdomainOfBlocked) {
+		t.Errorf("reasons missing subdomain code %q in %+v", CodeSubdomainOfBlocked, got.Reasons)
 	}
 }
 

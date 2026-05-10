@@ -39,10 +39,17 @@ func Collect() error {
 	suggests := make([]suggest_to_block_db.SuggestBlock, 0, len(forBlock))
 
 	for _, domain := range forBlock {
+		reasons := make([]suggest_to_block_db.SuggestBlockReason, 0, len(domain.Reasons))
+		for _, r := range domain.Reasons {
+			reasons = append(reasons, suggest_to_block_db.SuggestBlockReason{
+				Code:       r.Code,
+				MatchValue: r.Match,
+			})
+		}
 		suggests = append(suggests, suggest_to_block_db.SuggestBlock{
-			Domain: domain.Domain,
-			Reason: domain.Reason,
-			Score:  domain.Score,
+			Domain:  domain.Domain,
+			Score:   domain.Score,
+			Reasons: reasons,
 		})
 	}
 

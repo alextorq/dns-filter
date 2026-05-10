@@ -15,6 +15,95 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/auth/login": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Login",
+                "parameters": [
+                    {
+                        "description": "Credentials",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.UserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_auth_web.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_auth_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/logout": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Logout",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_auth_web.StatusResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/me": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Current user",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.UserResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_auth_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/config/db/download": {
             "get": {
                 "produces": [
@@ -323,7 +412,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/web.StatusResponse"
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse"
                         }
                     },
                     "400": {
@@ -368,7 +457,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/web.StatusResponse"
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse"
                         }
                     },
                     "400": {
@@ -413,7 +502,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/web.StatusResponse"
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse"
                         }
                     },
                     "400": {
@@ -673,9 +762,42 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/suggest-to-block/codes": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "suggest-to-block"
+                ],
+                "summary": "List reason codes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.GetSignalCodesResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "collect.SignalDescriptor": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                }
+            }
+        },
         "create_domain.RequestBody": {
             "type": "object",
             "properties": {
@@ -825,10 +947,43 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "reasons": {
-                    "type": "string"
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/db.SuggestBlockReason"
+                    }
                 },
                 "score": {
                     "type": "integer"
+                }
+            }
+        },
+        "db.SuggestBlockReason": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "match": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_auth_web.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_auth_web.StatusResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
                 }
             }
         },
@@ -852,6 +1007,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_clients_web.StatusResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
                     "type": "string"
                 }
             }
@@ -1066,6 +1229,12 @@ const docTemplate = `{
                 "active": {
                     "type": "boolean"
                 },
+                "codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "filter": {
                     "type": "string"
                 },
@@ -1110,6 +1279,17 @@ const docTemplate = `{
                 }
             }
         },
+        "web.GetSignalCodesResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/collect.SignalDescriptor"
+                    }
+                }
+            }
+        },
         "web.LogLevelResponse": {
             "type": "object",
             "properties": {
@@ -1118,10 +1298,17 @@ const docTemplate = `{
                 }
             }
         },
-        "web.StatusResponse": {
+        "web.LoginRequest": {
             "type": "object",
+            "required": [
+                "login",
+                "password"
+            ],
             "properties": {
-                "status": {
+                "login": {
+                    "type": "string"
+                },
+                "password": {
                     "type": "string"
                 }
             }
@@ -1142,6 +1329,17 @@ const docTemplate = `{
                 },
                 "record": {
                     "$ref": "#/definitions/db.BlockList"
+                }
+            }
+        },
+        "web.UserResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "login": {
+                    "type": "string"
                 }
             }
         }

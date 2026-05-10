@@ -11,6 +11,7 @@ import (
 	"github.com/alextorq/dns-filter/logger"
 	blocked_domain_db "github.com/alextorq/dns-filter/source/db"
 	"github.com/alextorq/dns-filter/suggest-to-block"
+	collect "github.com/alextorq/dns-filter/suggest-to-block/business/use-cases/collect"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
 	"github.com/gin-gonic/gin"
 )
@@ -41,6 +42,7 @@ func GetAllSuggestBlocks(c *gin.Context) {
 		Offset: req.Offset,
 		Filter: req.Filter,
 		Active: req.Active,
+		Codes:  req.Codes,
 	})
 	if err != nil {
 		l.Error(fmt.Errorf("error get suggest blocks from db: %w", err))
@@ -107,6 +109,18 @@ func AddToBlock(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, MessageResponse{Message: "suggest block add to blocklist"})
+}
+
+// GetSignalCodes returns the catalog of reason codes with human-readable
+// labels and descriptions. Frontend uses it to render the multi-select
+// filter and to map codes → labels in the table.
+// @Summary      List reason codes
+// @Tags         suggest-to-block
+// @Produce      json
+// @Success      200  {object} GetSignalCodesResponse
+// @Router       /api/suggest-to-block/codes [get]
+func GetSignalCodes(c *gin.Context) {
+	c.JSON(http.StatusOK, GetSignalCodesResponse{List: collect.Catalog()})
 }
 
 // ChangeActiveStatus toggles a suggestion's active flag.

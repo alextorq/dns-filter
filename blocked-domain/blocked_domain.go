@@ -32,6 +32,10 @@ func DomainNotExist(domain string) bool {
 	return db.DomainNotExist(domain)
 }
 
+func IsDomainActivelyBlocked(domain string) bool {
+	return db.IsDomainActivelyBlocked(domain)
+}
+
 func CreateDomain(domain blocked_domain_use_cases_create_domain.RequestBody) error {
 	return blocked_domain_use_cases_create_domain.CreateDomain(domain)
 }

@@ -19,7 +19,12 @@ const (
 	ItemScoreRiskyTLD               = 5
 	ItemScoreNumericRun             = 5
 	ItemScoreHexUUID                = 10
-	ThresholdToSuggestBlocking      = 30
+	// ItemScoreBrandImpersonation намеренно ниже ThresholdToSuggestBlocking:
+	// одно сходство apex'а с брендом не доказывает фишинг (легитимные
+	// конкуренты, новые домены), поэтому typosquat должен подтверждаться
+	// вторым слабым сигналом — risky-TLD, bad-keyword, subdomain-of-blocked.
+	ItemScoreBrandImpersonation = 25
+	ThresholdToSuggestBlocking  = 30
 )
 
 // Стабильные подстроки, которые CollectSuggest добавляет в Suggestion.Reason
@@ -33,6 +38,7 @@ const (
 	ReasonRiskyTLD               = "uses a TLD with elevated abuse rate"
 	ReasonNumericRun             = "label contains a long run of digits"
 	ReasonHexUUIDLabel           = "label looks like a hex hash or UUID"
+	ReasonBrandImpersonation     = "resembles a known brand domain but is not it"
 )
 
 func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
@@ -67,6 +73,11 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 		if HasHexUUIDLabel(allowedDomain) {
 			suggestion.Score += ItemScoreHexUUID
 			suggestion.Reason += "\n" + ReasonHexUUIDLabel + "; "
+		}
+
+		if IsBrandImpersonation(allowedDomain) {
+			suggestion.Score += ItemScoreBrandImpersonation
+			suggestion.Reason += "\n" + ReasonBrandImpersonation + "; "
 		}
 
 		for _, blockedDomain := range blockedDomains {

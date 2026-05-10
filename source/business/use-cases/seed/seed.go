@@ -10,6 +10,9 @@ func SeedSyncs(db *gorm.DB) {
 	defaults := []syncDb.Source{
 		{Name: syncDb.SourceStevenBlack, Active: true},
 		{Name: syncDb.SourceEasyList, Active: true},
+		{Name: syncDb.SourceRuAdList, Active: true},
+		{Name: syncDb.SourceAdGuardRussian, Active: true},
+		{Name: syncDb.SourceHaGeZiMulti, Active: true},
 		{Name: syncDb.SourceUser, Active: true},
 		{Name: syncDb.SourceSuggestedToBlock, Active: true},
 	}

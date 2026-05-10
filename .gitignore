@@ -3,3 +3,4 @@
 tmp
 *.txt
 data
+.DS_Store

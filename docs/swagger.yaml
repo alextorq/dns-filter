@@ -42,12 +42,18 @@ definitions:
     enum:
     - StevenBlack
     - EasyList
+    - RuAdList
+    - AdGuardRussian
+    - HaGeZiMulti
     - User
     - SuggestedToBlock
     type: string
     x-enum-varnames:
     - SourceStevenBlack
     - SourceEasyList
+    - SourceRuAdList
+    - SourceAdGuardRussian
+    - SourceHaGeZiMulti
     - SourceUser
     - SourceSuggestedToBlock
   db.DomainCount:

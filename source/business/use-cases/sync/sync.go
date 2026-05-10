@@ -25,30 +25,38 @@ func LoadAndParseActiveSources() []DomainBySource {
 		return result
 	}
 
+	loadAdBlock := func(source db.BlockListSource, url string) {
+		partial, err := easy_list.LoadFromURL(url)
+		if err != nil {
+			l.Error(fmt.Errorf("failed to load %s: %w", source, err))
+			return
+		}
+		l.Debug(fmt.Sprintf("Loaded %s domains: %d", source, len(partial)))
+		result = append(result, DomainBySource{Source: source, Domains: partial})
+	}
+
+	loadHosts := func(source db.BlockListSource, url string) {
+		partial, err := LoadHostsFromURL(url)
+		if err != nil {
+			l.Error(fmt.Errorf("failed to load %s: %w", source, err))
+			return
+		}
+		l.Debug(fmt.Sprintf("Loaded %s domains: %d", source, len(partial)))
+		result = append(result, DomainBySource{Source: source, Domains: partial})
+	}
+
 	for _, item := range items {
 		switch item.Name {
 		case db.SourceEasyList:
-			partial, err := easy_list.LoadEasyList()
-			if err == nil {
-				l.Debug("Loaded EasyList domains:", len(partial))
-				result = append(result, DomainBySource{
-					Source:  db.SourceEasyList,
-					Domains: partial,
-				})
-			} else {
-				l.Error(fmt.Errorf("failed to load EasyList: %w", err))
-			}
+			loadAdBlock(db.SourceEasyList, easy_list.EasyListURL)
+		case db.SourceRuAdList:
+			loadAdBlock(db.SourceRuAdList, easy_list.RuAdListURL)
+		case db.SourceAdGuardRussian:
+			loadAdBlock(db.SourceAdGuardRussian, easy_list.AdGuardRussianURL)
 		case db.SourceStevenBlack:
-			partial, err := LoadStevenBlack()
-			if err == nil {
-				result = append(result, DomainBySource{
-					Source:  db.SourceStevenBlack,
-					Domains: partial,
-				})
-				l.Debug("Loaded SourceStevenBlack domains:", len(partial))
-			} else {
-				l.Error(fmt.Errorf("failed to load SourceStevenBlack: %w", err))
-			}
+			loadHosts(db.SourceStevenBlack, StevenBlackURL)
+		case db.SourceHaGeZiMulti:
+			loadHosts(db.SourceHaGeZiMulti, HaGeZiMultiURL)
 		}
 	}
 

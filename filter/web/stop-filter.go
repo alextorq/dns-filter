@@ -32,5 +32,5 @@ func ChangeFilterStatus(c *gin.Context) {
 func GetFilterStatus(c *gin.Context) {
 	conf := config.GetConfig()
 
-	c.JSON(http.StatusOK, FilterStatusResponse{Status: conf.Enabled})
+	c.JSON(http.StatusOK, FilterStatusResponse{Status: conf.Enabled.Load()})
 }

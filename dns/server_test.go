@@ -146,6 +146,62 @@ func TestGetFromCacheOrCreateRequestReturnsResolverError(t *testing.T) {
 	}
 }
 
+// Locks in #33: clients that retry over TCP (RFC 7766 MUST) must get an
+// answer from the server, not a connection error. Pre-binds UDP+TCP on an
+// ephemeral port so the test does not need root and never races on :53.
+func TestServeAnswersOverTCP(t *testing.T) {
+	udpAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
+	udpConn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		t.Fatalf("listen udp: %v", err)
+	}
+	port := udpConn.LocalAddr().(*net.UDPAddr).Port
+	tcpListener, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
+	if err != nil {
+		udpConn.Close()
+		t.Fatalf("listen tcp: %v", err)
+	}
+
+	started := make(chan struct{}, 2)
+	server := &DnsServer{
+		Logger:            noopLogger{},
+		Cache:             &memoryCache{values: map[string]*dnsLib.Msg{}},
+		Filter:            func(string) bool { return false },
+		Upstream:          &staticResolver{rcode: dnsLib.RcodeSuccess},
+		Metric:            noopMetric{},
+		Handlers:          noopHandlers{},
+		NotifyStartedFunc: func() { started <- struct{}{} },
+	}
+
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ServeWithListeners(udpConn, tcpListener) }()
+	t.Cleanup(func() {
+		_ = server.Shutdown()
+		<-serveErr
+	})
+
+	// Wait for both UDP and TCP listeners to be ready.
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for listeners to start")
+		}
+	}
+
+	addr := tcpListener.Addr().String()
+	client := &dnsLib.Client{Net: "tcp", Timeout: 2 * time.Second}
+	req := new(dnsLib.Msg)
+	req.SetQuestion("example.com.", dnsLib.TypeA)
+	resp, _, err := client.Exchange(req, addr)
+	if err != nil {
+		t.Fatalf("tcp exchange failed: %v", err)
+	}
+	if resp.Rcode != dnsLib.RcodeSuccess {
+		t.Fatalf("expected NOERROR over TCP, got %s", dnsLib.RcodeToString[resp.Rcode])
+	}
+}
+
 func TestHandleDNSCopiesUpstreamRcode(t *testing.T) {
 	server := &DnsServer{
 		Logger:   noopLogger{},

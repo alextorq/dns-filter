@@ -8,7 +8,11 @@ import (
 func ChangeFilterDnsRecords() bool {
 	l := logger.GetLogger()
 	conf := config.GetConfig()
-	conf.Enabled = !conf.Enabled
-	l.Info("Change filter status to", conf.Enabled)
-	return conf.Enabled
+	for {
+		old := conf.Enabled.Load()
+		if conf.Enabled.CompareAndSwap(old, !old) {
+			l.Info("Change filter status to", !old)
+			return !old
+		}
+	}
 }

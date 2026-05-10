@@ -51,8 +51,9 @@ func ResolveSession(token string) (*authDb.Session, *authDb.User, error) {
 
 	if cached, ok := lookupCachedSession(token); ok {
 		if time.Now().After(cached.ExpiresAt) {
-			dropCachedSession(token)
-			_ = authDb.DeleteSession(token)
+			if err := authDb.DeleteSession(token); err == nil {
+				dropCachedSession(token)
+			}
 			return nil, nil, ErrSessionExpired
 		}
 		user, err := authDb.GetUserByID(cached.UserID)
@@ -83,6 +84,9 @@ func ResolveSession(token string) (*authDb.Session, *authDb.User, error) {
 }
 
 func RevokeSession(token string) error {
+	if err := authDb.DeleteSession(token); err != nil {
+		return err
+	}
 	dropCachedSession(token)
-	return authDb.DeleteSession(token)
+	return nil
 }

@@ -8,6 +8,7 @@ import (
 	create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
 	update_dns_record "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/update-dns-record"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
+	"github.com/alextorq/dns-filter/filter"
 	"github.com/alextorq/dns-filter/logger"
 	syncDb "github.com/alextorq/dns-filter/source/db"
 	"github.com/gin-gonic/gin"
@@ -83,6 +84,12 @@ func CreateDnsRecords(c *gin.Context) {
 		return
 	}
 
+	if err := filter.UpdateFilterFromDb(); err != nil {
+		l.Error(fmt.Errorf("error refresh filter after create: %w", err))
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, MessageResponse{Message: "domain created"})
 }
 
@@ -109,6 +116,12 @@ func ChangeDnsRecordActive(c *gin.Context) {
 	record, err := blocked_domain.UpdateDnsRecord(updateData)
 
 	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
+		return
+	}
+
+	if err := filter.UpdateFilterFromDb(); err != nil {
+		l.Error(fmt.Errorf("error refresh filter after update: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}

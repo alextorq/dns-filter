@@ -2,8 +2,8 @@ package dns
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"net"
 	"time"
 
@@ -16,13 +16,18 @@ import (
 type DnsServer struct {
 	Address  string
 	Port     int
-	server   *dns.Server
+	udp      *dns.Server
+	tcp      *dns.Server
 	Logger   Logger
 	Cache    Cache
 	Filter   func(string2 string) bool
 	Upstream UpstreamResolver
 	Metric   Metric
 	Handlers DnsRequestHandlers
+	// NotifyStartedFunc is invoked once for each underlying listener (UDP
+	// and TCP) right after it becomes ready to accept queries. Optional;
+	// primarily for tests that need to wait for both listeners.
+	NotifyStartedFunc func()
 }
 
 type Logger interface {
@@ -129,16 +134,68 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
-func (s *DnsServer) Serve() {
-	dns.HandleFunc(".", func(writer dns.ResponseWriter, msg *dns.Msg) {
-		s.handleDNS(writer, msg)
-	})
-	s.server = &dns.Server{Addr: ":53", Net: "udp"}
-	ips := utils.GetIp()
-	for _, ip := range ips {
-		s.Logger.Info("DNS фильтр запущен на:", ip+":53")
+// Serve binds UDP and TCP listeners on s.Address (default ":53") and runs
+// both in parallel. RFC 7766 requires DNS servers to support TCP for clients
+// that retry after a truncated UDP response.
+func (s *DnsServer) Serve() error {
+	addr := s.Address
+	if addr == "" {
+		addr = ":53"
 	}
-	log.Fatal(s.server.ListenAndServe())
+
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return fmt.Errorf("resolve udp addr: %w", err)
+	}
+	udpConn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return fmt.Errorf("listen udp: %w", err)
+	}
+	tcpListener, err := net.Listen("tcp", addr)
+	if err != nil {
+		udpConn.Close()
+		return fmt.Errorf("listen tcp: %w", err)
+	}
+
+	for _, ip := range utils.GetIp() {
+		s.Logger.Info("DNS фильтр запущен на:", ip+addr)
+	}
+
+	return s.ServeWithListeners(udpConn, tcpListener)
+}
+
+// ServeWithListeners runs UDP and TCP DNS servers on pre-bound endpoints.
+// It blocks until both servers exit. If one server returns an error, the
+// other is shut down so the process never sits in a half-up state where
+// e.g. UDP is dead but TCP keeps answering. Exposed so tests can bind to
+// an ephemeral port without racing the OS.
+func (s *DnsServer) ServeWithListeners(udpConn net.PacketConn, tcpListener net.Listener) error {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, m *dns.Msg) {
+		s.handleDNS(w, m)
+	})
+	s.udp = &dns.Server{PacketConn: udpConn, Handler: handler, NotifyStartedFunc: s.NotifyStartedFunc}
+	s.tcp = &dns.Server{Listener: tcpListener, Handler: handler, NotifyStartedFunc: s.NotifyStartedFunc}
+
+	errCh := make(chan error, 2)
+	go func() { errCh <- s.udp.ActivateAndServe() }()
+	go func() { errCh <- s.tcp.ActivateAndServe() }()
+
+	first := <-errCh
+	_ = s.Shutdown()
+	<-errCh
+	return first
+}
+
+// Shutdown gracefully stops both UDP and TCP listeners.
+func (s *DnsServer) Shutdown() error {
+	var err error
+	if s.udp != nil {
+		err = errors.Join(err, s.udp.Shutdown())
+	}
+	if s.tcp != nil {
+		err = errors.Join(err, s.tcp.Shutdown())
+	}
+	return err
 }
 
 func CreateServer(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers) *DnsServer {

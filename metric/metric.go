@@ -20,6 +20,10 @@ func init() {
 	Registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name: "logger_dropped_logs_total",
+			Help: "Total log records dropped because the logger channel was full.",
+		}, func() float64 { return float64(l.DroppedCount()) }),
 	)
 
 	if conf.MetricEnable {

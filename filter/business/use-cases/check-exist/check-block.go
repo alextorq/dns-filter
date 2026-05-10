@@ -26,7 +26,7 @@ func CheckCacheOrDb(domain string) bool {
 
 func CheckBlock(domain string) bool {
 	conf := config.GetConfig()
-	if !conf.Enabled {
+	if !conf.Enabled.Load() {
 		return false
 	}
 	f := filter.GetFilter()

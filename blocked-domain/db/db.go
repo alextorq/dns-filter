@@ -113,6 +113,19 @@ func DomainNotExist(domain string) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
+// IsDomainActivelyBlocked reports whether the domain has an active record in
+// the block list. Used by the DNS hot path: bloom is built from active records
+// only, so the DB confirmation must agree, otherwise a deactivated record keeps
+// blocking on every bloom hit (issue #25).
+func IsDomainActivelyBlocked(domain string) bool {
+	conn := db.GetConnection()
+	var count int64
+	conn.Model(&BlockList{}).
+		Where("url = ? AND active = ?", domain, true).
+		Count(&count)
+	return count > 0
+}
+
 func CreateDNSRecordsByDomains(urls []string, source string) error {
 	if len(urls) == 0 {
 		return nil

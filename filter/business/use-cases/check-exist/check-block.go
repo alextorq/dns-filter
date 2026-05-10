@@ -19,7 +19,7 @@ func CheckCacheOrDb(domain string) bool {
 		return val
 	}
 	l.Debug("get block domain check from db: ", domain)
-	exist := !blacklists.DomainNotExist(domain)
+	exist := blacklists.IsDomainActivelyBlocked(domain)
 	c.Add(domain, exist)
 	return exist
 }

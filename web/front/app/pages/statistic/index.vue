@@ -37,13 +37,9 @@ const topGroups = computed(() =>
     [...groups.value].sort((a, b) => (b.count ?? 0) - (a.count ?? 0)).slice(0, 8),
 );
 
-const maxCount = computed(() =>
-    Math.max(...topGroups.value.map((g) => g.count ?? 0), 1),
-);
+const maxCount = computed(() => Math.max(...topGroups.value.map((g) => g.count ?? 0), 1));
 
-const totalTop = computed(() =>
-    topGroups.value.reduce((acc, g) => acc + (g.count ?? 0), 0),
-);
+const totalTop = computed(() => topGroups.value.reduce((acc, g) => acc + (g.count ?? 0), 0));
 
 const formattedDate = (() => {
     const y = now.getFullYear();
@@ -79,126 +75,176 @@ onMounted(async () => {
         <div class="ops__grid" aria-hidden="true"></div>
 
         <UContainer class="ops__inner">
-        <header class="ops__top">
-            <div class="ops__top-left">
-                <span class="ops__sigil-mark">◆</span>
-                <span>DNS&nbsp;FILTER &nbsp;/ &nbsp;OPERATIONS</span>
-            </div>
-            <div class="ops__top-right">
-                <span class="ops__live">
-                    <span class="ops__pulse"></span>
-                    LIVE
-                </span>
-                <span class="ops__sep">·</span>
-                <span>{{ formattedDate }} &nbsp;{{ formattedTime }}</span>
-            </div>
-        </header>
-
-        <section class="ops__hero">
-            <div class="ops__hero-text">
-                <p class="ops__eyebrow">
-                    <span>Cumulative ledger</span>
-                    <span class="ops__eyebrow-dot"></span>
-                    <span>since uptime</span>
-                </p>
-
-                <h1 class="ops__metric">
-                    <span class="ops__metric-value">{{ formatNumber(displayAmount) }}</span>
-                </h1>
-
-                <p class="ops__metric-label">
-                    <em>domains</em> intercepted &amp; resolved as
-                    <span class="ops__chip">NXDOMAIN</span> at the sinkhole
-                </p>
-
-                <div class="ops__rule"></div>
-
-                <dl class="ops__hero-meta">
-                    <div>
-                        <dt>Top&nbsp;08 sum</dt>
-                        <dd>{{ formatNumber(totalTop) }}</dd>
-                    </div>
-                    <div>
-                        <dt>Sources</dt>
-                        <dd>03 + user</dd>
-                    </div>
-                    <div>
-                        <dt>Status</dt>
-                        <dd class="ops__status-ok">nominal</dd>
-                    </div>
-                </dl>
-            </div>
-
-            <div class="ops__hero-art" :class="{ 'ops__hero-art--ready': ready }">
-                <svg viewBox="0 0 240 240" aria-hidden="true">
-                    <defs>
-                        <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
-                            <stop offset="0%" stop-color="currentColor" stop-opacity="0.25" />
-                            <stop offset="60%" stop-color="currentColor" stop-opacity="0" />
-                        </radialGradient>
-                    </defs>
-                    <circle cx="120" cy="120" r="118" fill="url(#ringGlow)" />
-                    <g class="ops__hero-art-spin">
-                        <circle cx="120" cy="120" r="100" fill="none" stroke="currentColor" stroke-width="0.4" stroke-dasharray="1 5" />
-                        <circle cx="120" cy="120" r="80" fill="none" stroke="currentColor" stroke-width="0.4" />
-                        <circle cx="120" cy="120" r="60" fill="none" stroke="currentColor" stroke-width="0.4" stroke-dasharray="3 3" />
-                    </g>
-                    <g class="ops__hero-art-counter">
-                        <circle cx="120" cy="120" r="40" fill="none" stroke="currentColor" stroke-width="0.4" />
-                        <circle cx="120" cy="120" r="2" fill="currentColor" />
-                    </g>
-                    <line x1="120" y1="2" x2="120" y2="238" stroke="currentColor" stroke-width="0.3" stroke-dasharray="2 6" />
-                    <line x1="2" y1="120" x2="238" y2="120" stroke="currentColor" stroke-width="0.3" stroke-dasharray="2 6" />
-                    <text x="120" y="22" text-anchor="middle" class="ops__hero-art-tick">N</text>
-                    <text x="120" y="226" text-anchor="middle" class="ops__hero-art-tick">S</text>
-                    <text x="14" y="124" text-anchor="middle" class="ops__hero-art-tick">W</text>
-                    <text x="226" y="124" text-anchor="middle" class="ops__hero-art-tick">E</text>
-                </svg>
-                <span class="ops__hero-art-coord ops__hero-art-coord--tl">52.34°N / 13.41°E</span>
-                <span class="ops__hero-art-coord ops__hero-art-coord--br">RES.0 / 192.168.0.1</span>
-            </div>
-        </section>
-
-        <section class="ops__panel">
-            <div class="ops__panel-corner ops__panel-corner--tl"></div>
-            <div class="ops__panel-corner ops__panel-corner--tr"></div>
-            <div class="ops__panel-corner ops__panel-corner--bl"></div>
-            <div class="ops__panel-corner ops__panel-corner--br"></div>
-
-            <header class="ops__panel-head">
-                <div>
-                    <h2><em>Top targets</em></h2>
-                    <p>most-resolved blocks · ranked top 08</p>
+            <header class="ops__top">
+                <div class="ops__top-right">
+                    <span>{{ formattedDate }} &nbsp;{{ formattedTime }}</span>
                 </div>
-                <span class="ops__panel-axis">0 ─────────────────── {{ formatNumber(maxCount) }}</span>
             </header>
 
-            <ol v-if="ready && topGroups.length" class="ops__list">
-                <li
-                    v-for="(g, i) in topGroups"
-                    :key="g.domain ?? i"
-                    class="ops__row"
-                    :style="{ '--i': i, '--w': `${((g.count ?? 0) / maxCount) * 100}%` }"
-                >
-                    <span class="ops__rank">{{ String(i + 1).padStart(2, "0") }}</span>
-                    <span class="ops__domain" :title="g.domain ?? ''">{{ g.domain }}</span>
-                    <div class="ops__bar">
-                        <div class="ops__bar-fill"></div>
-                    </div>
-                    <span class="ops__count">{{ formatNumber(g.count ?? 0) }}</span>
-                </li>
-            </ol>
-            <p v-else-if="ready" class="ops__empty">no signal · ledger empty</p>
-            <div v-else class="ops__skeleton">
-                <span v-for="n in 6" :key="n"></span>
-            </div>
-        </section>
+            <section class="ops__hero">
+                <div class="ops__hero-text">
+                    <p class="ops__eyebrow">
+                        <span>Cumulative ledger</span>
+                        <span class="ops__eyebrow-dot"></span>
+                        <span>since uptime</span>
+                    </p>
 
-        <footer class="ops__foot">
-            <span>00 — RESOLVER</span>
-            <span class="ops__foot-mid">SINKHOLE · NXDOMAIN · UDP/TCP:53</span>
-            <span>SRC: STEVENBLACK · EASYLIST · USER</span>
-        </footer>
+                    <h1 class="ops__metric">
+                        <span class="ops__metric-value">{{ formatNumber(displayAmount) }}</span>
+                    </h1>
+
+                    <p class="ops__metric-label">
+                        <em>domains</em> intercepted &amp; resolved as
+                        <span class="ops__chip">NXDOMAIN</span> at the sinkhole
+                    </p>
+
+                    <div class="ops__rule"></div>
+
+                    <dl class="ops__hero-meta">
+                        <div>
+                            <dt>Top&nbsp;08 sum</dt>
+                            <dd>{{ formatNumber(totalTop) }}</dd>
+                        </div>
+                        <div>
+                            <dt>Sources</dt>
+                            <dd>03 + user</dd>
+                        </div>
+                        <div>
+                            <dt>Status</dt>
+                            <dd class="ops__status-ok">nominal</dd>
+                        </div>
+                    </dl>
+                </div>
+
+                <div class="ops__hero-art" :class="{ 'ops__hero-art--ready': ready }">
+                    <svg viewBox="0 0 240 240" aria-hidden="true">
+                        <defs>
+                            <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="currentColor" stop-opacity="0.25" />
+                                <stop offset="60%" stop-color="currentColor" stop-opacity="0" />
+                            </radialGradient>
+                        </defs>
+                        <circle cx="120" cy="120" r="118" fill="url(#ringGlow)" />
+                        <g class="ops__hero-art-spin">
+                            <circle
+                                cx="120"
+                                cy="120"
+                                r="100"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="0.4"
+                                stroke-dasharray="1 5"
+                            />
+                            <circle
+                                cx="120"
+                                cy="120"
+                                r="80"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="0.4"
+                            />
+                            <circle
+                                cx="120"
+                                cy="120"
+                                r="60"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="0.4"
+                                stroke-dasharray="3 3"
+                            />
+                        </g>
+                        <g class="ops__hero-art-counter">
+                            <circle
+                                cx="120"
+                                cy="120"
+                                r="40"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="0.4"
+                            />
+                            <circle cx="120" cy="120" r="2" fill="currentColor" />
+                        </g>
+                        <line
+                            x1="120"
+                            y1="2"
+                            x2="120"
+                            y2="238"
+                            stroke="currentColor"
+                            stroke-width="0.3"
+                            stroke-dasharray="2 6"
+                        />
+                        <line
+                            x1="2"
+                            y1="120"
+                            x2="238"
+                            y2="120"
+                            stroke="currentColor"
+                            stroke-width="0.3"
+                            stroke-dasharray="2 6"
+                        />
+                        <text x="120" y="22" text-anchor="middle" class="ops__hero-art-tick">
+                            N
+                        </text>
+                        <text x="120" y="226" text-anchor="middle" class="ops__hero-art-tick">
+                            S
+                        </text>
+                        <text x="14" y="124" text-anchor="middle" class="ops__hero-art-tick">
+                            W
+                        </text>
+                        <text x="226" y="124" text-anchor="middle" class="ops__hero-art-tick">
+                            E
+                        </text>
+                    </svg>
+                    <span class="ops__hero-art-coord ops__hero-art-coord--tl"
+                        >52.34°N / 13.41°E</span
+                    >
+                    <span class="ops__hero-art-coord ops__hero-art-coord--br"
+                        >RES.0 / 192.168.0.1</span
+                    >
+                </div>
+            </section>
+
+            <section class="ops__panel">
+                <div class="ops__panel-corner ops__panel-corner--tl"></div>
+                <div class="ops__panel-corner ops__panel-corner--tr"></div>
+                <div class="ops__panel-corner ops__panel-corner--bl"></div>
+                <div class="ops__panel-corner ops__panel-corner--br"></div>
+
+                <header class="ops__panel-head">
+                    <div>
+                        <h2><em>Top targets</em></h2>
+                        <p>most-resolved blocks · ranked top 08</p>
+                    </div>
+                    <span class="ops__panel-axis"
+                        >0 ─────────────────── {{ formatNumber(maxCount) }}</span
+                    >
+                </header>
+
+                <ol v-if="ready && topGroups.length" class="ops__list">
+                    <li
+                        v-for="(g, i) in topGroups"
+                        :key="g.domain ?? i"
+                        class="ops__row"
+                        :style="{ '--i': i, '--w': `${((g.count ?? 0) / maxCount) * 100}%` }"
+                    >
+                        <span class="ops__rank">{{ String(i + 1).padStart(2, "0") }}</span>
+                        <span class="ops__domain" :title="g.domain ?? ''">{{ g.domain }}</span>
+                        <div class="ops__bar">
+                            <div class="ops__bar-fill"></div>
+                        </div>
+                        <span class="ops__count">{{ formatNumber(g.count ?? 0) }}</span>
+                    </li>
+                </ol>
+                <p v-else-if="ready" class="ops__empty">no signal · ledger empty</p>
+                <div v-else class="ops__skeleton">
+                    <span v-for="n in 6" :key="n"></span>
+                </div>
+            </section>
+
+            <footer class="ops__foot">
+                <span class="ops__foot-mid">SINKHOLE · NXDOMAIN · UDP/TCP:53</span>
+                <span>SRC: STEVENBLACK · EASYLIST · USER</span>
+            </footer>
         </UContainer>
     </div>
 </template>
@@ -220,8 +266,16 @@ onMounted(async () => {
 
     min-height: calc(100vh - var(--ui-header-height));
     background:
-        radial-gradient(1200px 600px at 75% -10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
-        radial-gradient(900px 500px at 0% 110%, color-mix(in srgb, var(--good) 6%, transparent), transparent 55%),
+        radial-gradient(
+            1200px 600px at 75% -10%,
+            color-mix(in srgb, var(--accent) 8%, transparent),
+            transparent 60%
+        ),
+        radial-gradient(
+            900px 500px at 0% 110%,
+            color-mix(in srgb, var(--good) 6%, transparent),
+            transparent 55%
+        ),
         var(--bg);
     color: var(--body);
     font-family: "Instrument Serif", "Times New Roman", Georgia, serif;
@@ -259,7 +313,7 @@ onMounted(async () => {
 /* TOP BAR */
 .ops__top {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
     font-family: "JetBrains Mono", monospace;
     font-size: 0.7rem;
@@ -270,42 +324,10 @@ onMounted(async () => {
     border-bottom: 1px solid var(--line);
 }
 
-.ops__top-left,
 .ops__top-right {
     display: flex;
     gap: 0.875rem;
     align-items: center;
-}
-
-.ops__sigil-mark {
-    color: var(--accent);
-    font-size: 0.85rem;
-    transform: translateY(-1px);
-}
-
-.ops__sep {
-    color: var(--dim);
-}
-
-.ops__live {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    color: var(--text);
-}
-
-.ops__pulse {
-    width: 6px;
-    height: 6px;
-    background: var(--accent);
-    border-radius: 50%;
-    animation: pulse 2.4s infinite;
-}
-
-@keyframes pulse {
-    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 65%, transparent); }
-    70% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent); }
-    100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
 }
 
 /* HERO */
@@ -398,8 +420,12 @@ onMounted(async () => {
 }
 
 @keyframes ruleGrow {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
+    from {
+        transform: scaleX(0);
+    }
+    to {
+        transform: scaleX(1);
+    }
 }
 
 .ops__hero-meta {
@@ -467,7 +493,9 @@ onMounted(async () => {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .ops__hero-art-tick {
@@ -497,13 +525,23 @@ onMounted(async () => {
 }
 
 @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(14px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(14px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* PANEL */
 .ops__panel {
-    background: linear-gradient(180deg, var(--bg-elev), color-mix(in srgb, var(--bg-elev), var(--bg) 30%));
+    background: linear-gradient(
+        180deg,
+        var(--bg-elev),
+        color-mix(in srgb, var(--bg-elev), var(--bg) 30%)
+    );
     border: 1px solid var(--line);
     padding: clamp(1.25rem, 2.5vw, 2rem) clamp(1.25rem, 3vw, 2.5rem);
     position: relative;
@@ -516,10 +554,30 @@ onMounted(async () => {
     height: 10px;
     border: 1px solid var(--accent);
 }
-.ops__panel-corner--tl { top: -1px; left: -1px; border-right: none; border-bottom: none; }
-.ops__panel-corner--tr { top: -1px; right: -1px; border-left: none; border-bottom: none; }
-.ops__panel-corner--bl { bottom: -1px; left: -1px; border-right: none; border-top: none; }
-.ops__panel-corner--br { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+.ops__panel-corner--tl {
+    top: -1px;
+    left: -1px;
+    border-right: none;
+    border-bottom: none;
+}
+.ops__panel-corner--tr {
+    top: -1px;
+    right: -1px;
+    border-left: none;
+    border-bottom: none;
+}
+.ops__panel-corner--bl {
+    bottom: -1px;
+    left: -1px;
+    border-right: none;
+    border-top: none;
+}
+.ops__panel-corner--br {
+    bottom: -1px;
+    right: -1px;
+    border-left: none;
+    border-top: none;
+}
 
 .ops__panel-head {
     display: flex;
@@ -583,7 +641,9 @@ onMounted(async () => {
     animation-delay: calc(0.06s * var(--i) + 0.35s);
 }
 
-.ops__row:last-child { border-bottom: none; }
+.ops__row:last-child {
+    border-bottom: none;
+}
 
 .ops__row:hover .ops__bar-fill {
     background: linear-gradient(90deg, var(--good), var(--accent));
@@ -594,8 +654,14 @@ onMounted(async () => {
 }
 
 @keyframes rowIn {
-    from { opacity: 0; transform: translateX(-8px); }
-    to { opacity: 1; transform: translateX(0); }
+    from {
+        opacity: 0;
+        transform: translateX(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 .ops__rank {
@@ -617,8 +683,7 @@ onMounted(async () => {
 
 .ops__bar {
     height: 3px;
-    background:
-        repeating-linear-gradient(90deg, var(--line-soft) 0 4px, transparent 4px 8px);
+    background: repeating-linear-gradient(90deg, var(--line-soft) 0 4px, transparent 4px 8px);
     position: relative;
     overflow: hidden;
 }
@@ -635,7 +700,9 @@ onMounted(async () => {
 }
 
 @keyframes barGrow {
-    to { transform: scaleX(1); }
+    to {
+        transform: scaleX(1);
+    }
 }
 
 .ops__count {
@@ -672,8 +739,12 @@ onMounted(async () => {
 }
 
 @keyframes shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
 }
 
 /* FOOTER */

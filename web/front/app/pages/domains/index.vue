@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
 import { api } from "~/api";
-import type { DbBlockList } from "~/api/generated/data-contracts";
+import type { DbBlockList, DbBlockListSource, DbSource } from "~/api/generated/data-contracts";
 import AddDomainModal from "~/domain/add-new-domain/components/add-domain-modal.vue";
 import ChangeStatus from "~/domain/change-domain-status/components/change-status.vue";
 import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
@@ -15,8 +15,17 @@ let lastFetchController: AbortController | null = null;
 const toast = useToast();
 
 const data = ref<DbBlockList[]>([]);
+const sources = ref<DbSource[]>([]);
 const globalFilter = ref("");
 const source = ref<string | null>(null);
+
+const sourceItems = computed(() => [
+    { label: "All", value: null as string | null },
+    ...sources.value
+        .map((s) => s.name)
+        .filter((name): name is DbBlockListSource => Boolean(name))
+        .map((name) => ({ label: name, value: name })),
+]);
 
 const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
 
@@ -78,7 +87,20 @@ const changePage = async (page: number) => {
     await fetchWithLoading();
 };
 
-onMounted(fetchWithLoading);
+const fetchSources = async () => {
+    try {
+        const response = await api.getAllSyncRecords(new AbortController().signal);
+        sources.value = response.list ?? [];
+    } catch (error) {
+        if (isAbortError(error)) return;
+        console.error("Error fetching sources:", error);
+    }
+};
+
+onMounted(() => {
+    fetchWithLoading();
+    fetchSources();
+});
 
 const updateActiveStatus = (item: DbBlockList) => {
     const index = data.value.findIndex((record) => record.id === item.id);
@@ -146,13 +168,7 @@ const columns: TableColumn<DbBlockList>[] = [
                         v-model="source"
                         class="w-40"
                         placeholder="Source"
-                        :items="[
-                            { label: 'All', value: null },
-                            { label: 'StevenBlack', value: 'StevenBlack' },
-                            { label: 'User', value: 'User' },
-                            { label: 'EasyList', value: 'EasyList' },
-                            { label: 'SuggestedToBlock', value: 'SuggestedToBlock' },
-                        ]"
+                        :items="sourceItems"
                     />
                 </div>
                 <AddDomainModal />

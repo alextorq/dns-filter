@@ -382,18 +382,6 @@ const blockedSamples = [
             class="border-default text-dimmed relative z-10 flex items-center gap-3 border-t px-6 py-3 font-mono text-[10.5px] tracking-wider sm:px-8"
         >
             <span>v1.0</span>
-            <span class="opacity-50" aria-hidden="true">·</span>
-            <span>RFC 1035</span>
-            <span class="opacity-50" aria-hidden="true">·</span>
-            <span>DoH bootstrap</span>
-            <span class="flex-1"></span>
-            <span class="text-muted flex items-center gap-2">
-                <span
-                    class="bg-primary size-1.5 rounded-full shadow-[0_0_6px_var(--ui-primary)]"
-                    aria-hidden="true"
-                ></span>
-                operational
-            </span>
         </footer>
     </div>
 </template>

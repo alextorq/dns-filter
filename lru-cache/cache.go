@@ -73,6 +73,16 @@ func (c *LRUCache[T]) Get(key string) (T, bool) {
 	return zero, false
 }
 
+// Clear discards every entry. Used by callers that need a hard
+// invalidation point (e.g. block-list mutations that flip the cached
+// verdict for a domain).
+func (c *LRUCache[T]) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.list.Init()
+	c.items = make(map[string]*list.Element)
+}
+
 func (c *LRUCache[T]) Delete(key string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

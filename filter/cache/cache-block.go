@@ -40,3 +40,7 @@ func (c *CacheWithMetrics) Get(key string) (bool, bool) {
 	v, ok := c.inner.Get(key)
 	return v, ok
 }
+
+func (c *CacheWithMetrics) Clear() {
+	c.inner.Clear()
+}

@@ -162,13 +162,15 @@ func TestServeAnswersOverTCP(t *testing.T) {
 		t.Fatalf("listen tcp: %v", err)
 	}
 
+	started := make(chan struct{}, 2)
 	server := &DnsServer{
-		Logger:   noopLogger{},
-		Cache:    &memoryCache{values: map[string]*dnsLib.Msg{}},
-		Filter:   func(string) bool { return false },
-		Upstream: &staticResolver{rcode: dnsLib.RcodeSuccess},
-		Metric:   noopMetric{},
-		Handlers: noopHandlers{},
+		Logger:            noopLogger{},
+		Cache:             &memoryCache{values: map[string]*dnsLib.Msg{}},
+		Filter:            func(string) bool { return false },
+		Upstream:          &staticResolver{rcode: dnsLib.RcodeSuccess},
+		Metric:            noopMetric{},
+		Handlers:          noopHandlers{},
+		NotifyStartedFunc: func() { started <- struct{}{} },
 	}
 
 	serveErr := make(chan error, 1)
@@ -178,24 +180,22 @@ func TestServeAnswersOverTCP(t *testing.T) {
 		<-serveErr
 	})
 
+	// Wait for both UDP and TCP listeners to be ready.
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for listeners to start")
+		}
+	}
+
 	addr := tcpListener.Addr().String()
 	client := &dnsLib.Client{Net: "tcp", Timeout: 2 * time.Second}
-
-	// The TCP listener returns from ListenAndServe before Accept is ready in
-	// some race windows. Retry briefly.
-	var resp *dnsLib.Msg
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		req := new(dnsLib.Msg)
-		req.SetQuestion("example.com.", dnsLib.TypeA)
-		resp, _, err = client.Exchange(req, addr)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("tcp exchange failed: %v", err)
-		}
-		time.Sleep(20 * time.Millisecond)
+	req := new(dnsLib.Msg)
+	req.SetQuestion("example.com.", dnsLib.TypeA)
+	resp, _, err := client.Exchange(req, addr)
+	if err != nil {
+		t.Fatalf("tcp exchange failed: %v", err)
 	}
 	if resp.Rcode != dnsLib.RcodeSuccess {
 		t.Fatalf("expected NOERROR over TCP, got %s", dnsLib.RcodeToString[resp.Rcode])

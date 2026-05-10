@@ -24,6 +24,10 @@ type DnsServer struct {
 	Upstream UpstreamResolver
 	Metric   Metric
 	Handlers DnsRequestHandlers
+	// NotifyStartedFunc is invoked once for each underlying listener (UDP
+	// and TCP) right after it becomes ready to accept queries. Optional;
+	// primarily for tests that need to wait for both listeners.
+	NotifyStartedFunc func()
 }
 
 type Logger interface {
@@ -160,20 +164,26 @@ func (s *DnsServer) Serve() error {
 	return s.ServeWithListeners(udpConn, tcpListener)
 }
 
-// ServeWithListeners runs UDP and TCP DNS servers on pre-bound endpoints
-// and blocks until either one returns. Exposed so tests can bind to an
-// ephemeral port without racing the OS.
+// ServeWithListeners runs UDP and TCP DNS servers on pre-bound endpoints.
+// It blocks until both servers exit. If one server returns an error, the
+// other is shut down so the process never sits in a half-up state where
+// e.g. UDP is dead but TCP keeps answering. Exposed so tests can bind to
+// an ephemeral port without racing the OS.
 func (s *DnsServer) ServeWithListeners(udpConn net.PacketConn, tcpListener net.Listener) error {
 	handler := dns.HandlerFunc(func(w dns.ResponseWriter, m *dns.Msg) {
 		s.handleDNS(w, m)
 	})
-	s.udp = &dns.Server{PacketConn: udpConn, Handler: handler}
-	s.tcp = &dns.Server{Listener: tcpListener, Handler: handler}
+	s.udp = &dns.Server{PacketConn: udpConn, Handler: handler, NotifyStartedFunc: s.NotifyStartedFunc}
+	s.tcp = &dns.Server{Listener: tcpListener, Handler: handler, NotifyStartedFunc: s.NotifyStartedFunc}
 
 	errCh := make(chan error, 2)
 	go func() { errCh <- s.udp.ActivateAndServe() }()
 	go func() { errCh <- s.tcp.ActivateAndServe() }()
-	return <-errCh
+
+	first := <-errCh
+	_ = s.Shutdown()
+	<-errCh
+	return first
 }
 
 // Shutdown gracefully stops both UDP and TCP listeners.

@@ -215,10 +215,6 @@ const formattedTime = (() => {
 
         <UContainer class="ops__inner">
             <header class="ops__top">
-                <div class="ops__top-left">
-                    <span class="ops__top-dot"></span>
-                    <span>SINKHOLE · CTL</span>
-                </div>
                 <div class="ops__top-right">
                     <span>{{ formattedDate }} &nbsp;{{ formattedTime }}</span>
                 </div>
@@ -233,7 +229,9 @@ const formattedTime = (() => {
                     </p>
 
                     <h1 class="ops__metric">
-                        <span class="ops__metric-value">{{ stateLabel }}</span>
+                        <Transition name="state-swap" appear>
+                            <span :key="stateKey" class="ops__metric-value">{{ stateLabel }}</span>
+                        </Transition>
                     </h1>
 
                     <div class="ops__rule"></div>
@@ -535,28 +533,39 @@ const formattedTime = (() => {
 }
 
 .ops__metric {
-    font-family: "Instrument Serif", serif;
-    font-weight: 400;
-    font-size: clamp(4rem, 13vw, 11rem);
-    line-height: 0.84;
-    letter-spacing: -0.045em;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 500;
+    font-size: clamp(3.5rem, 11vw, 9rem);
+    line-height: 0.9;
+    letter-spacing: -0.07em;
     margin: 0;
+    min-height: 0.9em;
+    position: relative;
+}
+
+.state-swap-enter-active,
+.state-swap-leave-active {
+    transition: opacity 0.28s linear;
+    animation: none !important;
+    will-change: opacity;
+}
+
+.state-swap-leave-active {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+}
+
+.state-swap-enter-from,
+.state-swap-leave-to {
+    opacity: 0;
 }
 
 .ops__metric-value {
     display: inline-block;
     font-variant-numeric: tabular-nums;
-    background: linear-gradient(
-        180deg,
-        var(--text) 0%,
-        var(--text) 55%,
-        color-mix(in srgb, var(--state), var(--text) 55%) 100%
-    );
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: fadeUp 0.9s 0.2s both ease-out;
-    transition: background 0.5s ease;
+    color: var(--text);
 }
 
 .ops__rule {
@@ -809,10 +818,17 @@ const formattedTime = (() => {
     align-items: flex-start;
     gap: 0.75rem;
     margin-top: 1.75rem;
-    padding-top: 1.25rem;
-    border-top: 1px dashed var(--line-soft);
     animation: fadeUp 0.5s 0.65s both ease-out;
     transition: --pause-accent 0.4s ease;
+}
+
+.ops__pause::before {
+    content: "";
+    display: block;
+    width: calc(11rem + 0.75rem + 13rem);
+    max-width: 100%;
+    border-top: 1px dashed var(--line-soft);
+    margin-bottom: 1.25rem;
 }
 
 .ops[data-state="paused"] .ops__pause {

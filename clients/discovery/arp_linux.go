@@ -26,7 +26,9 @@ const procNetARP = "/proc/net/arp"
 //	192.168.1.10     0x1         0x2         e8:de:27:d2:97:5e     *        eth0
 //
 // Rows with all-zero MAC are incomplete (kernel knows the IP but never got
-// an ARP reply) and skipped. The first line is a header.
+// an ARP reply) and skipped. Docker bridge ranges are also skipped — those
+// are container neighbours, not LAN devices, and they pollute both the
+// arpwatcher cache and the UI's discovery list. The first line is a header.
 func ReadARPTable() ([]ARPEntry, error) {
 	f, err := os.Open(procNetARP)
 	if err != nil {
@@ -48,6 +50,9 @@ func ReadARPTable() ([]ARPEntry, error) {
 		}
 		ip := net.ParseIP(fields[0]).To4()
 		if ip == nil {
+			continue
+		}
+		if isDockerBridge(ip) {
 			continue
 		}
 		mac, err := net.ParseMAC(fields[3])

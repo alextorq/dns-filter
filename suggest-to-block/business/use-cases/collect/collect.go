@@ -18,6 +18,7 @@ const (
 	ItemScoreSimilarToBlockedDomain = 15
 	ItemScoreRiskyTLD               = 5
 	ItemScoreNumericRun             = 5
+	ItemScoreHexUUID                = 10
 	ThresholdToSuggestBlocking      = 30
 )
 
@@ -31,6 +32,7 @@ const (
 	ReasonSimilarToBlockedDomain = "has same domain level and similar blocked domain as"
 	ReasonRiskyTLD               = "uses a TLD with elevated abuse rate"
 	ReasonNumericRun             = "label contains a long run of digits"
+	ReasonHexUUIDLabel           = "label looks like a hex hash or UUID"
 )
 
 func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
@@ -60,6 +62,11 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 		if HasNumericRun(allowedDomain) {
 			suggestion.Score += ItemScoreNumericRun
 			suggestion.Reason += "\n" + ReasonNumericRun + "; "
+		}
+
+		if HasHexUUIDLabel(allowedDomain) {
+			suggestion.Score += ItemScoreHexUUID
+			suggestion.Reason += "\n" + ReasonHexUUIDLabel + "; "
 		}
 
 		for _, blockedDomain := range blockedDomains {

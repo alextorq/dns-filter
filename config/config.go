@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/joho/godotenv"
 )
@@ -14,7 +15,7 @@ type Config struct {
 	DoHUpstream     string
 	DoHBootstrapIPs []string
 	DbPath          string
-	Enabled         bool
+	Enabled         atomic.Bool
 
 	LogLevel string
 
@@ -91,13 +92,13 @@ func GetConfig() *Config {
 			MetricEnable: getEnv("DNS_FILTER_METRIC_ENABLE", "false") == "true",
 
 			LogLevel: getEnv("DNS_FILTER_LOG_LEVEL", ""),
-			Enabled:  true,
 
 			AdminLogin:     os.Getenv("DNS_FILTER_ADMIN_LOGIN"),
 			AdminPassword:  os.Getenv("DNS_FILTER_ADMIN_PASSWORD"),
 			CookieSecure:   os.Getenv("DNS_FILTER_COOKIE_SECURE") == "true",
 			CookieSameSite: getEnv("DNS_FILTER_COOKIE_SAMESITE", "Lax"),
 		}
+		instance.Enabled.Store(true)
 	})
 
 	return instance

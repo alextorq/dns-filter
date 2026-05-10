@@ -83,6 +83,9 @@ func ResolveSession(token string) (*authDb.Session, *authDb.User, error) {
 }
 
 func RevokeSession(token string) error {
+	if err := authDb.DeleteSession(token); err != nil {
+		return err
+	}
 	dropCachedSession(token)
-	return authDb.DeleteSession(token)
+	return nil
 }

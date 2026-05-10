@@ -128,6 +128,9 @@ class Api {
         this.client.clientsChangeFilterCreate({ id, filtered });
 
     deleteClient = (id: number) => this.client.clientsDeleteCreate({ id });
+
+    discoverNetwork = (abortSignal: AbortSignal) =>
+        this.client.clientsDiscoverCreate({ signal: abortSignal });
 }
 
 export const api = new Api();

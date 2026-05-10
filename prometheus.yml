@@ -5,4 +5,7 @@ global:
 scrape_configs:
   - job_name: "dns-filter"
     static_configs:
-      - targets: ["dns-filter:2112"]
+      # dns-filter is on host networking; see docker-compose.yml. The
+      # `extra_hosts: host-gateway` on the prometheus service in compose
+      # makes host.docker.internal resolve to the host gateway on Linux.
+      - targets: ["host.docker.internal:2112"]

@@ -91,6 +91,15 @@ export interface DbSuggestBlockReason {
   match?: string;
 }
 
+export interface DiscoveryDevice {
+  already_registered?: boolean;
+  hostname?: string;
+  ip?: string;
+  mac?: string;
+  source?: string;
+  vendor?: string;
+}
+
 export interface GithubComAlextorqDnsFilterAuthWebErrorResponse {
   error?: string;
 }
@@ -187,6 +196,12 @@ export interface WebCreateClientRequest {
 
 export interface WebDeleteClientRequest {
   id?: number;
+}
+
+export interface WebDiscoverResponse {
+  devices?: DiscoveryDevice[];
+  errors?: string[];
+  total?: number;
 }
 
 export interface WebFilterStatusResponse {

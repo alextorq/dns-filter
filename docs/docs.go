@@ -276,6 +276,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/clients/discover": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "clients"
+                ],
+                "summary": "Scan LAN for devices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.DiscoverResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "discovery is not supported in the current deployment mode",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/clients/update": {
             "post": {
                 "consumes": [
@@ -1113,6 +1144,29 @@ const docTemplate = `{
                 }
             }
         },
+        "discovery.Device": {
+            "type": "object",
+            "properties": {
+                "already_registered": {
+                    "type": "boolean"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "mac": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "vendor": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_alextorq_dns-filter_auth_web.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -1320,6 +1374,26 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.DiscoverResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/discovery.Device"
+                    }
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "total": {
                     "type": "integer"
                 }
             }

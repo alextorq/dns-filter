@@ -9,6 +9,7 @@ import { isAbortError } from "~~/utils/is-abort-error";
 import AddClientModal from "./components/add-client-modal.vue";
 import DeleteClient from "./components/delete-client.vue";
 import FilterToggle from "./components/filter-toggle.vue";
+import ScanResults from "./components/scan-results.vue";
 
 const toast = useToast();
 
@@ -16,12 +17,18 @@ let lastFetchController: AbortController | null = null;
 
 const data = ref<DbClient[]>([]);
 const globalFilter = ref("");
+const activeTab = ref("clients");
 
 const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
 
 useHead({
     title: "Clients",
 });
+
+const tabs = [
+    { label: "My clients", icon: "i-lucide-users", value: "clients" },
+    { label: "Network scan", icon: "i-lucide-radar", value: "scan" },
+];
 
 const pagination = ref({
     pageIndex: 0,
@@ -175,42 +182,58 @@ const columns: TableColumn<DbClient>[] = [
 <template>
     <div class="h-[calc(100vh-var(--ui-header-height))] flex flex-col">
         <UContainer class="shrink-0 pt-4">
-            <div
-                class="flex flex-wrap gap-3 px-4 py-3.5 justify-between items-center border-b border-accented"
-            >
-                <UInput
-                    v-model="globalFilter"
-                    class="max-w-sm"
-                    icon="i-lucide-search"
-                    placeholder="Search by IP, MAC, name…"
-                />
-                <AddClientModal @success="fetchWithLoading" />
-            </div>
+            <UTabs
+                v-model="activeTab"
+                :items="tabs"
+                :ui="{ list: 'w-full max-w-md' }"
+            />
         </UContainer>
 
-        <div class="flex-1 min-h-0 overflow-auto">
+        <template v-if="activeTab === 'clients'">
+            <UContainer class="shrink-0 pt-2">
+                <div
+                    class="flex flex-wrap gap-3 px-4 py-3.5 justify-between items-center border-b border-accented"
+                >
+                    <UInput
+                        v-model="globalFilter"
+                        class="max-w-sm"
+                        icon="i-lucide-search"
+                        placeholder="Search by IP, MAC, name…"
+                    />
+                    <AddClientModal @success="fetchWithLoading" />
+                </div>
+            </UContainer>
+
+            <div class="flex-1 min-h-0 overflow-auto">
+                <UContainer>
+                    <UTable
+                        :loading="isLoading"
+                        sticky="header"
+                        empty="No clients"
+                        :data="paginated"
+                        :columns="columns"
+                        :ui="{ root: 'relative' }"
+                    />
+                </UContainer>
+            </div>
+
+            <UContainer class="shrink-0 pb-4">
+                <div class="flex justify-center border-t border-default pt-4">
+                    <UPagination
+                        v-if="filteredTotal > pagination.pageSize"
+                        :default-page="pagination.pageIndex + 1"
+                        :items-per-page="pagination.pageSize"
+                        :total="filteredTotal"
+                        @update:page="changePage"
+                    />
+                </div>
+            </UContainer>
+        </template>
+
+        <div v-else class="flex-1 min-h-0 overflow-auto">
             <UContainer>
-                <UTable
-                    :loading="isLoading"
-                    sticky="header"
-                    empty="No clients"
-                    :data="paginated"
-                    :columns="columns"
-                    :ui="{ root: 'relative' }"
-                />
+                <ScanResults @added="fetchWithLoading" />
             </UContainer>
         </div>
-
-        <UContainer class="shrink-0 pb-4">
-            <div class="flex justify-center border-t border-default pt-4">
-                <UPagination
-                    v-if="filteredTotal > pagination.pageSize"
-                    :default-page="pagination.pageIndex + 1"
-                    :items-per-page="pagination.pageSize"
-                    :total="filteredTotal"
-                    @update:page="changePage"
-                />
-            </div>
-        </UContainer>
     </div>
 </template>

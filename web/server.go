@@ -64,6 +64,7 @@ func CreateServer() *gin.Engine {
 		api.POST("/clients/update", clientsWeb.UpdateClient)
 		api.POST("/clients/change-filter", clientsWeb.ChangeFilter)
 		api.POST("/clients/delete", clientsWeb.DeleteClient)
+		api.POST("/clients/discover", clientsWeb.Discover)
 
 		api.GET("/config/db/download", dbWeb.DownloadDb)
 	}

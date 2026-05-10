@@ -138,6 +138,21 @@ definitions:
       match:
         type: string
     type: object
+  discovery.Device:
+    properties:
+      already_registered:
+        type: boolean
+      hostname:
+        type: string
+      ip:
+        type: string
+      mac:
+        type: string
+      source:
+        type: string
+      vendor:
+        type: string
+    type: object
   github_com_alextorq_dns-filter_auth_web.ErrorResponse:
     properties:
       error:
@@ -270,6 +285,19 @@ definitions:
   web.DeleteClientRequest:
     properties:
       id:
+        type: integer
+    type: object
+  web.DiscoverResponse:
+    properties:
+      devices:
+        items:
+          $ref: '#/definitions/discovery.Device'
+        type: array
+      errors:
+        items:
+          type: string
+        type: array
+      total:
         type: integer
     type: object
   web.FilterStatusResponse:
@@ -587,6 +615,26 @@ paths:
           schema:
             $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
       summary: Delete client
+      tags:
+      - clients
+  /api/clients/discover:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.DiscoverResponse'
+        "409":
+          description: discovery is not supported in the current deployment mode
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: Scan LAN for devices
       tags:
       - clients
   /api/clients/update:

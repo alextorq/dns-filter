@@ -31,6 +31,7 @@ import type {
   WebClientResponse,
   WebCreateClientRequest,
   WebDeleteClientRequest,
+  WebDiscoverResponse,
   WebFilterStatusResponse,
   WebGetAllDnsRecordsRequest,
   WebGetAllDnsRecordsResponse,
@@ -192,6 +193,24 @@ export class Api<
       method: "POST",
       body: body,
       type: ContentType.Json,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags clients
+   * @name ClientsDiscoverCreate
+   * @summary Scan LAN for devices
+   * @request POST:/api/clients/discover
+   */
+  clientsDiscoverCreate = (params: RequestParams = {}) =>
+    this.request<
+      WebDiscoverResponse,
+      GithubComAlextorqDnsFilterClientsWebErrorResponse
+    >({
+      path: `/api/clients/discover`,
+      method: "POST",
       format: "json",
       ...params,
     });

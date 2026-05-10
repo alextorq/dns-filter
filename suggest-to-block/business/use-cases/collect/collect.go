@@ -17,6 +17,7 @@ const (
 	ItemScoreSubdomainOfBlocked     = 20
 	ItemScoreSimilarToBlockedDomain = 15
 	ItemScoreRiskyTLD               = 5
+	ItemScoreNumericRun             = 5
 	ThresholdToSuggestBlocking      = 30
 )
 
@@ -29,6 +30,7 @@ const (
 	ReasonSubdomainOfBlocked     = "is subdomain of blocked domain"
 	ReasonSimilarToBlockedDomain = "has same domain level and similar blocked domain as"
 	ReasonRiskyTLD               = "uses a TLD with elevated abuse rate"
+	ReasonNumericRun             = "label contains a long run of digits"
 )
 
 func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
@@ -53,6 +55,11 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 		if IsRiskyTLD(allowedDomain) {
 			suggestion.Score += ItemScoreRiskyTLD
 			suggestion.Reason += "\n" + ReasonRiskyTLD + "; "
+		}
+
+		if HasNumericRun(allowedDomain) {
+			suggestion.Score += ItemScoreNumericRun
+			suggestion.Reason += "\n" + ReasonNumericRun + "; "
 		}
 
 		for _, blockedDomain := range blockedDomains {

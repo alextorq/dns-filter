@@ -152,7 +152,9 @@ const columns: TableColumn<DbExcludeClient>[] = [
 <template>
     <div class="h-[calc(100vh-var(--ui-header-height))] flex flex-col">
         <UContainer class="shrink-0 pt-4">
-            <div class="flex flex-wrap gap-3 px-4 py-3.5 justify-between items-center border-b border-accented">
+            <div
+                class="flex flex-wrap gap-3 px-4 py-3.5 justify-between items-center border-b border-accented"
+            >
                 <UInput
                     v-model="globalFilter"
                     class="max-w-sm"

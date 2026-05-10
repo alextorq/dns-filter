@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/alextorq/dns-filter/logger/log"
@@ -31,6 +32,7 @@ type ChanLogger struct {
 	Handlers []Handler
 	quit     chan struct{}
 	level    LogLevel
+	dropped  atomic.Uint64
 }
 
 // Handler — интерфейс для обработчиков
@@ -117,6 +119,7 @@ func (l *ChanLogger) Error(err error) {
 
 // send — non-blocking, drops the message if the channel is full so the
 // DNS hot-path is never stalled by a slow handler (e.g. Loki over the network).
+// Drops are counted and surfaced via DroppedCount for Prometheus.
 func (l *ChanLogger) send(level, msg string) {
 	select {
 	case l.logChan <- log.LogStruct{
@@ -125,7 +128,14 @@ func (l *ChanLogger) send(level, msg string) {
 		Time:    time.Now(),
 	}:
 	default:
+		l.dropped.Add(1)
 	}
+}
+
+// DroppedCount returns the cumulative number of log records that were
+// dropped because the channel buffer was full.
+func (l *ChanLogger) DroppedCount() uint64 {
+	return l.dropped.Load()
 }
 
 // traceError — разворачиваем цепочку ошибок

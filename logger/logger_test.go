@@ -23,9 +23,10 @@ func TestChanLogger_SendDoesNotBlockWhenBufferFull(t *testing.T) {
 	}
 
 	done := make(chan struct{})
+	const extras = 10
 	go func() {
 		// Several extra sends — every one must return immediately.
-		for range 10 {
+		for range extras {
 			l.Info("must not block")
 		}
 		close(done)
@@ -35,5 +36,9 @@ func TestChanLogger_SendDoesNotBlockWhenBufferFull(t *testing.T) {
 	case <-done:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("logger.send blocked when channel was full")
+	}
+
+	if got := l.DroppedCount(); got != extras {
+		t.Fatalf("DroppedCount() = %d, want %d", got, extras)
 	}
 }

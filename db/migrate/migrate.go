@@ -63,13 +63,22 @@ func Migrate() {
 	// previous boot copied rows but crashed before DropTable could finish,
 	// the next boot would otherwise duplicate every row. Skipping the copy
 	// when clients already has data keeps re-runs idempotent.
+	//
+	// The copy itself runs inside a transaction so a mid-batch failure
+	// (constraint violation, disk full, etc.) rolls back rather than leaving
+	// a partially-populated clients table — which would falsely satisfy the
+	// non-empty guard on the next boot and silently lose the rest of the
+	// legacy data when DropTable runs.
 	if m.HasTable("exclude_clients") {
 		var clientsCount int64
 		if err := connect.Model(&clients_db.Client{}).Count(&clientsCount).Error; err != nil {
 			panic(err)
 		}
 		if clientsCount == 0 {
-			if err := migrateExcludeClients(connect); err != nil {
+			err := connect.Transaction(func(tx *gorm.DB) error {
+				return migrateExcludeClients(tx)
+			})
+			if err != nil {
 				panic(err)
 			}
 		}

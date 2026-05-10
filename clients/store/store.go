@@ -101,6 +101,15 @@ func clientLookups(c *db.Client) []identifier.Lookup {
 
 // UpdateFromDB rebuilds the snapshot from the database. Called once at boot
 // and any time a bulk operation makes incremental updates impractical.
+//
+// Concurrency: the rebuild is "SELECT all + replace map under write lock".
+// A concurrent ChangeFilter performs UPDATE then incrementally mutates the
+// same map. On SQLite (the only backend the project supports today) the
+// single-writer model serializes our SELECT against any in-flight UPDATE,
+// so the SELECT cannot miss a row that ChangeFilter just wrote. If the
+// project ever moves to a backend with read-committed isolation, a SELECT
+// here can race past an UPDATE and the rebuild can lose the just-added
+// entry — switch to per-row updates or take a coarser lock then.
 func (s *Store) UpdateFromDB() error {
 	rows, err := db.GetExcludedClients()
 	if err != nil {

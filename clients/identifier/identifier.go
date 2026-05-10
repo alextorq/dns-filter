@@ -65,9 +65,6 @@ func (i IPIdentifier) Identify(r Request) (Lookup, bool) {
 	if err != nil {
 		return Lookup{}, false
 	}
-	if host == "" {
-		return Lookup{}, false
-	}
 	if i.Resolver != nil {
 		if mac, ok := i.Resolver.MAC(host); ok && mac != "" {
 			return Lookup{Kind: KindMAC, Value: mac}, true

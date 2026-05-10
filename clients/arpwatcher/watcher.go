@@ -3,6 +3,7 @@ package arpwatcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/alextorq/dns-filter/clients/db"
@@ -40,7 +41,7 @@ func Run(ctx context.Context, log Logger, interval time.Duration) {
 
 	// Run an immediate first pass so the cache isn't empty for the first
 	// `interval` seconds after startup, then settle into the timer cadence.
-	if !tick(ctx, log) {
+	if !tick(log) {
 		return
 	}
 
@@ -51,7 +52,7 @@ func Run(ctx context.Context, log Logger, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if !tick(ctx, log) {
+			if !tick(log) {
 				return
 			}
 		}
@@ -61,7 +62,7 @@ func Run(ctx context.Context, log Logger, interval time.Duration) {
 // tick reads the ARP table once and folds the result into the cache. It
 // returns false to signal "give up the loop" — currently only when the
 // platform doesn't support ARP reading.
-func tick(ctx context.Context, log Logger) bool {
+func tick(log Logger) bool {
 	entries, err := discovery.ReadARPTable()
 	if err != nil {
 		if errors.Is(err, discovery.ErrUnsupported) {
@@ -84,7 +85,7 @@ func tick(ctx context.Context, log Logger) bool {
 		"known", res.TotalKnown,
 	)
 
-	if backfilled := backfillClients(ctx); backfilled > 0 {
+	if backfilled := backfillClients(log); backfilled > 0 {
 		// Rebuild the in-memory exclusion snapshot so newly-attached MACs
 		// participate in the hot-path lookup. The store rebuild is cheap
 		// (a single SELECT over a small table); doing it after a batch
@@ -102,14 +103,20 @@ func tick(ctx context.Context, log Logger) bool {
 // a MAC and the kernel later reports a different one for that IP, we keep
 // the user's value rather than guess which side is right.
 //
+// DB read/write failures are logged but never abort the loop: a single
+// row's UPDATE failing under contention shouldn't stop the rest of the
+// batch, and the operator needs the log line to know why the MAC column
+// stayed empty.
+//
 // Returns the number of rows updated.
-func backfillClients(_ context.Context) int {
+func backfillClients(log Logger) int {
 	pairs := Get().Pairs()
 	if len(pairs) == 0 {
 		return 0
 	}
 	clients, err := db.GetAllClients()
 	if err != nil {
+		log.Warn("arpwatcher: backfill list clients failed:", err)
 		return 0
 	}
 	updated := 0
@@ -122,6 +129,7 @@ func backfillClients(_ context.Context) int {
 			continue
 		}
 		if err := db.UpdateClientFields(c.ID, map[string]any{"mac": mac}); err != nil {
+			log.Warn(fmt.Sprintf("arpwatcher: backfill update client %d (%s): %v", c.ID, c.IP, err))
 			continue
 		}
 		updated++

@@ -46,10 +46,6 @@ func runMDNSDiscovery(ctx context.Context) ([]mDNSEntry, []error) {
 	if !ok {
 		deadline = time.Now().Add(perBrowseTimeout)
 	}
-	if budget := time.Until(deadline); budget < perBrowseTimeout {
-		// Caller's overall ctx is tighter than our default — honor it.
-		_ = budget
-	}
 
 	var (
 		mu      sync.Mutex

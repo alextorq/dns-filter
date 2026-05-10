@@ -83,7 +83,6 @@ func activeARPScan(ctx context.Context, subnet *LocalSubnet) ([]ARPEntry, error)
 	if err != nil {
 		return nil, fmt.Errorf("arp dial: %w", err)
 	}
-	defer client.Close()
 
 	hosts := subnet.EnumerateHosts()
 
@@ -94,11 +93,18 @@ func activeARPScan(ctx context.Context, subnet *LocalSubnet) ([]ARPEntry, error)
 		deadline = time.Now().Add(2 * time.Second)
 	}
 
-	// Send phase. We don't wait for replies between requests — the kernel
-	// queues responses while we keep sending.
+	// Local cancellable ctx so we can stop the send goroutine deterministically
+	// when the read phase exits — without it, the sender could still be inside
+	// client.Request(...) or a Sleep when defer Close fires, racing on the
+	// underlying AF_PACKET socket fd.
+	scanCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sendDone := make(chan struct{})
 	go func() {
+		defer close(sendDone)
 		for _, ip := range hosts {
-			if ctx.Err() != nil {
+			if scanCtx.Err() != nil {
 				return
 			}
 			addr, ok := netip.AddrFromSlice(ip.To4())
@@ -139,6 +145,12 @@ func activeARPScan(ctx context.Context, subnet *LocalSubnet) ([]ARPEntry, error)
 			Source: "active-scan",
 		})
 	}
+
+	// Drain the sender before closing the socket so neither this stack nor a
+	// stale sender goroutine can be in client.Request when the fd disappears.
+	cancel()
+	<-sendDone
+	_ = client.Close()
 	return entries, nil
 }
 

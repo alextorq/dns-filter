@@ -3,7 +3,7 @@ package web
 import (
 	authWeb "github.com/alextorq/dns-filter/auth/web"
 	eventsWeb "github.com/alextorq/dns-filter/blocked-domain/web"
-	excludeClientsWeb "github.com/alextorq/dns-filter/clients/web"
+	clientsWeb "github.com/alextorq/dns-filter/clients/web"
 	dbWeb "github.com/alextorq/dns-filter/db/web"
 	_ "github.com/alextorq/dns-filter/docs"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
@@ -59,10 +59,11 @@ func CreateServer() *gin.Engine {
 		api.POST("/sources", syncWeb.GetAllSources)
 		api.POST("/sources/change-status", syncWeb.ChangeSourceActive)
 
-		api.POST("/exclude-clients", excludeClientsWeb.GetAllClients)
-		api.POST("/exclude-clients/add", excludeClientsWeb.AddClient)
-		api.POST("/exclude-clients/change-status", excludeClientsWeb.ChangeClientStatus)
-		api.POST("/exclude-clients/delete", excludeClientsWeb.DeleteClient)
+		api.POST("/clients", clientsWeb.ListClients)
+		api.POST("/clients/create", clientsWeb.CreateClient)
+		api.POST("/clients/update", clientsWeb.UpdateClient)
+		api.POST("/clients/change-filter", clientsWeb.ChangeFilter)
+		api.POST("/clients/delete", clientsWeb.DeleteClient)
 
 		api.GET("/config/db/download", dbWeb.DownloadDb)
 	}

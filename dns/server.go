@@ -7,23 +7,33 @@ import (
 	"net"
 	"time"
 
-	clients "github.com/alextorq/dns-filter/clients/client"
+	"github.com/alextorq/dns-filter/clients/identifier"
+	"github.com/alextorq/dns-filter/clients/store"
 	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/utils"
 	"github.com/miekg/dns"
 )
 
+// ClientStore is the subset of the in-memory exclusion snapshot the hot path
+// needs. Defined as an interface so tests can inject a stub without standing
+// up the singleton.
+type ClientStore interface {
+	IsExcluded(identifier.Lookup) bool
+}
+
 type DnsServer struct {
-	Address  string
-	Port     int
-	udp      *dns.Server
-	tcp      *dns.Server
-	Logger   Logger
-	Cache    Cache
-	Filter   func(string2 string) bool
-	Upstream UpstreamResolver
-	Metric   Metric
-	Handlers DnsRequestHandlers
+	Address    string
+	Port       int
+	udp        *dns.Server
+	tcp        *dns.Server
+	Logger     Logger
+	Cache      Cache
+	Filter     func(string2 string) bool
+	Upstream   UpstreamResolver
+	Metric     Metric
+	Handlers   DnsRequestHandlers
+	Identifier identifier.Identifier
+	Clients    ClientStore
 	// NotifyStartedFunc is invoked once for each underlying listener (UDP
 	// and TCP) right after it becomes ready to accept queries. Optional;
 	// primarily for tests that need to wait for both listeners.
@@ -86,19 +96,24 @@ func (s *DnsServer) GetFromCacheOrCreateRequest(ctx context.Context, question dn
 func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
-	cl := clients.GetClients()
 
 	start := time.Now()
-	clientIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
+	remoteAddr := w.RemoteAddr().String()
+	clientIP, _, _ := net.SplitHostPort(remoteAddr)
+
+	// Resolve the client to a store lookup once per request rather than per
+	// question — every question in a single DNS message comes from the same
+	// transport endpoint.
+	lookup, identified := s.Identifier.Identify(identifier.Request{RemoteAddr: remoteAddr})
 
 	for _, q := range r.Question {
 		qtype := dns.TypeToString[q.Qtype]
 		qname := q.Name
 
 		useFilter := s.Filter(qname)
-		if cl.ClientExist(clientIP) {
+		if identified && s.Clients.IsExcluded(lookup) {
 			useFilter = false
-			s.Logger.Debug("Клиент: ", clientIP, "из списка разрешённых")
+			s.Logger.Debug("Клиент: ", lookup.Kind, ":", lookup.Value, "исключён из фильтрации")
 		}
 
 		if useFilter {
@@ -198,18 +213,20 @@ func (s *DnsServer) Shutdown() error {
 	return err
 }
 
-func CreateServer(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers) *DnsServer {
+func CreateServer(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers, ident identifier.Identifier) *DnsServer {
 	conf := config.GetConfig()
-	return CreateServerWithResolver(logger, cache, filter, metric, handlers, NewDoHResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...))
+	return CreateServerWithResolver(logger, cache, filter, metric, handlers, ident, NewDoHResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...))
 }
 
-func CreateServerWithResolver(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers, upstream UpstreamResolver) *DnsServer {
+func CreateServerWithResolver(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers, ident identifier.Identifier, upstream UpstreamResolver) *DnsServer {
 	return &DnsServer{
-		Logger:   logger,
-		Cache:    cache,
-		Filter:   filter,
-		Upstream: upstream,
-		Metric:   metric,
-		Handlers: handlers,
+		Logger:     logger,
+		Cache:      cache,
+		Filter:     filter,
+		Upstream:   upstream,
+		Metric:     metric,
+		Handlers:   handlers,
+		Identifier: ident,
+		Clients:    store.Get(),
 	}
 }

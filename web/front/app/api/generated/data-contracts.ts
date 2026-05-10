@@ -48,18 +48,24 @@ export interface DbBlockList {
   url?: string;
 }
 
+export interface DbClient {
+  created_at?: string;
+  deleted_at?: GormDeletedAt;
+  filtered?: boolean;
+  hostname?: string;
+  id?: number;
+  ip?: string;
+  last_seen?: string;
+  mac?: string;
+  name?: string;
+  token?: string;
+  updated_at?: string;
+  vendor?: string;
+}
+
 export interface DbDomainCount {
   count?: number;
   domain?: string;
-}
-
-export interface DbExcludeClient {
-  active?: boolean;
-  created_at?: string;
-  deletedAt?: GormDeletedAt;
-  id?: number;
-  updated_at?: string;
-  user_id?: string;
 }
 
 export interface DbSource {
@@ -136,10 +142,6 @@ export interface UpdateDnsRecordUpdateBlockList {
   id: number;
 }
 
-export interface WebAddClientRequest {
-  user_id?: string;
-}
-
 export interface WebAddToBlockRequest {
   domain?: string;
   id?: number;
@@ -149,9 +151,9 @@ export interface WebBadRequestResponse {
   message?: string;
 }
 
-export interface WebChangeClientStatusRequest {
+export interface WebChangeFilterRequest {
+  filtered?: boolean;
   id?: number;
-  is_active?: boolean;
 }
 
 export interface WebChangeSourceActiveRequest {
@@ -169,6 +171,20 @@ export interface WebChangeSuggestStatusRequest {
   id?: number;
 }
 
+export interface WebClientResponse {
+  client?: DbClient;
+}
+
+export interface WebCreateClientRequest {
+  filtered?: boolean;
+  hostname?: string;
+  ip?: string;
+  mac?: string;
+  name?: string;
+  token?: string;
+  vendor?: string;
+}
+
 export interface WebDeleteClientRequest {
   id?: number;
 }
@@ -181,11 +197,6 @@ export interface WebFilterStatusResponse {
    */
   paused_until?: number;
   status?: boolean;
-}
-
-export interface WebGetAllClientsResponse {
-  list?: DbExcludeClient[];
-  total?: number;
 }
 
 export interface WebGetAllDnsRecordsRequest {
@@ -230,6 +241,11 @@ export interface WebGetSignalCodesResponse {
   list?: CollectSignalDescriptor[];
 }
 
+export interface WebListClientsResponse {
+  list?: DbClient[];
+  total?: number;
+}
+
 export interface WebLogLevelResponse {
   level?: string;
 }
@@ -241,6 +257,13 @@ export interface WebLoginRequest {
 
 export interface WebPauseFilterRequest {
   minutes?: number;
+}
+
+export interface WebUpdateClientRequest {
+  hostname?: string;
+  id?: number;
+  name?: string;
+  vendor?: string;
 }
 
 export interface WebUpdateConfigData {

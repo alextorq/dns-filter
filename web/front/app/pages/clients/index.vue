@@ -1,26 +1,26 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
 import { api } from "~/api";
-import type { DbExcludeClient } from "~/api/generated/data-contracts";
+import type { DbClient } from "~/api/generated/data-contracts";
 import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
 import { formatDate } from "~~/utils/format-date";
 import { getErrorMessage } from "~~/utils/get-error-message";
 import { isAbortError } from "~~/utils/is-abort-error";
 import AddClientModal from "./components/add-client-modal.vue";
-import ChangeClientStatus from "./components/change-client-status.vue";
 import DeleteClient from "./components/delete-client.vue";
+import FilterToggle from "./components/filter-toggle.vue";
 
 const toast = useToast();
 
 let lastFetchController: AbortController | null = null;
 
-const data = ref<DbExcludeClient[]>([]);
+const data = ref<DbClient[]>([]);
 const globalFilter = ref("");
 
 const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
 
 useHead({
-    title: "Exclude Clients",
+    title: "Clients",
 });
 
 const pagination = ref({
@@ -32,7 +32,13 @@ const pagination = ref({
 const filtered = computed(() => {
     const q = globalFilter.value.trim().toLowerCase();
     if (!q) return data.value;
-    return data.value.filter((c) => (c.user_id ?? "").toLowerCase().includes(q));
+    return data.value.filter((c) => {
+        const haystack = [c.ip, c.mac, c.name, c.hostname, c.vendor]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+        return haystack.includes(q);
+    });
 });
 
 const paginated = computed(() => {
@@ -50,7 +56,7 @@ const fetchData = async () => {
     try {
         if (lastFetchController) lastFetchController.abort();
         lastFetchController = new AbortController();
-        const response = await api.getAllExcludeClients(lastFetchController.signal);
+        const response = await api.getAllClients(lastFetchController.signal);
 
         data.value = response.list ?? [];
         pagination.value = {
@@ -77,43 +83,60 @@ const changePage = (page: number) => {
 
 onMounted(fetchWithLoading);
 
-const updateActiveStatus = (item: DbExcludeClient) => {
+const updateClient = (item: DbClient) => {
     const index = data.value.findIndex((record) => record.id === item.id);
     if (index !== -1) {
         data.value.splice(index, 1, item);
     }
 };
 
-const deleteClient = (item: DbExcludeClient) => {
+const removeClient = (item: DbClient) => {
     const index = data.value.findIndex((record) => record.id === item.id);
     if (index !== -1) {
         data.value.splice(index, 1);
     }
     toast.add({
         title: "Deleted",
-        description: `${item.user_id} removed from exclusions.`,
+        description: `${item.name || item.ip || `#${item.id}`} removed.`,
         duration: 3000,
     });
 };
 
-const columns: TableColumn<DbExcludeClient>[] = [
+const columns: TableColumn<DbClient>[] = [
     {
         accessorKey: "id",
         header: "ID",
         meta: { class: { td: "tabular-nums text-muted" } },
     },
     {
-        accessorKey: "user_id",
-        header: "Client IP",
+        accessorKey: "name",
+        header: "Name",
+        cell: ({ row }) => row.original.name || h("span", { class: "text-muted" }, "—"),
+    },
+    {
+        accessorKey: "ip",
+        header: "IP",
         cell: ({ row }) => {
-            const id = row.original.user_id ?? "";
-            return h("span", { class: "font-mono", title: id }, id);
+            const ip = row.original.ip ?? "";
+            return ip
+                ? h("span", { class: "font-mono", title: ip }, ip)
+                : h("span", { class: "text-muted" }, "—");
         },
     },
     {
-        accessorKey: "created_at",
-        header: "Created",
-        cell: ({ row }) => formatDate(row.getValue("created_at")),
+        accessorKey: "mac",
+        header: "MAC",
+        cell: ({ row }) => {
+            const mac = row.original.mac ?? "";
+            return mac
+                ? h("span", { class: "font-mono text-muted text-sm" }, mac)
+                : h("span", { class: "text-muted" }, "—");
+        },
+    },
+    {
+        accessorKey: "vendor",
+        header: "Vendor",
+        cell: ({ row }) => row.original.vendor || h("span", { class: "text-muted" }, "—"),
     },
     {
         accessorKey: "updated_at",
@@ -121,15 +144,15 @@ const columns: TableColumn<DbExcludeClient>[] = [
         cell: ({ row }) => formatDate(row.getValue("updated_at")),
     },
     {
-        accessorKey: "active",
-        header: () => h("div", { class: "text-right" }, "Active"),
+        accessorKey: "filtered",
+        header: () => h("div", { class: "text-right" }, "Filter"),
         cell: ({ row }) =>
             h(
                 "div",
                 { class: "flex justify-end" },
-                h(ChangeClientStatus, {
+                h(FilterToggle, {
                     record: row.original,
-                    onUpdate: updateActiveStatus,
+                    onUpdate: updateClient,
                 }),
             ),
     },
@@ -142,7 +165,7 @@ const columns: TableColumn<DbExcludeClient>[] = [
                 { class: "flex justify-end" },
                 h(DeleteClient, {
                     record: row.original,
-                    onDelete: deleteClient,
+                    onDelete: removeClient,
                 }),
             ),
     },
@@ -159,7 +182,7 @@ const columns: TableColumn<DbExcludeClient>[] = [
                     v-model="globalFilter"
                     class="max-w-sm"
                     icon="i-lucide-search"
-                    placeholder="Search by IP"
+                    placeholder="Search by IP, MAC, name…"
                 />
                 <AddClientModal @success="fetchWithLoading" />
             </div>

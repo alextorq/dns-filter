@@ -13,17 +13,22 @@ const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
 const touched = ref(false);
 const validationError = ref("");
 
+// New clients are added as exclusions by default — that's the practical use
+// case ("don't filter my smart speaker"). The filter toggle in the table can
+// flip them back to normal filtering after the fact.
 const state = reactive({
-    user_id: "",
+    ip: "",
+    name: "",
+    excluded: true,
 });
 
 const validation = (): string | null => {
-    const value = state.user_id.trim();
-    if (!value) {
+    const ip = state.ip.trim();
+    if (!ip) {
         return "Client IP is required.";
     }
     const ipv4 = /^(25[0-5]|2[0-4]\d|[01]?\d?\d)(\.(25[0-5]|2[0-4]\d|[01]?\d?\d)){3}$/;
-    if (!ipv4.test(value)) {
+    if (!ipv4.test(ip)) {
         return "Enter a valid IPv4 address (e.g. 192.168.1.10).";
     }
     return null;
@@ -35,14 +40,16 @@ const runValidation = () => {
 };
 
 watch(
-    () => state.user_id,
+    () => state.ip,
     () => {
         if (touched.value) runValidation();
     },
 );
 
 const reset = () => {
-    state.user_id = "";
+    state.ip = "";
+    state.name = "";
+    state.excluded = true;
     validationError.value = "";
     touched.value = false;
 };
@@ -55,7 +62,11 @@ const onClose = () => {
 const onSubmit = async () => {
     touched.value = true;
     if (!runValidation()) return;
-    await api.addExcludeClient({ user_id: state.user_id.trim() });
+    await api.createClient({
+        ip: state.ip.trim(),
+        name: state.name.trim(),
+        filtered: !state.excluded,
+    });
     toast.add({
         title: "Success",
         description: "New client was added.",
@@ -93,24 +104,46 @@ const submitWithLoading = createLoadingRequest(async () => {
             <UForm
                 id="add-client-form"
                 :state="state"
-                class="w-full max-w-xl"
+                class="w-full max-w-xl space-y-4"
                 @submit="submitWithLoading"
             >
                 <UFormField
                     label="Client IP"
-                    name="user_id"
+                    name="ip"
                     required
                     :error="validationError"
-                    help="IPv4 address of the device that should bypass filtering."
+                    help="IPv4 address of the device."
                 >
                     <UInput
-                        v-model="state.user_id"
+                        v-model="state.ip"
                         size="xl"
                         class="w-full"
                         placeholder="192.168.1.10"
                         autofocus
                         :disabled="isLoading"
                         @blur="touched = true"
+                    />
+                </UFormField>
+
+                <UFormField label="Name" name="name" help="Optional friendly label.">
+                    <UInput
+                        v-model="state.name"
+                        size="xl"
+                        class="w-full"
+                        placeholder="Yandex Station"
+                        :disabled="isLoading"
+                    />
+                </UFormField>
+
+                <UFormField
+                    name="excluded"
+                    help="When enabled, DNS filtering is bypassed for this client."
+                >
+                    <USwitch
+                        v-model="state.excluded"
+                        size="xl"
+                        label="Bypass filter"
+                        :disabled="isLoading"
                     />
                 </UFormField>
             </UForm>

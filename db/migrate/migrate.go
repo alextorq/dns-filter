@@ -4,10 +4,11 @@ import (
 	allow_domain_db "github.com/alextorq/dns-filter/allow-domain/db"
 	auth_db "github.com/alextorq/dns-filter/auth/db"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
-	exclude_clients "github.com/alextorq/dns-filter/clients/db"
+	clients_db "github.com/alextorq/dns-filter/clients/db"
 	"github.com/alextorq/dns-filter/db"
 	syncDb "github.com/alextorq/dns-filter/source/db"
 	suggest_db "github.com/alextorq/dns-filter/suggest-to-block/db"
+	"gorm.io/gorm"
 )
 
 func Migrate() {
@@ -37,7 +38,7 @@ func Migrate() {
 		&blocked_domain_db.BlockList{},
 		&blocked_domain_db.BlockDomainEvent{},
 		&allow_domain_db.AllowDomainEvent{},
-		&exclude_clients.ExcludeClient{},
+		&clients_db.Client{},
 		&syncDb.Source{},
 		&auth_db.User{},
 		&auth_db.Session{},
@@ -45,4 +46,62 @@ func Migrate() {
 	if err != nil {
 		panic(err)
 	}
+
+	// One-shot migration from the legacy exclude_clients table to clients.
+	// The old schema stored {user_id, active}: active=true meant "filter is
+	// bypassed for this IP". The new model inverts the semantic into
+	// Filtered (true=filter applies, false=excluded), so an old active=true
+	// row maps to a new Filtered=false row. Rows with active=false are kept
+	// as Filtered=true so the user doesn't lose the IPs they previously
+	// disabled — they appear in the new UI as "filtered normally".
+	//
+	// The HasTable check makes this a no-op after the table is dropped, so
+	// subsequent boots skip it entirely. Fresh installs (where the legacy
+	// table never existed) fall through to AutoMigrate above and stop here.
+	//
+	// The clients-non-empty guard is the partial-failure escape hatch: if a
+	// previous boot copied rows but crashed before DropTable could finish,
+	// the next boot would otherwise duplicate every row. Skipping the copy
+	// when clients already has data keeps re-runs idempotent.
+	if m.HasTable("exclude_clients") {
+		var clientsCount int64
+		if err := connect.Model(&clients_db.Client{}).Count(&clientsCount).Error; err != nil {
+			panic(err)
+		}
+		if clientsCount == 0 {
+			if err := migrateExcludeClients(connect); err != nil {
+				panic(err)
+			}
+		}
+		if err := m.DropTable("exclude_clients"); err != nil {
+			panic(err)
+		}
+	}
+}
+
+// migrateExcludeClients copies rows from the legacy exclude_clients table
+// into the new clients table. Soft-deleted rows are skipped — they were
+// invisible in the old UI and resurrecting them now would be surprising.
+func migrateExcludeClients(con *gorm.DB) error {
+	type legacyRow struct {
+		UserId string
+		Active bool
+	}
+	var rows []legacyRow
+	if err := con.Table("exclude_clients").
+		Where("deleted_at IS NULL").
+		Select("user_id", "active").
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, r := range rows {
+		c := clients_db.Client{
+			IP:       r.UserId,
+			Filtered: !r.Active,
+		}
+		if err := con.Create(&c).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

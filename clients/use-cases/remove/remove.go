@@ -1,19 +1,21 @@
 package remove
 
 import (
-	clients "github.com/alextorq/dns-filter/clients/client"
 	"github.com/alextorq/dns-filter/clients/db"
+	"github.com/alextorq/dns-filter/clients/store"
 )
 
-func RemoveClient(id uint) error {
-	clientById, err := db.GetClientById(id)
+// Remove deletes the client and drops its identifiers from the in-memory
+// exclusion store. The store cleanup runs even if the row was already
+// Filtered=true (i.e., never excluded) — RemoveClient is idempotent.
+func Remove(id uint) error {
+	c, err := db.GetClientByID(id)
 	if err != nil {
 		return err
 	}
-	err = db.DeleteClient(id)
-	if err != nil {
+	if err := db.DeleteClient(id); err != nil {
 		return err
 	}
-	clients.GetClients().RemoveClient(clientById.UserId)
+	store.Get().RemoveClient(c)
 	return nil
 }

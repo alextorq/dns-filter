@@ -22,16 +22,17 @@ import type {
   GithubComAlextorqDnsFilterSuggestToBlockWebErrorResponse,
   GithubComAlextorqDnsFilterSuggestToBlockWebMessageResponse,
   UpdateDnsRecordUpdateBlockList,
-  WebAddClientRequest,
   WebAddToBlockRequest,
   WebBadRequestResponse,
-  WebChangeClientStatusRequest,
+  WebChangeFilterRequest,
   WebChangeSourceActiveRequest,
   WebChangeSourceActiveResponse,
   WebChangeSuggestStatusRequest,
+  WebClientResponse,
+  WebCreateClientRequest,
   WebDeleteClientRequest,
+  WebDiscoverResponse,
   WebFilterStatusResponse,
-  WebGetAllClientsResponse,
   WebGetAllDnsRecordsRequest,
   WebGetAllDnsRecordsResponse,
   WebGetAllSourcesResponse,
@@ -40,9 +41,11 @@ import type {
   WebGetAmountByDomainResponse,
   WebGetAmountResponse,
   WebGetSignalCodesResponse,
+  WebListClientsResponse,
   WebLogLevelResponse,
   WebLoginRequest,
   WebPauseFilterRequest,
+  WebUpdateClientRequest,
   WebUpdateConfigData,
   WebUpdateDnsRecordResponse,
   WebUserResponse,
@@ -103,6 +106,134 @@ export class Api<
     >({
       path: `/api/auth/me`,
       method: "GET",
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags clients
+   * @name ClientsCreate
+   * @summary List clients
+   * @request POST:/api/clients
+   */
+  clientsCreate = (params: RequestParams = {}) =>
+    this.request<
+      WebListClientsResponse,
+      GithubComAlextorqDnsFilterClientsWebErrorResponse
+    >({
+      path: `/api/clients`,
+      method: "POST",
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags clients
+   * @name ClientsChangeFilterCreate
+   * @summary Change client filter flag
+   * @request POST:/api/clients/change-filter
+   */
+  clientsChangeFilterCreate = (
+    body: WebChangeFilterRequest,
+    params: RequestParams = {},
+  ) =>
+    this.request<
+      WebClientResponse,
+      WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
+    >({
+      path: `/api/clients/change-filter`,
+      method: "POST",
+      body: body,
+      type: ContentType.Json,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags clients
+   * @name ClientsCreateCreate
+   * @summary Create client
+   * @request POST:/api/clients/create
+   */
+  clientsCreateCreate = (
+    body: WebCreateClientRequest,
+    params: RequestParams = {},
+  ) =>
+    this.request<
+      WebClientResponse,
+      WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
+    >({
+      path: `/api/clients/create`,
+      method: "POST",
+      body: body,
+      type: ContentType.Json,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags clients
+   * @name ClientsDeleteCreate
+   * @summary Delete client
+   * @request POST:/api/clients/delete
+   */
+  clientsDeleteCreate = (
+    body: WebDeleteClientRequest,
+    params: RequestParams = {},
+  ) =>
+    this.request<
+      GithubComAlextorqDnsFilterClientsWebStatusResponse,
+      WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
+    >({
+      path: `/api/clients/delete`,
+      method: "POST",
+      body: body,
+      type: ContentType.Json,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags clients
+   * @name ClientsDiscoverCreate
+   * @summary Scan LAN for devices
+   * @request POST:/api/clients/discover
+   */
+  clientsDiscoverCreate = (params: RequestParams = {}) =>
+    this.request<
+      WebDiscoverResponse,
+      GithubComAlextorqDnsFilterClientsWebErrorResponse
+    >({
+      path: `/api/clients/discover`,
+      method: "POST",
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags clients
+   * @name ClientsUpdateCreate
+   * @summary Update client metadata
+   * @request POST:/api/clients/update
+   */
+  clientsUpdateCreate = (
+    body: WebUpdateClientRequest,
+    params: RequestParams = {},
+  ) =>
+    this.request<
+      WebClientResponse,
+      WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
+    >({
+      path: `/api/clients/update`,
+      method: "POST",
+      body: body,
+      type: ContentType.Json,
       format: "json",
       ...params,
     });
@@ -257,93 +388,6 @@ export class Api<
     >({
       path: `/api/events/block/amount-by-group`,
       method: "POST",
-      format: "json",
-      ...params,
-    });
-  /**
-   * No description
-   *
-   * @tags exclude-clients
-   * @name ExcludeClientsCreate
-   * @summary List exclude clients
-   * @request POST:/api/exclude-clients
-   */
-  excludeClientsCreate = (params: RequestParams = {}) =>
-    this.request<
-      WebGetAllClientsResponse,
-      GithubComAlextorqDnsFilterClientsWebErrorResponse
-    >({
-      path: `/api/exclude-clients`,
-      method: "POST",
-      format: "json",
-      ...params,
-    });
-  /**
-   * No description
-   *
-   * @tags exclude-clients
-   * @name ExcludeClientsAddCreate
-   * @summary Add exclude client
-   * @request POST:/api/exclude-clients/add
-   */
-  excludeClientsAddCreate = (
-    body: WebAddClientRequest,
-    params: RequestParams = {},
-  ) =>
-    this.request<
-      GithubComAlextorqDnsFilterClientsWebStatusResponse,
-      WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
-    >({
-      path: `/api/exclude-clients/add`,
-      method: "POST",
-      body: body,
-      type: ContentType.Json,
-      format: "json",
-      ...params,
-    });
-  /**
-   * No description
-   *
-   * @tags exclude-clients
-   * @name ExcludeClientsChangeStatusCreate
-   * @summary Change exclude-client active state
-   * @request POST:/api/exclude-clients/change-status
-   */
-  excludeClientsChangeStatusCreate = (
-    body: WebChangeClientStatusRequest,
-    params: RequestParams = {},
-  ) =>
-    this.request<
-      GithubComAlextorqDnsFilterClientsWebStatusResponse,
-      WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
-    >({
-      path: `/api/exclude-clients/change-status`,
-      method: "POST",
-      body: body,
-      type: ContentType.Json,
-      format: "json",
-      ...params,
-    });
-  /**
-   * No description
-   *
-   * @tags exclude-clients
-   * @name ExcludeClientsDeleteCreate
-   * @summary Delete exclude client
-   * @request POST:/api/exclude-clients/delete
-   */
-  excludeClientsDeleteCreate = (
-    body: WebDeleteClientRequest,
-    params: RequestParams = {},
-  ) =>
-    this.request<
-      GithubComAlextorqDnsFilterClientsWebStatusResponse,
-      WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
-    >({
-      path: `/api/exclude-clients/delete`,
-      method: "POST",
-      body: body,
-      type: ContentType.Json,
       format: "json",
       ...params,
     });

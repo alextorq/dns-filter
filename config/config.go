@@ -11,7 +11,24 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// Mode selects which deployment profile the server runs as.
+//
+// "lan" is the historical mode: bind UDP+TCP on :53, identify clients by their
+// remote address (IP or, after PR3, MAC via an ARP cache), and accept that the
+// service is only reachable on the local broadcast domain.
+//
+// "public" is reserved for a future DoH-over-HTTPS frontend that identifies
+// clients by an opaque token in the request URL. The Mode flag exists today so
+// the wiring in main.go can branch on it without further refactoring later.
+type Mode string
+
+const (
+	ModeLAN    Mode = "lan"
+	ModePublic Mode = "public"
+)
+
 type Config struct {
+	Mode            Mode
 	DoHUpstream     string
 	DoHBootstrapIPs []string
 	DbPath          string
@@ -25,9 +42,9 @@ type Config struct {
 	MetricEnable bool
 	MetricPort   string
 
-	AdminLogin    string
-	AdminPassword string
-	CookieSecure  bool
+	AdminLogin     string
+	AdminPassword  string
+	CookieSecure   bool
 	CookieSameSite string
 }
 
@@ -61,6 +78,23 @@ func getDoHUpstream() string {
 	return getEnv("DNS_FILTER_DOH_UPSTREAM", "https://cloudflare-dns.com/dns-query")
 }
 
+// getMode returns the deployment mode parsed from DNS_FILTER_MODE. Unknown
+// values fall back to ModeLAN with a log message — the wrong default here is
+// loud (queries would refuse to resolve) so a typo should not silently switch
+// the server into public mode.
+func getMode() Mode {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv("DNS_FILTER_MODE")))
+	switch Mode(raw) {
+	case ModeLAN, ModePublic:
+		return Mode(raw)
+	case "":
+		return ModeLAN
+	default:
+		log.Printf("DNS_FILTER_MODE=%q is not recognized, falling back to %q", raw, ModeLAN)
+		return ModeLAN
+	}
+}
+
 func getDoHBootstrapIPs() []string {
 	value := os.Getenv("DNS_FILTER_DOH_BOOTSTRAP_IPS")
 	if value == "" {
@@ -87,6 +121,7 @@ func GetConfig() *Config {
 		}
 
 		instance = &Config{
+			Mode:            getMode(),
 			DoHUpstream:     getDoHUpstream(),
 			DoHBootstrapIPs: getDoHBootstrapIPs(),
 			DbPath:          getEnv("DNS_FILTER_DBPATH", "./filter.sqlite"),

@@ -65,26 +65,38 @@ definitions:
     - SourceHaGeZiMulti
     - SourceUser
     - SourceSuggestedToBlock
+  db.Client:
+    properties:
+      created_at:
+        type: string
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      filtered:
+        type: boolean
+      hostname:
+        type: string
+      id:
+        type: integer
+      ip:
+        type: string
+      last_seen:
+        type: string
+      mac:
+        type: string
+      name:
+        type: string
+      token:
+        type: string
+      updated_at:
+        type: string
+      vendor:
+        type: string
+    type: object
   db.DomainCount:
     properties:
       count:
         type: integer
       domain:
-        type: string
-    type: object
-  db.ExcludeClient:
-    properties:
-      active:
-        type: boolean
-      created_at:
-        type: string
-      deletedAt:
-        $ref: '#/definitions/gorm.DeletedAt'
-      id:
-        type: integer
-      updated_at:
-        type: string
-      user_id:
         type: string
     type: object
   db.Source:
@@ -124,6 +136,21 @@ definitions:
       id:
         type: integer
       match:
+        type: string
+    type: object
+  discovery.Device:
+    properties:
+      already_registered:
+        type: boolean
+      hostname:
+        type: string
+      ip:
+        type: string
+      mac:
+        type: string
+      source:
+        type: string
+      vendor:
         type: string
     type: object
   github_com_alextorq_dns-filter_auth_web.ErrorResponse:
@@ -193,11 +220,6 @@ definitions:
     required:
     - id
     type: object
-  web.AddClientRequest:
-    properties:
-      user_id:
-        type: string
-    type: object
   web.AddToBlockRequest:
     properties:
       domain:
@@ -210,12 +232,12 @@ definitions:
       message:
         type: string
     type: object
-  web.ChangeClientStatusRequest:
+  web.ChangeFilterRequest:
     properties:
+      filtered:
+        type: boolean
       id:
         type: integer
-      is_active:
-        type: boolean
     type: object
   web.ChangeSourceActiveRequest:
     properties:
@@ -238,9 +260,44 @@ definitions:
       id:
         type: integer
     type: object
+  web.ClientResponse:
+    properties:
+      client:
+        $ref: '#/definitions/db.Client'
+    type: object
+  web.CreateClientRequest:
+    properties:
+      filtered:
+        type: boolean
+      hostname:
+        type: string
+      ip:
+        type: string
+      mac:
+        type: string
+      name:
+        type: string
+      token:
+        type: string
+      vendor:
+        type: string
+    type: object
   web.DeleteClientRequest:
     properties:
       id:
+        type: integer
+    type: object
+  web.DiscoverResponse:
+    properties:
+      devices:
+        items:
+          $ref: '#/definitions/discovery.Device'
+        type: array
+      errors:
+        items:
+          type: string
+        type: array
+      total:
         type: integer
     type: object
   web.FilterStatusResponse:
@@ -253,15 +310,6 @@ definitions:
         type: integer
       status:
         type: boolean
-    type: object
-  web.GetAllClientsResponse:
-    properties:
-      list:
-        items:
-          $ref: '#/definitions/db.ExcludeClient'
-        type: array
-      total:
-        type: integer
     type: object
   web.GetAllDnsRecordsRequest:
     properties:
@@ -335,6 +383,15 @@ definitions:
           $ref: '#/definitions/collect.SignalDescriptor'
         type: array
     type: object
+  web.ListClientsResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/db.Client'
+        type: array
+      total:
+        type: integer
+    type: object
   web.LogLevelResponse:
     properties:
       level:
@@ -354,6 +411,17 @@ definitions:
     properties:
       minutes:
         type: integer
+    type: object
+  web.UpdateClientRequest:
+    properties:
+      hostname:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      vendor:
+        type: string
     type: object
   web.UpdateConfigData:
     properties:
@@ -438,6 +506,170 @@ paths:
       summary: Current user
       tags:
       - auth
+  /api/clients:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.ListClientsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: List clients
+      tags:
+      - clients
+  /api/clients/change-filter:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Target state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.ChangeFilterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.ClientResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.BadRequestResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: Change client filter flag
+      tags:
+      - clients
+  /api/clients/create:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Client to create
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.CreateClientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.ClientResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.BadRequestResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: Create client
+      tags:
+      - clients
+  /api/clients/delete:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Client id
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.DeleteClientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.BadRequestResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: Delete client
+      tags:
+      - clients
+  /api/clients/discover:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.DiscoverResponse'
+        "409":
+          description: discovery is not supported in the current deployment mode
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: Scan LAN for devices
+      tags:
+      - clients
+  /api/clients/update:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Fields to patch
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.UpdateClientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.ClientResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/web.BadRequestResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
+      summary: Update client metadata
+      tags:
+      - clients
   /api/config/db/download:
     get:
       produces:
@@ -602,109 +834,6 @@ paths:
       summary: Block events grouped by domain
       tags:
       - events
-  /api/exclude-clients:
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/web.GetAllClientsResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
-      summary: List exclude clients
-      tags:
-      - exclude-clients
-  /api/exclude-clients/add:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Client to add
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/web.AddClientRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/web.BadRequestResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
-      summary: Add exclude client
-      tags:
-      - exclude-clients
-  /api/exclude-clients/change-status:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Target state
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/web.ChangeClientStatusRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/web.BadRequestResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
-      summary: Change exclude-client active state
-      tags:
-      - exclude-clients
-  /api/exclude-clients/delete:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Client id
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/web.DeleteClientRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/web.BadRequestResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse'
-      summary: Delete exclude client
-      tags:
-      - exclude-clients
   /api/filter/change-status:
     post:
       produces:

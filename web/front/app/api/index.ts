@@ -1,9 +1,10 @@
 import { Api as GeneratedApi } from "./generated/Api";
 import type {
-    WebAddClientRequest,
     WebAddToBlockRequest,
+    WebCreateClientRequest,
     WebGetAllDnsRecordsRequest,
     WebGetAllSuggestBlocksRequest,
+    WebUpdateClientRequest,
 } from "./generated/data-contracts";
 import { useAuth } from "~~/composables/use-auth";
 
@@ -116,16 +117,20 @@ class Api {
         return data.record;
     };
 
-    getAllExcludeClients = (abortSignal: AbortSignal) =>
-        this.client.excludeClientsCreate({ signal: abortSignal });
+    getAllClients = (abortSignal: AbortSignal) =>
+        this.client.clientsCreate({ signal: abortSignal });
 
-    addExcludeClient = (payload: WebAddClientRequest) =>
-        this.client.excludeClientsAddCreate(payload);
+    createClient = (payload: WebCreateClientRequest) => this.client.clientsCreateCreate(payload);
 
-    changeClientStatus = (id: number, active: boolean) =>
-        this.client.excludeClientsChangeStatusCreate({ id, is_active: active });
+    updateClient = (payload: WebUpdateClientRequest) => this.client.clientsUpdateCreate(payload);
 
-    deleteClient = (id: number) => this.client.excludeClientsDeleteCreate({ id });
+    changeClientFilter = (id: number, filtered: boolean) =>
+        this.client.clientsChangeFilterCreate({ id, filtered });
+
+    deleteClient = (id: number) => this.client.clientsDeleteCreate({ id });
+
+    discoverNetwork = (abortSignal: AbortSignal) =>
+        this.client.clientsDiscoverCreate({ signal: abortSignal });
 }
 
 export const api = new Api();

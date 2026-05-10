@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { api } from "~/api";
-import type { DbExcludeClient } from "~/api/generated/data-contracts";
+import type { DbClient } from "~/api/generated/data-contracts";
 import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
 import { getErrorMessage } from "~~/utils/get-error-message";
 
@@ -10,12 +10,14 @@ const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
 const open = ref(false);
 
 const props = defineProps<{
-    record: DbExcludeClient;
+    record: DbClient;
 }>();
 
 const emit = defineEmits<{
-    (e: "delete", value: DbExcludeClient): void;
+    (e: "delete", value: DbClient): void;
 }>();
+
+const label = computed(() => props.record.name || props.record.ip || `#${props.record.id}`);
 
 const deleteClient = async () => {
     try {
@@ -23,10 +25,9 @@ const deleteClient = async () => {
         emit("delete", props.record);
         open.value = false;
     } catch (error) {
-        const message = getErrorMessage(error);
         toast.add({
             title: "Error",
-            description: message,
+            description: getErrorMessage(error),
             duration: 5000,
             color: "error",
         });
@@ -50,8 +51,8 @@ const confirmDelete = createLoadingRequest(deleteClient);
         <template #body>
             <p class="text-sm text-muted">
                 Remove
-                <span class="font-mono text-default">{{ record.user_id }}</span>
-                from the exclusion list? Filtering will resume for this client.
+                <span class="font-mono text-default">{{ label }}</span>
+                from the client list? Any filter override on this client will be lost.
             </p>
         </template>
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alextorq/dns-filter/clients/identifier"
 	dnsLib "github.com/miekg/dns"
 )
 
@@ -56,6 +57,10 @@ type noopHandlers struct{}
 
 func (noopHandlers) Allowed(_ dnsLib.ResponseWriter, _ *dnsLib.Msg) {}
 func (noopHandlers) Blocked(_ dnsLib.ResponseWriter, _ *dnsLib.Msg) {}
+
+type noopClientStore struct{}
+
+func (noopClientStore) IsExcluded(_ identifier.Lookup) bool { return false }
 
 type captureResponseWriter struct {
 	msg    *dnsLib.Msg
@@ -170,6 +175,8 @@ func TestServeAnswersOverTCP(t *testing.T) {
 		Upstream:          &staticResolver{rcode: dnsLib.RcodeSuccess},
 		Metric:            noopMetric{},
 		Handlers:          noopHandlers{},
+		Identifier:        identifier.IPIdentifier{},
+		Clients:           noopClientStore{},
 		NotifyStartedFunc: func() { started <- struct{}{} },
 	}
 
@@ -204,12 +211,14 @@ func TestServeAnswersOverTCP(t *testing.T) {
 
 func TestHandleDNSCopiesUpstreamRcode(t *testing.T) {
 	server := &DnsServer{
-		Logger:   noopLogger{},
-		Cache:    &memoryCache{values: map[string]*dnsLib.Msg{}},
-		Filter:   func(string) bool { return false },
-		Upstream: &staticResolver{rcode: dnsLib.RcodeNameError},
-		Metric:   noopMetric{},
-		Handlers: noopHandlers{},
+		Logger:     noopLogger{},
+		Cache:      &memoryCache{values: map[string]*dnsLib.Msg{}},
+		Filter:     func(string) bool { return false },
+		Upstream:   &staticResolver{rcode: dnsLib.RcodeNameError},
+		Metric:     noopMetric{},
+		Handlers:   noopHandlers{},
+		Identifier: identifier.IPIdentifier{},
+		Clients:    noopClientStore{},
 	}
 	writer := &captureResponseWriter{
 		local:  &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 53},

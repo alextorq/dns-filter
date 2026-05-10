@@ -4,14 +4,29 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     container_name: dns-filter
-    ports:
-      - "53:53/udp"
-      - "53:53/tcp"
-      - "2112:2112/tcp"
-      - "8080:8080/tcp"
+    # network_mode: host puts the container on the host's network namespace so
+    # that:
+    #   1. ARP-based discovery in clients/discovery sees the real LAN, not the
+    #      Docker bridge — /proc/net/arp inside a bridge container only lists
+    #      bridge peers.
+    #   2. The DNS hot path receives the real source IP of the client device,
+    #      not the bridge gateway. Per-client filter exclusions need this to
+    #      work meaningfully.
+    # Trade-off: the explicit `ports:` mapping has to go (host networking
+    # ignores it — ports are bound directly on the host), and on macOS Docker
+    # Desktop host networking is partial; this compose targets a Linux deploy.
+    network_mode: host
+    cap_add:
+      # Required by clients/discovery/arp_linux.go to open AF_PACKET sockets
+      # for the active ARP broadcast scan. Without it, the active scan returns
+      # a permission error and discovery falls back to the passive
+      # /proc/net/arp read only — discovery still works, just less complete.
+      - NET_RAW
+      - NET_ADMIN
     environment:
       - DNS_FILTER_DOH_UPSTREAM=https://cloudflare-dns.com/dns-query
       - DNS_FILTER_DOH_BOOTSTRAP_IPS=1.1.1.1,1.0.0.1
+      - DNS_FILTER_MODE=lan
     # Container resolver must NOT be the host (host points back at this filter
     # via :53 → infinite loop on startup before the filter is up). Use public
     # DNS so source-list downloads (and any other outbound HTTP) can resolve.
@@ -33,6 +48,12 @@ services:
     container_name: frontend
     ports:
       - "8090:8090"
+    # dns-filter no longer resolves via Docker DNS (it's on the host's
+    # namespace), so nginx proxies via host.docker.internal which Compose
+    # rewrites to the host gateway IP on Linux thanks to extra_hosts. See
+    # nginx.conf for the matching upstream change.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     depends_on:
       - dns-filter
@@ -44,6 +65,11 @@ services:
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
+    # Same reason as frontend: dns-filter is on host networking, so the
+    # prometheus.yml scrape target points at host.docker.internal:2112 and we
+    # need this rewrite for it to resolve from inside the prometheus container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
   grafana:
     image: grafana/grafana:latest

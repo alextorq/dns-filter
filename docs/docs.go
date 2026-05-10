@@ -104,6 +104,260 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/clients": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "clients"
+                ],
+                "summary": "List clients",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.ListClientsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/clients/change-filter": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "clients"
+                ],
+                "summary": "Change client filter flag",
+                "parameters": [
+                    {
+                        "description": "Target state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.ChangeFilterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.ClientResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.BadRequestResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/clients/create": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "clients"
+                ],
+                "summary": "Create client",
+                "parameters": [
+                    {
+                        "description": "Client to create",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.CreateClientRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.ClientResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.BadRequestResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/clients/delete": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "clients"
+                ],
+                "summary": "Delete client",
+                "parameters": [
+                    {
+                        "description": "Client id",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.DeleteClientRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.BadRequestResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/clients/discover": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "clients"
+                ],
+                "summary": "Scan LAN for devices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.DiscoverResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "discovery is not supported in the current deployment mode",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/clients/update": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "clients"
+                ],
+                "summary": "Update client metadata",
+                "parameters": [
+                    {
+                        "description": "Fields to patch",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.UpdateClientRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.ClientResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/web.BadRequestResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/config/db/download": {
             "get": {
                 "produces": [
@@ -355,166 +609,6 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/exclude-clients": {
-            "post": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "exclude-clients"
-                ],
-                "summary": "List exclude clients",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/web.GetAllClientsResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/exclude-clients/add": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "exclude-clients"
-                ],
-                "summary": "Add exclude client",
-                "parameters": [
-                    {
-                        "description": "Client to add",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/web.AddClientRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/web.BadRequestResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/exclude-clients/change-status": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "exclude-clients"
-                ],
-                "summary": "Change exclude-client active state",
-                "parameters": [
-                    {
-                        "description": "Target state",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/web.ChangeClientStatusRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/web.BadRequestResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/exclude-clients/delete": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "exclude-clients"
-                ],
-                "summary": "Delete exclude client",
-                "parameters": [
-                    {
-                        "description": "Client id",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/web.DeleteClientRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.StatusResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/web.BadRequestResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_alextorq_dns-filter_clients_web.ErrorResponse"
                         }
                     }
                 }
@@ -938,6 +1032,47 @@ const docTemplate = `{
                 "SourceSuggestedToBlock"
             ]
         },
+        "db.Client": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "$ref": "#/definitions/gorm.DeletedAt"
+                },
+                "filtered": {
+                    "type": "boolean"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "last_seen": {
+                    "type": "string"
+                },
+                "mac": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "vendor": {
+                    "type": "string"
+                }
+            }
+        },
         "db.DomainCount": {
             "type": "object",
             "properties": {
@@ -945,29 +1080,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "domain": {
-                    "type": "string"
-                }
-            }
-        },
-        "db.ExcludeClient": {
-            "type": "object",
-            "properties": {
-                "active": {
-                    "type": "boolean"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "deletedAt": {
-                    "$ref": "#/definitions/gorm.DeletedAt"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "user_id": {
                     "type": "string"
                 }
             }
@@ -1028,6 +1140,29 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "match": {
+                    "type": "string"
+                }
+            }
+        },
+        "discovery.Device": {
+            "type": "object",
+            "properties": {
+                "already_registered": {
+                    "type": "boolean"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "mac": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "vendor": {
                     "type": "string"
                 }
             }
@@ -1138,14 +1273,6 @@ const docTemplate = `{
                 }
             }
         },
-        "web.AddClientRequest": {
-            "type": "object",
-            "properties": {
-                "user_id": {
-                    "type": "string"
-                }
-            }
-        },
         "web.AddToBlockRequest": {
             "type": "object",
             "properties": {
@@ -1165,14 +1292,14 @@ const docTemplate = `{
                 }
             }
         },
-        "web.ChangeClientStatusRequest": {
+        "web.ChangeFilterRequest": {
             "type": "object",
             "properties": {
+                "filtered": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "integer"
-                },
-                "is_active": {
-                    "type": "boolean"
                 }
             }
         },
@@ -1209,10 +1336,64 @@ const docTemplate = `{
                 }
             }
         },
+        "web.ClientResponse": {
+            "type": "object",
+            "properties": {
+                "client": {
+                    "$ref": "#/definitions/db.Client"
+                }
+            }
+        },
+        "web.CreateClientRequest": {
+            "type": "object",
+            "properties": {
+                "filtered": {
+                    "type": "boolean"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "ip": {
+                    "type": "string"
+                },
+                "mac": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "vendor": {
+                    "type": "string"
+                }
+            }
+        },
         "web.DeleteClientRequest": {
             "type": "object",
             "properties": {
                 "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.DiscoverResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/discovery.Device"
+                    }
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "total": {
                     "type": "integer"
                 }
             }
@@ -1226,20 +1407,6 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "boolean"
-                }
-            }
-        },
-        "web.GetAllClientsResponse": {
-            "type": "object",
-            "properties": {
-                "list": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/db.ExcludeClient"
-                    }
-                },
-                "total": {
-                    "type": "integer"
                 }
             }
         },
@@ -1355,6 +1522,20 @@ const docTemplate = `{
                 }
             }
         },
+        "web.ListClientsResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/db.Client"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "web.LogLevelResponse": {
             "type": "object",
             "properties": {
@@ -1383,6 +1564,23 @@ const docTemplate = `{
             "properties": {
                 "minutes": {
                     "type": "integer"
+                }
+            }
+        },
+        "web.UpdateClientRequest": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "vendor": {
+                    "type": "string"
                 }
             }
         },

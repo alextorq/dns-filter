@@ -176,6 +176,11 @@ export interface WebDeleteClientRequest {
 
 export interface WebFilterStatusResponse {
   status?: boolean;
+  paused_until?: number;
+}
+
+export interface WebPauseFilterRequest {
+  minutes?: number;
 }
 
 export interface WebGetAllClientsResponse {

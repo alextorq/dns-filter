@@ -3,10 +3,13 @@ package check_exist_domain
 import (
 	"os"
 	"testing"
+	"time"
 
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
+	"github.com/alextorq/dns-filter/config"
 	app_db "github.com/alextorq/dns-filter/db"
 	"github.com/alextorq/dns-filter/filter/cache"
+	bloom "github.com/alextorq/dns-filter/filter/filter"
 )
 
 func TestMain(m *testing.M) {
@@ -55,6 +58,39 @@ func TestCheckCacheOrDb_DeactivatedDomainNotBlocked(t *testing.T) {
 
 	if got := CheckCacheOrDb(domain); got {
 		t.Fatal("deactivated domain must not be reported as blocked")
+	}
+}
+
+// CheckBlock must respect an active pause: even a domain present in the bloom
+// filter and the DB must be reported as not blocked while the pause deadline
+// is in the future.
+func TestCheckBlock_PauseSuppressesBlocking(t *testing.T) {
+	const domain = "paused-block.example"
+
+	conn := app_db.GetConnection()
+	t.Cleanup(func() {
+		conn.Unscoped().Where("url = ?", domain).Delete(&blocked_domain_db.BlockList{})
+	})
+
+	if err := conn.Create(&blocked_domain_db.BlockList{Url: domain, Active: true, Source: "test"}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	bloom.GetFilter().UpdateFilter([]string{domain})
+	cache.GetCache().Clear()
+
+	conf := config.GetConfig()
+	conf.Enabled.Store(true)
+	conf.PausedUntilUnix.Store(time.Now().Add(5 * time.Minute).Unix())
+	t.Cleanup(func() { conf.PausedUntilUnix.Store(0) })
+
+	if got := CheckBlock(domain); got {
+		t.Fatal("paused filter must not block, got true")
+	}
+
+	conf.PausedUntilUnix.Store(0)
+	cache.GetCache().Clear()
+	if got := CheckBlock(domain); !got {
+		t.Fatal("after clearing pause, blocked domain must be reported as blocked")
 	}
 }
 

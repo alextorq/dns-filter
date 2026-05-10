@@ -16,6 +16,9 @@ type Config struct {
 	DoHBootstrapIPs []string
 	DbPath          string
 	Enabled         atomic.Bool
+	// PausedUntilUnix holds the unix-second deadline of a temporary pause.
+	// 0 means no pause; any value <= time.Now().Unix() is treated as expired.
+	PausedUntilUnix atomic.Int64
 
 	LogLevel string
 

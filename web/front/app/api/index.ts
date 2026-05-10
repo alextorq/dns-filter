@@ -81,13 +81,19 @@ class Api {
     };
 
     getFilterStatus = async () => {
-        const data = await this.client.filterStatusList();
-        return data.status;
+        return this.client.filterStatusList();
     };
 
     changeFilterStatus = async () => {
-        const data = await this.client.filterChangeStatusCreate();
-        return data.status;
+        return this.client.filterChangeStatusCreate();
+    };
+
+    pauseFilter = async (minutes: number) => {
+        return this.client.filterPauseCreate({ minutes });
+    };
+
+    resumeFilter = async () => {
+        return this.client.filterResumeCreate();
     };
 
     createDomain = (domain: string) => this.client.dnsRecordsCreateCreate({ domain });

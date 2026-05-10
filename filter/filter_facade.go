@@ -7,6 +7,7 @@ import (
 	blacklists "github.com/alextorq/dns-filter/blocked-domain/db"
 	filterusecaseschangefilterdnsrecords "github.com/alextorq/dns-filter/filter/business/use-cases/change-filter-dns-records"
 	checkexist "github.com/alextorq/dns-filter/filter/business/use-cases/check-exist"
+	pausefilter "github.com/alextorq/dns-filter/filter/business/use-cases/pause-filter"
 	"github.com/alextorq/dns-filter/filter/cache"
 	filter2 "github.com/alextorq/dns-filter/filter/filter"
 	"github.com/alextorq/dns-filter/logger"
@@ -14,6 +15,18 @@ import (
 
 func ChangeFilterDnsRecords() bool {
 	return filterusecaseschangefilterdnsrecords.ChangeFilterDnsRecords()
+}
+
+func PauseFilter(minutes int) (int64, error) {
+	return pausefilter.PauseFilter(minutes)
+}
+
+func ResumeFilter() {
+	pausefilter.ResumeFilter()
+}
+
+func GetPausedUntil() int64 {
+	return pausefilter.GetPausedUntil()
 }
 
 func CheckExist(domain string) bool {

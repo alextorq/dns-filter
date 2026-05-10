@@ -42,6 +42,8 @@ func CreateServer() *gin.Engine {
 
 		api.GET("/filter/status", filterWeb.GetFilterStatus)
 		api.POST("/filter/change-status", filterWeb.ChangeFilterStatus)
+		api.POST("/filter/pause", filterWeb.PauseFilter)
+		api.POST("/filter/resume", filterWeb.ResumeFilter)
 
 		api.POST("/events/block/amount", eventsWeb.GetAmount)
 		api.POST("/events/block/amount-by-group", eventsWeb.GetAmountByDomain)

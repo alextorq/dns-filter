@@ -58,6 +58,36 @@ func TestRevokeSession_DBFailureKeepsCache(t *testing.T) {
 	}
 }
 
+// Locks in the #36 follow-up: ResolveSession's expired-cache branch must
+// also delete the DB row before dropping the cache. If the DB delete fails,
+// the cache must keep the entry so a subsequent ResolveSession will retry
+// the delete instead of going through DB lookup and re-caching it.
+func TestResolveSession_ExpiredKeepsCacheOnDBFailure(t *testing.T) {
+	conn := app_db.GetConnection()
+	if err := conn.Migrator().DropTable(&authDb.Session{}); err != nil {
+		t.Fatalf("drop sessions table: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.AutoMigrate(&authDb.Session{})
+	})
+
+	const token = "tok-expired"
+	cacheSession(&authDb.Session{
+		Token:     token,
+		UserID:    7,
+		ExpiresAt: time.Now().Add(-time.Hour),
+	})
+
+	_, _, err := ResolveSession(token)
+	if err == nil {
+		t.Fatal("expected ErrSessionExpired, got nil")
+	}
+
+	if _, ok := lookupCachedSession(token); !ok {
+		t.Fatal("cache was dropped despite DB delete failure on expired branch")
+	}
+}
+
 func TestRevokeSession_HappyPathDropsCache(t *testing.T) {
 	conn := app_db.GetConnection()
 	if err := conn.AutoMigrate(&authDb.Session{}); err != nil {

@@ -5,17 +5,28 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+)
+
+var httpClient = &http.Client{Timeout: 60 * time.Second}
+
+const (
+	StevenBlackURL  = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+	HaGeZiMultiURL  = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt"
 )
 
 func LoadStevenBlack() ([]string, error) {
-	resp, err := http.Get("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts")
+	return LoadHostsFromURL(StevenBlackURL)
+}
+
+func LoadHostsFromURL(url string) ([]string, error) {
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	items := ParseIpHostsLine(resp.Body)
-	return items, nil
+	return ParseIpHostsLine(resp.Body), nil
 }
 
 func ParseIpHostsLine(r io.Reader) []string {

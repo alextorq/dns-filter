@@ -5,19 +5,29 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+)
+
+var httpClient = &http.Client{Timeout: 60 * time.Second}
+
+const (
+	EasyListURL        = "https://easylist.to/easylist/easylist.txt"
+	RuAdListURL        = "https://easylist-downloads.adblockplus.org/ruadlist+easylist.txt"
+	AdGuardRussianURL  = "https://filters.adtidy.org/extension/ublock/filters/1.txt"
 )
 
 func LoadEasyList() ([]string, error) {
-	resp, err := http.Get("https://easylist.to/easylist/easylist.txt")
-	if err == nil {
-		defer resp.Body.Close()
-	}
+	return LoadFromURL(EasyListURL)
+}
+
+func LoadFromURL(url string) ([]string, error) {
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
-	result := ParseEasyList(resp.Body)
-	return result, nil
+	return ParseEasyList(resp.Body), nil
 }
 
 // IsSafeDNSDomain проверяет, является ли строка валидным доменом для DNS блокировки

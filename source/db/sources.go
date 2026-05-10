@@ -8,6 +8,12 @@ const (
 	SourceStevenBlack BlockListSource = "StevenBlack"
 	// SourceEasyList - domains from EasyList blocklist
 	SourceEasyList BlockListSource = "EasyList"
+	// SourceRuAdList - regional EasyList for RU/UA/BY
+	SourceRuAdList BlockListSource = "RuAdList"
+	// SourceAdGuardRussian - AdGuard official Russian filter
+	SourceAdGuardRussian BlockListSource = "AdGuardRussian"
+	// SourceHaGeZiMulti - HaGeZi's Multi DNS blocklist (ads, trackers, telemetry, RU domains)
+	SourceHaGeZiMulti BlockListSource = "HaGeZiMulti"
 
 	SourceUser BlockListSource = "User"
 	// SourceSuggestedToBlock - domains suggested by users to block

@@ -13,6 +13,9 @@
 export enum DbBlockListSource {
   SourceStevenBlack = "StevenBlack",
   SourceEasyList = "EasyList",
+  SourceRuAdList = "RuAdList",
+  SourceAdGuardRussian = "AdGuardRussian",
+  SourceHaGeZiMulti = "HaGeZiMulti",
   SourceUser = "User",
   SourceSuggestedToBlock = "SuggestedToBlock",
 }

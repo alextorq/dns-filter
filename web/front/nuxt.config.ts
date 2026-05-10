@@ -20,7 +20,7 @@ export default defineNuxtConfig({
         preset: "static",
         devProxy: {
             "/api": {
-                target: process.env.NUXT_DEV_API_TARGET || "http://192.168.88.62:8080/api",
+                target: process.env.NUXT_DEV_API_TARGET || "http://localhost:8080/api",
                 changeOrigin: true,
             },
         },

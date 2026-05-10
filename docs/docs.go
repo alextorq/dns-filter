@@ -739,12 +739,18 @@ const docTemplate = `{
             "enum": [
                 "StevenBlack",
                 "EasyList",
+                "RuAdList",
+                "AdGuardRussian",
+                "HaGeZiMulti",
                 "User",
                 "SuggestedToBlock"
             ],
             "x-enum-varnames": [
                 "SourceStevenBlack",
                 "SourceEasyList",
+                "SourceRuAdList",
+                "SourceAdGuardRussian",
+                "SourceHaGeZiMulti",
                 "SourceUser",
                 "SourceSuggestedToBlock"
             ]

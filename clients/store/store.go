@@ -69,6 +69,36 @@ func (s *Store) Remove(l identifier.Lookup) {
 	s.mu.Unlock()
 }
 
+// clientLookups returns the canonical exclusion lookups for a client.
+//
+// The MAC-trumps-IP rule is load-bearing: once the ARP watcher fills the
+// MAC field, IP becomes informational, and we deliberately stop keying the
+// store entry on IP. Otherwise a stale IP-based exclusion would silently
+// match a NEW device that DHCP later assigned the old IP to — the device
+// would bypass filtering even though the user's rule was meant for someone
+// else. With MAC-only entries, the hot path resolves IP→MAC via the live
+// ARP cache before consulting the store, so a new device with a different
+// MAC at the same IP correctly misses.
+//
+// Token entries are independent of the LAN identifiers and always registered
+// when present (public mode lives in its own namespace).
+func clientLookups(c *db.Client) []identifier.Lookup {
+	if c == nil {
+		return nil
+	}
+	var out []identifier.Lookup
+	if c.Token != "" {
+		out = append(out, identifier.Lookup{Kind: identifier.KindToken, Value: c.Token})
+	}
+	switch {
+	case c.MAC != "":
+		out = append(out, identifier.Lookup{Kind: identifier.KindMAC, Value: c.MAC})
+	case c.IP != "":
+		out = append(out, identifier.Lookup{Kind: identifier.KindIP, Value: c.IP})
+	}
+	return out
+}
+
 // UpdateFromDB rebuilds the snapshot from the database. Called once at boot
 // and any time a bulk operation makes incremental updates impractical.
 func (s *Store) UpdateFromDB() error {
@@ -78,18 +108,8 @@ func (s *Store) UpdateFromDB() error {
 	}
 	next := make(map[string]struct{}, len(rows)*2)
 	for _, c := range rows {
-		// A client may have multiple identifiers populated (e.g. both IP and
-		// MAC after the PR3 ARP watcher fills MAC for an existing IP-only
-		// row). All of them resolve to the same exclusion verdict, so we
-		// register each non-empty one.
-		if c.IP != "" {
-			next[identifier.KindIP+":"+c.IP] = struct{}{}
-		}
-		if c.MAC != "" {
-			next[identifier.KindMAC+":"+c.MAC] = struct{}{}
-		}
-		if c.Token != "" {
-			next[identifier.KindToken+":"+c.Token] = struct{}{}
+		for _, l := range clientLookups(&c) {
+			next[key(l)] = struct{}{}
 		}
 	}
 	s.mu.Lock()
@@ -98,35 +118,17 @@ func (s *Store) UpdateFromDB() error {
 	return nil
 }
 
-// AddClient registers each non-empty identifier of c. Called by the create
-// use case when a client is added with Filtered=false.
+// AddClient registers the canonical exclusion lookups for c. Called by the
+// create / change-filter use cases.
 func (s *Store) AddClient(c *db.Client) {
-	if c == nil {
-		return
-	}
-	if c.IP != "" {
-		s.Add(identifier.Lookup{Kind: identifier.KindIP, Value: c.IP})
-	}
-	if c.MAC != "" {
-		s.Add(identifier.Lookup{Kind: identifier.KindMAC, Value: c.MAC})
-	}
-	if c.Token != "" {
-		s.Add(identifier.Lookup{Kind: identifier.KindToken, Value: c.Token})
+	for _, l := range clientLookups(c) {
+		s.Add(l)
 	}
 }
 
-// RemoveClient drops every identifier of c from the exclusion set.
+// RemoveClient drops the canonical exclusion lookups for c.
 func (s *Store) RemoveClient(c *db.Client) {
-	if c == nil {
-		return
-	}
-	if c.IP != "" {
-		s.Remove(identifier.Lookup{Kind: identifier.KindIP, Value: c.IP})
-	}
-	if c.MAC != "" {
-		s.Remove(identifier.Lookup{Kind: identifier.KindMAC, Value: c.MAC})
-	}
-	if c.Token != "" {
-		s.Remove(identifier.Lookup{Kind: identifier.KindToken, Value: c.Token})
+	for _, l := range clientLookups(c) {
+		s.Remove(l)
 	}
 }

@@ -20,14 +20,14 @@ import (
 // for tests.
 const procNetARP = "/proc/net/arp"
 
-// readARPTable parses /proc/net/arp. The format is space-separated and stable:
+// ReadARPTable parses /proc/net/arp. The format is space-separated and stable:
 //
 //	IP address       HW type     Flags       HW address            Mask     Device
 //	192.168.1.10     0x1         0x2         e8:de:27:d2:97:5e     *        eth0
 //
 // Rows with all-zero MAC are incomplete (kernel knows the IP but never got
 // an ARP reply) and skipped. The first line is a header.
-func readARPTable() ([]ARPEntry, error) {
+func ReadARPTable() ([]ARPEntry, error) {
 	f, err := os.Open(procNetARP)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", procNetARP, err)
@@ -69,7 +69,7 @@ func isZeroMAC(mac net.HardwareAddr) bool {
 // activeARPScan broadcasts an ARP REQUEST for every host in the subnet and
 // reads replies for the duration of ctx. Requires CAP_NET_RAW (or root) on
 // Linux; without it arp.Dial returns a permission error and the caller falls
-// back to whatever readARPTable already produced.
+// back to whatever ReadARPTable already produced.
 //
 // Sends are paced lightly to avoid overrunning the kernel's outbound queue
 // on cheap routers; a /24 (~253 IPs) finishes the send phase in well under
@@ -150,7 +150,7 @@ func activeARPScan(ctx context.Context, subnet *LocalSubnet) ([]ARPEntry, error)
 func runARPDiscovery(ctx context.Context, subnet *LocalSubnet) scanResult {
 	var res scanResult
 
-	if passive, err := readARPTable(); err != nil {
+	if passive, err := ReadARPTable(); err != nil {
 		res.Errors = append(res.Errors, fmt.Errorf("arp table: %w", err))
 	} else {
 		res.Entries = append(res.Entries, passive...)

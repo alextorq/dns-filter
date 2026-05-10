@@ -41,18 +41,37 @@ type Identifier interface {
 	Identify(Request) (Lookup, bool)
 }
 
-// IPIdentifier resolves the request's remote address to an IP-keyed Lookup.
-// In a later PR an ARP cache will be plugged in here so the store key becomes
-// a MAC when one is known — the hot path stays unchanged.
-type IPIdentifier struct{}
+// MACResolver looks up the MAC currently bound to an IP in the local LAN.
+// The arpwatcher package implements this; the interface lives here so the
+// hot path doesn't have to import arpwatcher directly (and so tests can
+// inject a stub without spinning up the singleton).
+type MACResolver interface {
+	MAC(ip string) (string, bool)
+}
 
-func (IPIdentifier) Identify(r Request) (Lookup, bool) {
+// IPIdentifier resolves the request's remote address to a Lookup.
+//
+// When a Resolver is provided and knows a MAC for the source IP, the result
+// is a KindMAC lookup — that's what makes filter rules survive DHCP IP
+// rotation, since MAC is the stable identifier and IP is just whatever the
+// device was last assigned. Without a resolver (or when the MAC is unknown,
+// e.g. before the watcher's first refresh), the result falls back to the IP.
+type IPIdentifier struct {
+	Resolver MACResolver
+}
+
+func (i IPIdentifier) Identify(r Request) (Lookup, bool) {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return Lookup{}, false
 	}
 	if host == "" {
 		return Lookup{}, false
+	}
+	if i.Resolver != nil {
+		if mac, ok := i.Resolver.MAC(host); ok && mac != "" {
+			return Lookup{Kind: KindMAC, Value: mac}, true
+		}
 	}
 	return Lookup{Kind: KindIP, Value: host}, true
 }

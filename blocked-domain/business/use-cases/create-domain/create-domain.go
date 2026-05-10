@@ -1,11 +1,15 @@
 package create_domain
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/logger"
 )
+
+// ErrDomainAlreadyExists is returned when the domain is already present in the blocklist.
+var ErrDomainAlreadyExists = errors.New("domain already exists")
 
 type RequestBody struct {
 	Domain string `json:"domain"`
@@ -19,7 +23,7 @@ func CreateDomain(domain RequestBody) error {
 	}
 
 	if !db.DomainNotExist(domain.Domain) {
-		return fmt.Errorf("domain %s already exists", domain.Domain)
+		return fmt.Errorf("%w: %s", ErrDomainAlreadyExists, domain.Domain)
 	}
 
 	err := db.CreateDomain(domain.Domain, domain.Source)

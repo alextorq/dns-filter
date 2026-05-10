@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-### Backend (Go 1.24)
+### Backend (Go 1.25)
 - Run dev server with hot reload: `air` (config in `.air.toml`; rebuilds to `./tmp/main`, ignores `web/front`)
 - Run directly: `go run main.go`
 - Build: `go build -o ./tmp/main .`
 - All tests (matches CI): `go test -v -race -coverprofile=coverage.out -covermode=atomic ./...`
 - Single package: `go test -v -race ./dns/...`
 - Single test: `go test -v -run TestName ./dns`
-- The backend uses CGO (sqlite3); a C toolchain must be available locally and Docker builds use `golang:1.24-alpine` with `gcc musl-dev`.
+- The backend uses CGO (sqlite3); a C toolchain must be available locally and Docker builds use `golang:1.26-alpine` with `gcc musl-dev`.
 
 ### Frontend (Nuxt 4 + Vue 3, in `web/front/`)
 - Install: `cd web/front && npm install`

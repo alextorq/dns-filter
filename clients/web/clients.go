@@ -6,6 +6,7 @@ import (
 
 	"github.com/alextorq/dns-filter/clients/db"
 	"github.com/alextorq/dns-filter/clients/use-cases/add"
+	change_status "github.com/alextorq/dns-filter/clients/use-cases/change-status"
 	"github.com/alextorq/dns-filter/clients/use-cases/remove"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/gin-gonic/gin"
@@ -87,7 +88,7 @@ func ChangeClientStatus(c *gin.Context) {
 		return
 	}
 
-	err := db.UpdateClientIsActive(req.ID, req.IsActive)
+	err := change_status.ChangeClientStatus(req.ID, req.IsActive)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return

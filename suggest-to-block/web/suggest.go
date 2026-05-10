@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -78,8 +79,9 @@ func AddToBlock(c *gin.Context) {
 		Source: blocked_domain_db.SourceSuggestedToBlock.String(),
 	})
 
-	if err != nil {
-		l.Error(fmt.Errorf("error change status suggest block: %w", err))
+	alreadyBlocked := errors.Is(err, blocked_domain_use_cases_create_domain.ErrDomainAlreadyExists)
+	if err != nil && !alreadyBlocked {
+		l.Error(fmt.Errorf("error create domain from suggest: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
@@ -91,10 +93,15 @@ func AddToBlock(c *gin.Context) {
 		return
 	}
 
+	if alreadyBlocked {
+		c.JSON(http.StatusOK, MessageResponse{Message: "domain already in blocklist, suggestion deactivated"})
+		return
+	}
+
 	err = filter.UpdateFilterFromDb()
 
 	if err != nil {
-		l.Error(fmt.Errorf("error change status suggest block: %w", err))
+		l.Error(fmt.Errorf("error update filter after add to block: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}

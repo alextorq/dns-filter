@@ -177,7 +177,7 @@ func IsBrandImpersonation(domain string) bool {
 		if len(brand) < MinBrandImpersonationLength {
 			continue
 		}
-		if Similarity(apex, brand) >= BrandSimilarityThreshold {
+		if SimilarityAtLeast(apex, brand, BrandSimilarityThreshold) {
 			return true
 		}
 	}

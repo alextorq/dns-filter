@@ -2,6 +2,7 @@ package collect
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -119,6 +120,7 @@ func Catalog() []SignalDescriptor {
 }
 
 func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
+	idx := buildBlockedIndex(blockedDomains)
 	var result []Suggestion
 
 	for _, allowedDomain := range allowedDomains {
@@ -162,16 +164,16 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeBrandImpersonation})
 		}
 
-		for _, blockedDomain := range blockedDomains {
-			if CheckItIsSubDomain(blockedDomain, allowedDomain) {
-				suggestion.Score += ItemScoreSubdomainOfBlocked
-				suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeSubdomainOfBlocked, Match: blockedDomain})
-			}
-
-			if CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain(blockedDomain, allowedDomain) {
-				suggestion.Score += ItemScoreSimilarToBlockedDomain
-				suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeSimilarToBlocked, Match: blockedDomain})
-			}
+		// Scoring matches the prior O(A×B) loop: каждое совпадение
+		// (под-домен или similar) добавляет очки и Reason. Индекс просто
+		// убирает перебор всех blocked.
+		for _, parent := range idx.subdomainAncestors(allowedDomain) {
+			suggestion.Score += ItemScoreSubdomainOfBlocked
+			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeSubdomainOfBlocked, Match: parent})
+		}
+		for _, match := range idx.similarMatches(allowedDomain) {
+			suggestion.Score += ItemScoreSimilarToBlockedDomain
+			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeSimilarToBlocked, Match: match})
 		}
 
 		if suggestion.Score >= ThresholdToSuggestBlocking {
@@ -181,6 +183,101 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 	}
 
 	return result
+}
+
+// blockedIndex precomputes lookups so CollectSuggest can avoid the A×B inner
+// loop. На реальных размерах (657k blocked × 1.4k allowed) полный перебор
+// давал ≈10⁹ вызовов DamerauLevenshtein с аллокацией O(L²) матрицы — collect
+// шёл 5 минут на ядро. С индексом тот же результат получаем за O(B + A·k),
+// где k — размер бакета (обычно 1-10 кандидатов).
+type blockedIndex struct {
+	// subdomainSet — все blocked-домены целиком, для O(L) проверки
+	// «является ли allowed под-доменом одного из blocked». Эквивалент
+	// CheckItIsSubDomain.
+	subdomainSet map[string]struct{}
+	// similarBuckets — blocked-домены, сгруппированные по depth+parent-suffix.
+	// Ключ = "<depth>|<parts[1:].join('.')>". Эквивалент пред-условий
+	// CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain: same-depth (≥4) и
+	// same parent сразу выполнены, остаётся только DL по first-label.
+	similarBuckets map[string][]similarEntry
+}
+
+type similarEntry struct {
+	firstLabel string
+	full       string
+}
+
+func buildBlockedIndex(blocked []string) *blockedIndex {
+	idx := &blockedIndex{
+		subdomainSet:   make(map[string]struct{}, len(blocked)),
+		similarBuckets: make(map[string][]similarEntry),
+	}
+	for _, b := range blocked {
+		idx.subdomainSet[b] = struct{}{}
+		parts := strings.Split(b, ".")
+		if len(parts) < 4 {
+			continue
+		}
+		key := strconv.Itoa(len(parts)) + "|" + strings.Join(parts[1:], ".")
+		idx.similarBuckets[key] = append(idx.similarBuckets[key], similarEntry{
+			firstLabel: parts[0],
+			full:       b,
+		})
+	}
+	return idx
+}
+
+// subdomainAncestors returns blocked entries that contain domain as
+// (sub-)domain — domain itself or any of its dot-trimmed suffixes that
+// appears in the set. Поведение совпадает с CheckItIsSubDomain, прогнанным
+// по всем blocked, но без перебора blocked.
+func (idx *blockedIndex) subdomainAncestors(domain string) []string {
+	if len(idx.subdomainSet) == 0 {
+		return nil
+	}
+	var matches []string
+	if _, ok := idx.subdomainSet[domain]; ok {
+		matches = append(matches, domain)
+	}
+	rest := domain
+	for {
+		i := strings.Index(rest, ".")
+		if i < 0 {
+			break
+		}
+		rest = rest[i+1:]
+		if rest == "" {
+			break
+		}
+		if _, ok := idx.subdomainSet[rest]; ok {
+			matches = append(matches, rest)
+		}
+	}
+	return matches
+}
+
+// similarMatches returns blocked entries with same depth + same parent
+// suffix as allowed and ≥80% Damerau-Levenshtein similarity on first label.
+// Семантика — как у CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain,
+// прогнанной по всем blocked.
+func (idx *blockedIndex) similarMatches(allowed string) []string {
+	parts := strings.Split(allowed, ".")
+	if len(parts) < 4 {
+		return nil
+	}
+	key := strconv.Itoa(len(parts)) + "|" + strings.Join(parts[1:], ".")
+	bucket, ok := idx.similarBuckets[key]
+	if !ok {
+		return nil
+	}
+	first := parts[0]
+	var matches []string
+	for _, e := range bucket {
+		if SimilarityAtLeast(first, e.firstLabel, 80.0) {
+			matches = append(matches, e.full)
+		}
+	}
+	return matches
 }
 
 func CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain(blockedDomain string, allowedDomain string) bool {
@@ -203,12 +300,7 @@ func CheckIfBlockSameDomainLevelAndHaveSameBlockedDomain(blockedDomain string, a
 	firstAllowedPart := allowedDomainParts[0]
 	firstBlockedPart := blockedDomainParts[0]
 
-	distance := Similarity(firstAllowedPart, firstBlockedPart)
-	if distance < 80.0 {
-		return false
-	}
-
-	return true
+	return SimilarityAtLeast(firstAllowedPart, firstBlockedPart, 80.0)
 }
 
 func CheckItIsSubDomain(parent string, child string) bool {

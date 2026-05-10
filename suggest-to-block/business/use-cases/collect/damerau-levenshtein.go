@@ -1,6 +1,9 @@
 package collect
 
-import "math"
+import (
+	"math"
+	"unicode/utf8"
+)
 
 // Используется алгоритм Optimal String Alignment (OSA).
 func DamerauLevenshtein(source, target string) int {
@@ -74,11 +77,13 @@ func DamerauLevenshtein(source, target string) int {
 // возвращаем false без аллокации O(L²) матрицы в DamerauLevenshtein.
 //
 // В горячих циклах CollectSuggest и IsBrandImpersonation большинство пар
-// имеют сильно разные длины — pre-check отсекает их в один if.
+// имеют сильно разные длины — pre-check отсекает их в один if. Длины
+// считаем через utf8.RuneCountInString, чтобы fast-path вообще не
+// аллоцировал rune-слайсы (rune-конверсия стоит O(L) + одна аллокация на
+// каждую сторону, что съедает основной выигрыш на коротких лейблах).
 func SimilarityAtLeast(source, target string, threshold float64) bool {
-	rS := []rune(source)
-	rT := []rune(target)
-	lenS, lenT := len(rS), len(rT)
+	lenS := utf8.RuneCountInString(source)
+	lenT := utf8.RuneCountInString(target)
 	maxLen := lenS
 	if lenT > maxLen {
 		maxLen = lenT

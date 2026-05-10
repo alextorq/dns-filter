@@ -332,6 +332,59 @@ func TestCollectSuggest_MultipleSubdomainAncestors_AccumulateScore(t *testing.T)
 	}
 }
 
+// Симметрично MultipleSubdomainAncestors: similar-ветка тоже должна
+// эмитить score+Reason на КАЖДОЕ совпадение в бакете, а не «first match
+// wins». Без этого теста перевод similar на «short-circuit» прошёл бы
+// мимо CI.
+func TestCollectSuggest_MultipleSimilarMatches_AccumulateScore(t *testing.T) {
+	blocked := []string{
+		"cdn-master.shop.example.com",
+		"cdn-mester.shop.example.com",
+	}
+	allowed := "cdn-mister.shop.example.com"
+
+	res := CollectSuggest(blocked, []string{allowed})
+	if len(res) != 1 {
+		t.Fatalf("expected 1 suggestion, got %d (%+v)", len(res), res)
+	}
+	similarReasons := 0
+	for _, r := range res[0].Reasons {
+		if r.Code == CodeSimilarToBlocked {
+			similarReasons++
+		}
+	}
+	if similarReasons != 2 {
+		t.Fatalf("expected 2 similar reasons, got %d (%+v)",
+			similarReasons, res[0].Reasons)
+	}
+}
+
+// Inputs из miekg/dns несут trailing dot (q.Name). До нормализации:
+// (а) self-match по subdomain работал, но Match-поле приходило с точкой,
+// (б) similar depth-гейт ≥4 ложно триггерил на «логически-3-label»
+// доменах из-за фантомного пустого segment'а. Нормализуем на входе и
+// фиксируем ожидание тестом.
+func TestCollectSuggest_TrailingDotNormalization(t *testing.T) {
+	blocked := []string{"example.com."}
+	allowed := "x8z7c4kqjfpw9.example.com."
+
+	res := CollectSuggest(blocked, []string{allowed})
+	if len(res) != 1 {
+		t.Fatalf("expected 1 suggestion, got %d (%+v)", len(res), res)
+	}
+	if res[0].Domain != "x8z7c4kqjfpw9.example.com" {
+		t.Errorf("Domain not normalized: got %q", res[0].Domain)
+	}
+	if !hasCode(res[0].Reasons, CodeSubdomainOfBlocked) {
+		t.Errorf("expected subdomain reason, got %+v", res[0].Reasons)
+	}
+	for _, r := range res[0].Reasons {
+		if r.Code == CodeSubdomainOfBlocked && r.Match != "example.com" {
+			t.Errorf("Match not normalized: got %q", r.Match)
+		}
+	}
+}
+
 // SimilarityAtLeast must short-circuit on length mismatch (no DL call), and
 // agree with Similarity on the boundary cases. The pre-check is sound only
 // if it never produces a false negative — locking that down with a test.

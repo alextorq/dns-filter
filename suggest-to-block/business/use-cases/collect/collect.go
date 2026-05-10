@@ -120,6 +120,14 @@ func Catalog() []SignalDescriptor {
 }
 
 func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
+	// Inputs из miekg/dns (q.Name) приходят с trailing dot, blocklist-источники
+	// (HaGeZi и т.д.) — без. Без нормализации depth-гейт в similar-ветке считает
+	// domain. за depth+1 (фантомный пустой лейбл от trailing dot), а Match-поле
+	// в одной выдаче смешивает обе формы. Нормализуем один раз на входе, чтобы
+	// и сравнения, и пользовательский вывод были консистентны.
+	blockedDomains = trimTrailingDots(blockedDomains)
+	allowedDomains = trimTrailingDots(allowedDomains)
+
 	idx := buildBlockedIndex(blockedDomains)
 	var result []Suggestion
 
@@ -205,6 +213,17 @@ type blockedIndex struct {
 type similarEntry struct {
 	firstLabel string
 	full       string
+}
+
+// trimTrailingDots returns a copy of in with each entry stripped of trailing
+// dots. Cheap (O(N) с одной аллокацией под результат и без аллокаций под
+// сами строки, т.к. TrimRight возвращает sub-slice исходной строки).
+func trimTrailingDots(in []string) []string {
+	out := make([]string, len(in))
+	for i, d := range in {
+		out[i] = strings.TrimRight(d, ".")
+	}
+	return out
 }
 
 func buildBlockedIndex(blocked []string) *blockedIndex {

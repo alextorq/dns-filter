@@ -2,6 +2,7 @@ package discovery
 
 import (
 	_ "embed"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -9,28 +10,51 @@ import (
 //go:embed oui.txt
 var ouiData []byte
 
+// LocallyAdministeredVendor is returned for MACs whose U/L bit is set —
+// libvirt/QEMU NICs (typically fe:54:…), randomized client MACs (Android
+// privacy MAC, iOS private addresses), and ad-hoc software interfaces. No
+// vendor registry will ever contain these prefixes; surfacing the label
+// in the UI is more useful than leaving the column blank.
+const LocallyAdministeredVendor = "Locally administered"
+
 var (
 	ouiMap     map[string]string
 	ouiMapOnce sync.Once
 )
 
 // LookupVendor returns the vendor display name for a MAC address, or "" if
-// the OUI prefix is not in the curated list. The lookup is case-insensitive
-// on both colons and hex digits, and tolerates dash separators (the format
-// /proc/net/arp returns sometimes uses ':' and the active scan returns hex
-// pairs).
-//
-// The curated list is small on purpose: matching ~80% of consumer devices is
-// the goal; comprehensive vendor coverage would balloon the binary by ~3 MB
-// (Wireshark's manuf file). Users with rare hardware can rename the client
-// in the UI — the Vendor column is informational, not functional.
+// the OUI prefix is not in the embedded IEEE list. For locally-administered
+// MACs (U/L bit set in the first octet) it returns LocallyAdministeredVendor
+// instead of falling through, since those prefixes are not registry-bound.
+// The lookup is case-insensitive on both colons and hex digits, and tolerates
+// dash separators.
 func LookupVendor(mac string) string {
 	ouiMapOnce.Do(loadOUI)
 	prefix := normalizePrefix(mac)
 	if prefix == "" {
 		return ""
 	}
-	return ouiMap[prefix]
+	if v, ok := ouiMap[prefix]; ok {
+		return v
+	}
+	if isLocallyAdministered(prefix) {
+		return LocallyAdministeredVendor
+	}
+	return ""
+}
+
+// isLocallyAdministered reports whether the MAC's U/L bit (bit 1 of the first
+// octet) is set. Input must be the canonical "XX:XX:XX" form produced by
+// normalizePrefix; non-conforming input returns false.
+func isLocallyAdministered(prefix string) bool {
+	if len(prefix) < 2 {
+		return false
+	}
+	b, err := strconv.ParseUint(prefix[:2], 16, 8)
+	if err != nil {
+		return false
+	}
+	return b&0x02 != 0
 }
 
 func loadOUI() {

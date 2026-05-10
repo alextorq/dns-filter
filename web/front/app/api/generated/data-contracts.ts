@@ -1,4 +1,3 @@
-/* eslint-disable */
 /* tslint:disable */
 // @ts-nocheck
 /*
@@ -175,12 +174,13 @@ export interface WebDeleteClientRequest {
 }
 
 export interface WebFilterStatusResponse {
-  status?: boolean;
+  /**
+   * PausedUntil is the unix-second deadline of an active pause, or 0 if no
+   * pause is active. The frontend uses this absolute value to drive its
+   * countdown without depending on server-supplied "seconds left".
+   */
   paused_until?: number;
-}
-
-export interface WebPauseFilterRequest {
-  minutes?: number;
+  status?: boolean;
 }
 
 export interface WebGetAllClientsResponse {
@@ -237,6 +237,10 @@ export interface WebLogLevelResponse {
 export interface WebLoginRequest {
   login: string;
   password: string;
+}
+
+export interface WebPauseFilterRequest {
+  minutes?: number;
 }
 
 export interface WebUpdateConfigData {

@@ -1,4 +1,3 @@
-/* eslint-disable */
 /* tslint:disable */
 // @ts-nocheck
 /*
@@ -10,7 +9,7 @@
  * ---------------------------------------------------------------
  */
 
-import {
+import type {
   CreateDomainRequestBody,
   GithubComAlextorqDnsFilterAuthWebErrorResponse,
   GithubComAlextorqDnsFilterAuthWebStatusResponse,
@@ -32,7 +31,6 @@ import {
   WebChangeSuggestStatusRequest,
   WebDeleteClientRequest,
   WebFilterStatusResponse,
-  WebPauseFilterRequest,
   WebGetAllClientsResponse,
   WebGetAllDnsRecordsRequest,
   WebGetAllDnsRecordsResponse,
@@ -44,11 +42,13 @@ import {
   WebGetSignalCodesResponse,
   WebLogLevelResponse,
   WebLoginRequest,
+  WebPauseFilterRequest,
   WebUpdateConfigData,
   WebUpdateDnsRecordResponse,
   WebUserResponse,
 } from "./data-contracts";
-import { ContentType, HttpClient, RequestParams } from "./http-client";
+import type { RequestParams } from "./http-client";
+import { ContentType, HttpClient } from "./http-client";
 
 export class Api<
   SecurityDataType = unknown,
@@ -366,33 +366,18 @@ export class Api<
    * No description
    *
    * @tags filter
-   * @name FilterStatusList
-   * @summary Get filter status
-   * @request GET:/api/filter/status
-   */
-  filterStatusList = (params: RequestParams = {}) =>
-    this.request<WebFilterStatusResponse, any>({
-      path: `/api/filter/status`,
-      method: "GET",
-      format: "json",
-      ...params,
-    });
-  /**
-   * No description
-   *
-   * @tags filter
    * @name FilterPauseCreate
    * @summary Pause the DNS filter for N minutes
    * @request POST:/api/filter/pause
    */
   filterPauseCreate = (
-    body: WebPauseFilterRequest,
+    request: WebPauseFilterRequest,
     params: RequestParams = {},
   ) =>
-    this.request<WebFilterStatusResponse, any>({
+    this.request<WebFilterStatusResponse, Record<string, string>>({
       path: `/api/filter/pause`,
       method: "POST",
-      body: body,
+      body: request,
       type: ContentType.Json,
       format: "json",
       ...params,
@@ -409,6 +394,21 @@ export class Api<
     this.request<WebFilterStatusResponse, any>({
       path: `/api/filter/resume`,
       method: "POST",
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags filter
+   * @name FilterStatusList
+   * @summary Get filter status
+   * @request GET:/api/filter/status
+   */
+  filterStatusList = (params: RequestParams = {}) =>
+    this.request<WebFilterStatusResponse, any>({
+      path: `/api/filter/status`,
+      method: "GET",
       format: "json",
       ...params,
     });

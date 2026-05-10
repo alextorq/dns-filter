@@ -2,6 +2,7 @@ package check_exist_domain
 
 import (
 	"fmt"
+	"time"
 
 	blacklists "github.com/alextorq/dns-filter/blocked-domain"
 	"github.com/alextorq/dns-filter/config"
@@ -35,6 +36,9 @@ func CheckCacheOrDb(domain string) bool {
 func CheckBlock(domain string) bool {
 	conf := config.GetConfig()
 	if !conf.Enabled.Load() {
+		return false
+	}
+	if until := conf.PausedUntilUnix.Load(); until > time.Now().Unix() {
 		return false
 	}
 	f := filter.GetFilter()

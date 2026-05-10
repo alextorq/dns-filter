@@ -3,6 +3,7 @@ package change_filter_dns_records
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/alextorq/dns-filter/config"
 )
@@ -36,5 +37,23 @@ func TestChangeFilterDnsRecords_ConcurrentTogglesPreserveParity(t *testing.T) {
 	}
 	if got := conf.Enabled.Load(); got != start {
 		t.Fatalf("Enabled flipped after even number of toggles: start=%v end=%v", start, got)
+	}
+}
+
+// Toggling the filter must invalidate any in-flight pause. Otherwise the UI
+// would show "Active" while the deadline still suppresses blocking.
+func TestChangeFilterDnsRecords_ClearsPause(t *testing.T) {
+	conf := config.GetConfig()
+	conf.Enabled.Store(true)
+	conf.PausedUntilUnix.Store(time.Now().Add(10 * time.Minute).Unix())
+	t.Cleanup(func() {
+		conf.Enabled.Store(true)
+		conf.PausedUntilUnix.Store(0)
+	})
+
+	ChangeFilterDnsRecords()
+
+	if got := conf.PausedUntilUnix.Load(); got != 0 {
+		t.Fatalf("toggle did not clear pause: got %d, want 0", got)
 	}
 }

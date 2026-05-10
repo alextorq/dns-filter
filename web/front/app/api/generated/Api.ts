@@ -32,6 +32,7 @@ import {
   WebChangeSuggestStatusRequest,
   WebDeleteClientRequest,
   WebFilterStatusResponse,
+  WebPauseFilterRequest,
   WebGetAllClientsResponse,
   WebGetAllDnsRecordsRequest,
   WebGetAllDnsRecordsResponse,
@@ -373,6 +374,41 @@ export class Api<
     this.request<WebFilterStatusResponse, any>({
       path: `/api/filter/status`,
       method: "GET",
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags filter
+   * @name FilterPauseCreate
+   * @summary Pause the DNS filter for N minutes
+   * @request POST:/api/filter/pause
+   */
+  filterPauseCreate = (
+    body: WebPauseFilterRequest,
+    params: RequestParams = {},
+  ) =>
+    this.request<WebFilterStatusResponse, any>({
+      path: `/api/filter/pause`,
+      method: "POST",
+      body: body,
+      type: ContentType.Json,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags filter
+   * @name FilterResumeCreate
+   * @summary Resume the DNS filter (clear pause)
+   * @request POST:/api/filter/resume
+   */
+  filterResumeCreate = (params: RequestParams = {}) =>
+    this.request<WebFilterStatusResponse, any>({
+      path: `/api/filter/resume`,
+      method: "POST",
       format: "json",
       ...params,
     });

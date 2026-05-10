@@ -539,6 +539,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/filter/pause": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "filter"
+                ],
+                "summary": "Pause the DNS filter for N minutes",
+                "parameters": [
+                    {
+                        "description": "duration in minutes",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.PauseFilterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.FilterStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/filter/resume": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "filter"
+                ],
+                "summary": "Resume the DNS filter (clear pause)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.FilterStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/filter/status": {
             "get": {
                 "produces": [
@@ -1159,6 +1220,10 @@ const docTemplate = `{
         "web.FilterStatusResponse": {
             "type": "object",
             "properties": {
+                "paused_until": {
+                    "description": "PausedUntil is the unix-second deadline of an active pause, or 0 if no\npause is active. The frontend uses this absolute value to drive its\ncountdown without depending on server-supplied \"seconds left\".",
+                    "type": "integer"
+                },
                 "status": {
                     "type": "boolean"
                 }
@@ -1310,6 +1375,14 @@ const docTemplate = `{
                 },
                 "password": {
                     "type": "string"
+                }
+            }
+        },
+        "web.PauseFilterRequest": {
+            "type": "object",
+            "properties": {
+                "minutes": {
+                    "type": "integer"
                 }
             }
         },

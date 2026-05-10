@@ -245,6 +245,12 @@ definitions:
     type: object
   web.FilterStatusResponse:
     properties:
+      paused_until:
+        description: |-
+          PausedUntil is the unix-second deadline of an active pause, or 0 if no
+          pause is active. The frontend uses this absolute value to drive its
+          countdown without depending on server-supplied "seconds left".
+        type: integer
       status:
         type: boolean
     type: object
@@ -343,6 +349,11 @@ definitions:
     required:
     - login
     - password
+    type: object
+  web.PauseFilterRequest:
+    properties:
+      minutes:
+        type: integer
     type: object
   web.UpdateConfigData:
     properties:
@@ -704,6 +715,45 @@ paths:
           schema:
             $ref: '#/definitions/web.FilterStatusResponse'
       summary: Toggle the DNS filter
+      tags:
+      - filter
+  /api/filter/pause:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: duration in minutes
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/web.PauseFilterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.FilterStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Pause the DNS filter for N minutes
+      tags:
+      - filter
+  /api/filter/resume:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.FilterStatusResponse'
+      summary: Resume the DNS filter (clear pause)
       tags:
       - filter
   /api/filter/status:

@@ -67,6 +67,36 @@ func DamerauLevenshtein(source, target string) int {
 	return matrix[n][m]
 }
 
+// SimilarityAtLeast reports whether Damerau-Levenshtein similarity between
+// source и target ≥ threshold (0..100), не считая полную матрицу там, где
+// ответ заведомо отрицательный. Distance ≥ |Δlen| → similarity ≤
+// (1 - |Δlen|/maxLen) * 100; если эта верхняя граница уже ниже порога,
+// возвращаем false без аллокации O(L²) матрицы в DamerauLevenshtein.
+//
+// В горячих циклах CollectSuggest и IsBrandImpersonation большинство пар
+// имеют сильно разные длины — pre-check отсекает их в один if.
+func SimilarityAtLeast(source, target string, threshold float64) bool {
+	rS := []rune(source)
+	rT := []rune(target)
+	lenS, lenT := len(rS), len(rT)
+	maxLen := lenS
+	if lenT > maxLen {
+		maxLen = lenT
+	}
+	if maxLen == 0 {
+		return threshold <= 100.0
+	}
+	diff := lenS - lenT
+	if diff < 0 {
+		diff = -diff
+	}
+	upperBound := (1.0 - float64(diff)/float64(maxLen)) * 100.0
+	if upperBound < threshold {
+		return false
+	}
+	return Similarity(source, target) >= threshold
+}
+
 // Similarity возвращает процент сходства от 0.0 до 100.0
 func Similarity(source, target string) float64 {
 	// 1. Получаем абсолютное расстояние

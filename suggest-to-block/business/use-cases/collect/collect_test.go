@@ -299,3 +299,62 @@ func TestCollectSuggest_SubdomainPlusSimilar(t *testing.T) {
 		t.Fatalf("score=%d below threshold %d", res[0].Score, ThresholdToSuggestBlocking)
 	}
 }
+
+// Regression guard for the index refactor: when multiple blocked entries are
+// ancestors of the same allowed domain, each match must contribute its own
+// score and Reason — same as the old O(A×B) loop. Prior to the index this
+// emerged for free; with the index we must walk all suffixes, not stop at
+// the first hit.
+func TestCollectSuggest_MultipleSubdomainAncestors_AccumulateScore(t *testing.T) {
+	// Используем нейтральные labels без bad-keywords / risky-TLD / numeric-run
+	// и т.п., чтобы scoring был полностью обусловлен subdomain-сигналом.
+	blocked := []string{"site.org", "shop.site.org"}
+	allowed := "store.shop.site.org"
+
+	res := CollectSuggest(blocked, []string{allowed})
+	if len(res) != 1 {
+		t.Fatalf("expected 1 suggestion, got %d (%+v)", len(res), res)
+	}
+	wantScore := 2 * ItemScoreSubdomainOfBlocked
+	if res[0].Score != wantScore {
+		t.Fatalf("score=%d, want %d (two subdomain ancestors must accumulate)",
+			res[0].Score, wantScore)
+	}
+	subdomainReasons := 0
+	for _, r := range res[0].Reasons {
+		if r.Code == CodeSubdomainOfBlocked {
+			subdomainReasons++
+		}
+	}
+	if subdomainReasons != 2 {
+		t.Fatalf("expected 2 subdomain reasons, got %d (%+v)",
+			subdomainReasons, res[0].Reasons)
+	}
+}
+
+// SimilarityAtLeast must short-circuit on length mismatch (no DL call), and
+// agree with Similarity on the boundary cases. The pre-check is sound only
+// if it never produces a false negative — locking that down with a test.
+func TestSimilarityAtLeast(t *testing.T) {
+	cases := []struct {
+		name      string
+		a, b      string
+		threshold float64
+		want      bool
+	}{
+		{"identical strings always pass any threshold ≤ 100", "abcd", "abcd", 100.0, true},
+		{"length differs > 20% of max → can't reach 80%", "abc", "abcdefgh", 80.0, false},
+		{"length differs == 20% of max → upper bound = 80, allowed", "abcd", "abcde", 80.0, true},
+		{"close strings clear 80% threshold", "cdn-master", "cdn-mister", 80.0, true},
+		{"clearly different strings fail 80%", "totallydifferent", "cdn1", 80.0, false},
+		{"empty vs empty at threshold 100", "", "", 100.0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SimilarityAtLeast(tc.a, tc.b, tc.threshold); got != tc.want {
+				t.Fatalf("SimilarityAtLeast(%q,%q,%v)=%v, want %v",
+					tc.a, tc.b, tc.threshold, got, tc.want)
+			}
+		})
+	}
+}

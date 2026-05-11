@@ -8,3 +8,5 @@ tmp
 !clients/discovery/oui.txt
 data
 .DS_Store
+.env
+!.env.example

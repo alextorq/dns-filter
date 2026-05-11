@@ -13,7 +13,8 @@ func Default() map[string]domain_inspect.CheckFunc {
 		"dns_resolve": DNSResolve,
 		"rdap":        RDAPAge,
 		"crtsh":       CrtSh,
-		"virustotal":  VirusTotal,
-		"urlscan":     URLScan,
+		"virustotal":     VirusTotal,
+		"urlscan":        URLScan,
+		"safe_browsing":  SafeBrowsing,
 	}
 }

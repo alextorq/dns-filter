@@ -47,8 +47,9 @@ type Config struct {
 	CookieSecure   bool
 	CookieSameSite string
 
-	VirusTotalKey string
-	URLScanKey    string
+	VirusTotalKey   string
+	URLScanKey      string
+	SafeBrowsingKey string
 }
 
 func (c *Config) UpdateLogLevel(l string) {
@@ -139,8 +140,9 @@ func GetConfig() *Config {
 			CookieSecure:   os.Getenv("DNS_FILTER_COOKIE_SECURE") == "true",
 			CookieSameSite: getEnv("DNS_FILTER_COOKIE_SAMESITE", "Lax"),
 
-			VirusTotalKey: os.Getenv("DNS_FILTER_VT_KEY"),
-			URLScanKey:    os.Getenv("DNS_FILTER_URLSCAN_KEY"),
+			VirusTotalKey:   os.Getenv("DNS_FILTER_VT_KEY"),
+			URLScanKey:      os.Getenv("DNS_FILTER_URLSCAN_KEY"),
+			SafeBrowsingKey: os.Getenv("DNS_FILTER_SAFE_BROWSING_KEY"),
 		}
 		instance.Enabled.Store(true)
 	})

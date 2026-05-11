@@ -88,19 +88,23 @@ flowchart TD
 
 ### Optional API keys for domain inspection
 
-The inspect endpoint runs a fan-out of independent checks. Three of them
-require third-party API keys; without them the check returns
-`status: skipped` instead of erroring, and the aggregated verdict still works
-from whatever other signals are available.
+The inspect endpoint runs a fan-out of independent checks. Four of them are
+always on (no setup); three are gated by third-party API keys and degrade
+gracefully — without a key the check returns `status: skipped` and the
+aggregated verdict is computed from the remaining signals. **All three are
+free** for personal use (Safe Browsing has a non-commercial restriction).
 
 | Env var                        | Service                                            | Free tier            |
 | ------------------------------ | -------------------------------------------------- | -------------------- |
 | `DNS_FILTER_VT_KEY`            | [VirusTotal](https://www.virustotal.com)           | 4 req/min, 500/day   |
-| `DNS_FILTER_URLSCAN_KEY`       | [urlscan.io](https://urlscan.io)                   | 1000 searches/day    |
-| `DNS_FILTER_SAFE_BROWSING_KEY` | [Google Safe Browsing v4](https://safebrowsing.googleapis.com) | Generous, GCP quota |
+| `DNS_FILTER_URLSCAN_KEY`       | [urlscan.io](https://urlscan.io)                   | ~1000 searches/day   |
+| `DNS_FILTER_SAFE_BROWSING_KEY` | [Google Safe Browsing v4](https://developers.google.com/safe-browsing/v4) | Generous, non-commercial only |
+
+Step-by-step signup, scoring rules per provider, troubleshooting, and
+verification instructions live in **[docs/inspect-keys.md](docs/inspect-keys.md)**.
 
 Keys live in `.env` (see `.env.example` for the template). The file is
-git-ignored.
+git-ignored, so secrets don't end up in the repo.
 
 ## Getting Started
 

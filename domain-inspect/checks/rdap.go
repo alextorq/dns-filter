@@ -9,6 +9,7 @@ import (
 	"time"
 
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
+	"golang.org/x/net/publicsuffix"
 )
 
 // rdapEndpoint is a var (not const) so tests can point it at httptest.Server.
@@ -28,8 +29,26 @@ type rdapResponse struct {
 // RDAPAge looks up the domain in the public RDAP relay and reports the
 // registration age. Domains younger than 30 days are flagged as suspicious:
 // freshly registered names dominate phishing/malware traffic.
+//
+// RDAP only carries records for *registerable* domains (eTLD+1), so a query
+// for `report.appmetrica.yandex.net` 404s — we collapse to `yandex.net` first.
+// The original FQDN is preserved in the response only by virtue of the
+// caller's `domain` argument; `queried_domain` in details records what we
+// actually asked RDAP about, so the UI can explain the verdict.
 func RDAPAge(ctx context.Context, domain string) domain_inspect.CheckResult {
-	u := rdapEndpoint + url.PathEscape(domain)
+	registrable, err := publicsuffix.EffectiveTLDPlusOne(domain)
+	if err != nil {
+		// Happens for bare TLDs ("com") or invalid inputs — RDAP has no
+		// answer for those, so we return an honest "unknown" instead of
+		// firing off a doomed request.
+		return domain_inspect.CheckResult{
+			Status:  domain_inspect.StatusOK,
+			Verdict: domain_inspect.VerdictUnknown,
+			Details: map[string]any{"queried_domain": "", "skipped_reason": err.Error()},
+		}
+	}
+
+	u := rdapEndpoint + url.PathEscape(registrable)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return errorResult(err)
@@ -46,7 +65,7 @@ func RDAPAge(ctx context.Context, domain string) domain_inspect.CheckResult {
 		return domain_inspect.CheckResult{
 			Status:  domain_inspect.StatusOK,
 			Verdict: domain_inspect.VerdictUnknown,
-			Details: map[string]any{"registered": false},
+			Details: map[string]any{"registered": false, "queried_domain": registrable},
 		}
 	}
 	if resp.StatusCode >= 400 {
@@ -62,8 +81,9 @@ func RDAPAge(ctx context.Context, domain string) domain_inspect.CheckResult {
 	}
 
 	details := map[string]any{
-		"registered": true,
-		"status":     body.Status,
+		"registered":     true,
+		"status":         body.Status,
+		"queried_domain": registrable,
 	}
 
 	var registered time.Time

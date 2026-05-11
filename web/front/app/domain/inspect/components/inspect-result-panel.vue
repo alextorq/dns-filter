@@ -29,7 +29,7 @@ const progressColor: Record<DomainInspectVerdict, "error" | "warning" | "success
 
 <template>
     <div class="flex flex-col gap-4">
-        <UCard variant="solid">
+        <UCard>
             <div class="flex flex-wrap items-start gap-4">
                 <div class="flex-1 min-w-0">
                     <div class="text-xs text-muted uppercase tracking-wide">Domain</div>

@@ -7,6 +7,8 @@ import type {
     DbSuggestBlockReason,
 } from "~/api/generated/data-contracts";
 import InspectDrawer from "~/domain/inspect/components/inspect-drawer.vue";
+import InspectTags from "~/domain/inspect/components/inspect-tags.vue";
+import { useInspectRegistry } from "~~/composables/use-inspect-registry";
 import { usePaginatedList } from "~~/composables/use-paginated-list";
 import { UButton } from "#components";
 import { getErrorMessage } from "~~/utils/get-error-message";
@@ -61,6 +63,20 @@ const {
 );
 
 watch(selectedCodes, () => resetAndFetch());
+
+// Kick off a background inspect scan for every domain that appears in the
+// table so the user can see verdict tags in the row without opening the
+// drawer. The registry caches results across pages and dedups duplicates.
+const { register: registerInspect } = useInspectRegistry();
+watch(
+    records,
+    (rows) => {
+        for (const r of rows ?? []) {
+            if (r.domain) registerInspect(r.domain);
+        }
+    },
+    { immediate: true },
+);
 
 let catalogFetchController: AbortController | null = null;
 
@@ -135,6 +151,11 @@ const columns: TableColumn<DbSuggestBlock>[] = [
                 { class: "whitespace-normal break-words text-xs space-y-0.5" },
                 (row.original.reasons ?? []).map((reason) => h("li", labelForReason(reason))),
             ),
+    },
+    {
+        id: "scan",
+        header: "Scan",
+        cell: ({ row }) => h(InspectTags, { domain: row.original.domain ?? "" }),
     },
     {
         id: "actions",

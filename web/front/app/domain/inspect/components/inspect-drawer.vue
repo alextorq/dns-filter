@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import InspectResultPanel from "./inspect-result-panel.vue";
-import { useInspectDomain } from "~~/composables/use-inspect-domain";
+import { useInspectRegistry } from "~~/composables/use-inspect-registry";
 import { useToggle } from "~~/composables/use-toggle";
 
 // onBlock is passed by parents that own a domain-blocking action (e.g. the
@@ -13,24 +14,25 @@ const props = defineProps<{
 }>();
 
 const { isActive, openHandler, closeHandler } = useToggle();
-const { result, isLoading, errorMessage, run, reset } = useInspectDomain();
+const { register, get } = useInspectRegistry();
 
-const open = async () => {
+const entry = computed(() => get(props.domain));
+const isLoading = computed(() => {
+    const s = entry.value?.status;
+    return !entry.value || s === "idle" || s === "loading";
+});
+const errorMessage = computed(() => (entry.value?.status === "error" ? entry.value.error : ""));
+const result = computed(() => (entry.value?.status === "done" ? entry.value.result : null));
+
+const open = () => {
     openHandler();
-    if (props.domain) {
-        await run(props.domain);
-    }
-};
-
-const onClose = () => {
-    closeHandler();
-    reset();
+    if (props.domain) register(props.domain);
 };
 
 const onBlockClick = async () => {
     if (props.onBlock) {
         await props.onBlock();
-        onClose();
+        closeHandler();
     }
 };
 </script>
@@ -39,14 +41,15 @@ const onBlockClick = async () => {
     <UButton
         size="sm"
         color="neutral"
-        variant="ghost"
+        variant="subtle"
         icon="i-lucide-radar"
+        label="Inspect"
         :title="`Inspect ${domain}`"
-        aria-label="Inspect domain"
+        :aria-label="`Inspect ${domain}`"
         @click="open"
     />
 
-    <UDrawer v-model:open="isActive" direction="right" :handle="false" @close="onClose">
+    <UDrawer v-model:open="isActive" direction="right" :handle="false" @close="closeHandler">
         <template #header>
             <div class="flex items-center gap-2">
                 <UIcon name="i-lucide-radar" class="text-primary" />
@@ -85,7 +88,7 @@ const onBlockClick = async () => {
                     color="neutral"
                     variant="ghost"
                     :disabled="isLoading"
-                    @click="onClose"
+                    @click="closeHandler"
                 >
                     Close
                 </UButton>

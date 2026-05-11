@@ -77,10 +77,30 @@ flowchart TD
 - DNS-over-HTTPS upstream resolver
 - Web-based management interface (Vue.js frontend)
 - RESTful API (Go backend)
+- Domain inspection: reputation, registration age, certificate transparency,
+  VirusTotal, urlscan.io, and Google Safe Browsing — aggregated into a single
+  verdict before adding a domain to the block list (`/inspect` page, `GET
+  /api/domain/inspect`)
 - Event metrics (Prometheus)
 - Configurable logging levels
 - SQLite database for persistent storage
 - Dockerized deployment
+
+### Optional API keys for domain inspection
+
+The inspect endpoint runs a fan-out of independent checks. Three of them
+require third-party API keys; without them the check returns
+`status: skipped` instead of erroring, and the aggregated verdict still works
+from whatever other signals are available.
+
+| Env var                        | Service                                            | Free tier            |
+| ------------------------------ | -------------------------------------------------- | -------------------- |
+| `DNS_FILTER_VT_KEY`            | [VirusTotal](https://www.virustotal.com)           | 4 req/min, 500/day   |
+| `DNS_FILTER_URLSCAN_KEY`       | [urlscan.io](https://urlscan.io)                   | 1000 searches/day    |
+| `DNS_FILTER_SAFE_BROWSING_KEY` | [Google Safe Browsing v4](https://safebrowsing.googleapis.com) | Generous, GCP quota |
+
+Keys live in `.env` (see `.env.example` for the template). The file is
+git-ignored.
 
 ## Getting Started
 

@@ -6,6 +6,7 @@ import (
 	clientsWeb "github.com/alextorq/dns-filter/clients/web"
 	dbWeb "github.com/alextorq/dns-filter/db/web"
 	_ "github.com/alextorq/dns-filter/docs"
+	inspectWeb "github.com/alextorq/dns-filter/domain-inspect/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
 	syncWeb "github.com/alextorq/dns-filter/source/web"
@@ -67,6 +68,8 @@ func CreateServer() *gin.Engine {
 		api.POST("/clients/discover", clientsWeb.Discover)
 
 		api.GET("/config/db/download", dbWeb.DownloadDb)
+
+		api.GET("/domain/inspect", inspectWeb.Inspect)
 	}
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

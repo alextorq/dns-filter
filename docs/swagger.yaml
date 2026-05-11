@@ -153,6 +153,64 @@ definitions:
       vendor:
         type: string
     type: object
+  domain_inspect.CheckResult:
+    properties:
+      details:
+        additionalProperties: {}
+        type: object
+      duration_ms:
+        type: integer
+      error:
+        type: string
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/domain_inspect.CheckStatus'
+      verdict:
+        $ref: '#/definitions/domain_inspect.Verdict'
+    type: object
+  domain_inspect.CheckStatus:
+    enum:
+    - ok
+    - error
+    - skipped
+    - timeout
+    type: string
+    x-enum-varnames:
+    - StatusOK
+    - StatusError
+    - StatusSkipped
+    - StatusTimeout
+  domain_inspect.InspectResult:
+    properties:
+      checks:
+        items:
+          $ref: '#/definitions/domain_inspect.CheckResult'
+        type: array
+      domain:
+        type: string
+      summary:
+        $ref: '#/definitions/domain_inspect.Summary'
+    type: object
+  domain_inspect.Summary:
+    properties:
+      score:
+        type: integer
+      verdict:
+        $ref: '#/definitions/domain_inspect.Verdict'
+    type: object
+  domain_inspect.Verdict:
+    enum:
+    - unknown
+    - clean
+    - suspicious
+    - malicious
+    type: string
+    x-enum-varnames:
+    - VerdictUnknown
+    - VerdictClean
+    - VerdictSuspicious
+    - VerdictMalicious
   github_com_alextorq_dns-filter_auth_web.ErrorResponse:
     properties:
       error:
@@ -181,6 +239,11 @@ definitions:
   github_com_alextorq_dns-filter_clients_web.StatusResponse:
     properties:
       status:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_domain-inspect_web.ErrorResponse:
+    properties:
+      message:
         type: string
     type: object
   github_com_alextorq_dns-filter_logger_web.MessageResponse:
@@ -806,6 +869,28 @@ paths:
       summary: Update a blocked DNS record
       tags:
       - dns-records
+  /api/domain/inspect:
+    get:
+      parameters:
+      - description: Domain to inspect (e.g. example.com)
+        in: query
+        name: domain
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain_inspect.InspectResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_domain-inspect_web.ErrorResponse'
+      summary: Inspect a domain with reputation/diagnostic checks
+      tags:
+      - domain-inspect
   /api/events/block/amount:
     post:
       produces:

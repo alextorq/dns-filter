@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working agreements
+
+These rules are mandatory for every change in this repo:
+
+- **Test-driven development.** Write tests before (or alongside) the implementation. Every test suite for a new piece of behavior must include both the happy path (positive case) and at least one failure / edge case (negative case): bad input, upstream error, empty result, unauthorized access — whichever is relevant. A change without negative tests is not done.
+- **Regenerate Swagger + frontend client on any API/type change.** When you touch a Go handler, its request/response types, or any struct exposed in the OpenAPI schema, you must run **both** steps in order:
+  1. `swag init -g main.go -o ./docs --parseDependency` — regenerates `docs/{docs.go,swagger.json,swagger.yaml}` from the `// @Summary / @Router / ...` annotations.
+  2. `cd web/front && npm run generate:api` — regenerates the typed Axios client in `web/front/app/api/generated/` from the freshly produced `docs/swagger.json`.
+
+  Skipping step 2 silently leaves the frontend on a stale contract. Commit the regenerated files together with the change that triggered them.
+- **Update documentation when you ship a feature.** A new feature or behavioral change is incomplete until the docs match it. Touch the relevant files in the same PR: `README.md` for user-visible behavior and endpoints, `ARCHITECTURE.md` for new components or changes to the request flow / startup ordering / cross-cutting conventions, and `CLAUDE.md` (this file) when a rule, command, or convention itself changes.
+
 ## Commands
 
 ### Backend (Go 1.25)

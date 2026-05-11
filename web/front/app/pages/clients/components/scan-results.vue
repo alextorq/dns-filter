@@ -127,11 +127,7 @@ const columns: TableColumn<DiscoveryDevice>[] = [
             const d = row.original;
             const ip = d.ip ?? "";
             if (d.already_registered) {
-                return h(
-                    "span",
-                    { class: "text-success text-sm" },
-                    "Registered",
-                );
+                return h("span", { class: "text-success text-sm" }, "Registered");
             }
             return h(
                 "div",
@@ -160,9 +156,7 @@ const columns: TableColumn<DiscoveryDevice>[] = [
                 <template v-if="!hasScanned">
                     Click <strong>Scan</strong> to enumerate devices on your local network.
                 </template>
-                <template v-else-if="devices.length === 0">
-                    No devices found.
-                </template>
+                <template v-else-if="devices.length === 0"> No devices found. </template>
                 <template v-else>
                     Found {{ devices.length }} device{{ devices.length === 1 ? "" : "s" }}.
                 </template>

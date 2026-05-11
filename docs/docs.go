@@ -570,6 +570,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/domain/inspect": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "domain-inspect"
+                ],
+                "summary": "Inspect a domain with reputation/diagnostic checks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Domain to inspect (e.g. example.com)",
+                        "name": "domain",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain_inspect.InspectResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_domain-inspect_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/events/block/amount": {
             "post": {
                 "produces": [
@@ -1167,6 +1201,88 @@ const docTemplate = `{
                 }
             }
         },
+        "domain_inspect.CheckResult": {
+            "type": "object",
+            "properties": {
+                "details": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/domain_inspect.CheckStatus"
+                },
+                "verdict": {
+                    "$ref": "#/definitions/domain_inspect.Verdict"
+                }
+            }
+        },
+        "domain_inspect.CheckStatus": {
+            "type": "string",
+            "enum": [
+                "ok",
+                "error",
+                "skipped",
+                "timeout"
+            ],
+            "x-enum-varnames": [
+                "StatusOK",
+                "StatusError",
+                "StatusSkipped",
+                "StatusTimeout"
+            ]
+        },
+        "domain_inspect.InspectResult": {
+            "type": "object",
+            "properties": {
+                "checks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain_inspect.CheckResult"
+                    }
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "summary": {
+                    "$ref": "#/definitions/domain_inspect.Summary"
+                }
+            }
+        },
+        "domain_inspect.Summary": {
+            "type": "object",
+            "properties": {
+                "score": {
+                    "type": "integer"
+                },
+                "verdict": {
+                    "$ref": "#/definitions/domain_inspect.Verdict"
+                }
+            }
+        },
+        "domain_inspect.Verdict": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "clean",
+                "suspicious",
+                "malicious"
+            ],
+            "x-enum-varnames": [
+                "VerdictUnknown",
+                "VerdictClean",
+                "VerdictSuspicious",
+                "VerdictMalicious"
+            ]
+        },
         "github_com_alextorq_dns-filter_auth_web.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -1211,6 +1327,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_domain-inspect_web.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
                     "type": "string"
                 }
             }

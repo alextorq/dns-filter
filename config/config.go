@@ -46,6 +46,9 @@ type Config struct {
 	AdminPassword  string
 	CookieSecure   bool
 	CookieSameSite string
+
+	VirusTotalKey string
+	URLScanKey    string
 }
 
 func (c *Config) UpdateLogLevel(l string) {
@@ -135,6 +138,9 @@ func GetConfig() *Config {
 			AdminPassword:  os.Getenv("DNS_FILTER_ADMIN_PASSWORD"),
 			CookieSecure:   os.Getenv("DNS_FILTER_COOKIE_SECURE") == "true",
 			CookieSameSite: getEnv("DNS_FILTER_COOKIE_SAMESITE", "Lax"),
+
+			VirusTotalKey: os.Getenv("DNS_FILTER_VT_KEY"),
+			URLScanKey:    os.Getenv("DNS_FILTER_URLSCAN_KEY"),
 		}
 		instance.Enabled.Store(true)
 	})

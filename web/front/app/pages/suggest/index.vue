@@ -6,6 +6,7 @@ import type {
     DbSuggestBlock,
     DbSuggestBlockReason,
 } from "~/api/generated/data-contracts";
+import InspectDrawer from "~/domain/inspect/components/inspect-drawer.vue";
 import { usePaginatedList } from "~~/composables/use-paginated-list";
 import { UButton } from "#components";
 import { getErrorMessage } from "~~/utils/get-error-message";
@@ -139,9 +140,11 @@ const columns: TableColumn<DbSuggestBlock>[] = [
         id: "actions",
         header: () => h("div", { class: "text-right" }, "Actions"),
         cell: ({ row }) =>
-            h(
-                "div",
-                { class: "flex justify-end" },
+            h("div", { class: "flex justify-end gap-1" }, [
+                h(InspectDrawer, {
+                    domain: row.original.domain ?? "",
+                    onBlock: () => blockDomain(row.original),
+                }),
                 h(UButton, {
                     size: "sm",
                     color: "primary",
@@ -149,7 +152,7 @@ const columns: TableColumn<DbSuggestBlock>[] = [
                     label: "Block",
                     onClick: () => blockDomain(row.original),
                 }),
-            ),
+            ]),
     },
 ];
 </script>

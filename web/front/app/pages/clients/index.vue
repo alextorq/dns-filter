@@ -182,11 +182,7 @@ const columns: TableColumn<DbClient>[] = [
 <template>
     <div class="h-[calc(100vh-var(--ui-header-height))] flex flex-col">
         <UContainer class="shrink-0 pt-4">
-            <UTabs
-                v-model="activeTab"
-                :items="tabs"
-                :ui="{ list: 'w-full max-w-md' }"
-            />
+            <UTabs v-model="activeTab" :items="tabs" :ui="{ list: 'w-full max-w-md' }" />
         </UContainer>
 
         <template v-if="activeTab === 'clients'">

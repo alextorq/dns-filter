@@ -9,6 +9,20 @@
  * ---------------------------------------------------------------
  */
 
+export enum DomainInspectVerdict {
+  VerdictUnknown = "unknown",
+  VerdictClean = "clean",
+  VerdictSuspicious = "suspicious",
+  VerdictMalicious = "malicious",
+}
+
+export enum DomainInspectCheckStatus {
+  StatusOK = "ok",
+  StatusError = "error",
+  StatusSkipped = "skipped",
+  StatusTimeout = "timeout",
+}
+
 export enum DbBlockListSource {
   SourceStevenBlack = "StevenBlack",
   SourceEasyList = "EasyList",
@@ -100,6 +114,26 @@ export interface DiscoveryDevice {
   vendor?: string;
 }
 
+export interface DomainInspectCheckResult {
+  details?: Record<string, any>;
+  duration_ms?: number;
+  error?: string;
+  name?: string;
+  status?: DomainInspectCheckStatus;
+  verdict?: DomainInspectVerdict;
+}
+
+export interface DomainInspectInspectResult {
+  checks?: DomainInspectCheckResult[];
+  domain?: string;
+  summary?: DomainInspectSummary;
+}
+
+export interface DomainInspectSummary {
+  score?: number;
+  verdict?: DomainInspectVerdict;
+}
+
 export interface GithubComAlextorqDnsFilterAuthWebErrorResponse {
   error?: string;
 }
@@ -122,6 +156,10 @@ export interface GithubComAlextorqDnsFilterClientsWebErrorResponse {
 
 export interface GithubComAlextorqDnsFilterClientsWebStatusResponse {
   status?: string;
+}
+
+export interface GithubComAlextorqDnsFilterDomainInspectWebErrorResponse {
+  message?: string;
 }
 
 export interface GithubComAlextorqDnsFilterLoggerWebMessageResponse {

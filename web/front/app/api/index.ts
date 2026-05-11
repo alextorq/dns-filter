@@ -131,6 +131,9 @@ class Api {
 
     discoverNetwork = (abortSignal: AbortSignal) =>
         this.client.clientsDiscoverCreate({ signal: abortSignal });
+
+    inspectDomain = (domain: string, abortSignal: AbortSignal) =>
+        this.client.domainInspectList({ domain }, { signal: abortSignal });
 }
 
 export const api = new Api();

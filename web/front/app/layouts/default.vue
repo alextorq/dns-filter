@@ -23,6 +23,11 @@ const items = ref([
         to: "/suggest",
     },
     {
+        label: "Inspect",
+        icon: "i-lucide-radar",
+        to: "/inspect",
+    },
+    {
         label: "Clients",
         icon: "i-lucide-user",
         to: "/clients",

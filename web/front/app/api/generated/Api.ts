@@ -11,12 +11,14 @@
 
 import type {
   CreateDomainRequestBody,
+  DomainInspectInspectResult,
   GithubComAlextorqDnsFilterAuthWebErrorResponse,
   GithubComAlextorqDnsFilterAuthWebStatusResponse,
   GithubComAlextorqDnsFilterBlockedDomainWebErrorResponse,
   GithubComAlextorqDnsFilterBlockedDomainWebMessageResponse,
   GithubComAlextorqDnsFilterClientsWebErrorResponse,
   GithubComAlextorqDnsFilterClientsWebStatusResponse,
+  GithubComAlextorqDnsFilterDomainInspectWebErrorResponse,
   GithubComAlextorqDnsFilterLoggerWebMessageResponse,
   GithubComAlextorqDnsFilterSourceWebErrorResponse,
   GithubComAlextorqDnsFilterSuggestToBlockWebErrorResponse,
@@ -355,6 +357,31 @@ export class Api<
       method: "POST",
       body: body,
       type: ContentType.Json,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags domain-inspect
+   * @name DomainInspectList
+   * @summary Inspect a domain with reputation/diagnostic checks
+   * @request GET:/api/domain/inspect
+   */
+  domainInspectList = (
+    query: {
+      /** Domain to inspect (e.g. example.com) */
+      domain: string;
+    },
+    params: RequestParams = {},
+  ) =>
+    this.request<
+      DomainInspectInspectResult,
+      GithubComAlextorqDnsFilterDomainInspectWebErrorResponse
+    >({
+      path: `/api/domain/inspect`,
+      method: "GET",
+      query: query,
       format: "json",
       ...params,
     });

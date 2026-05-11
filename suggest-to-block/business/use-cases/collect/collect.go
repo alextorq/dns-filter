@@ -36,7 +36,34 @@ const (
 	// вторым слабым сигналом — risky-TLD, bad-keyword, subdomain-of-blocked.
 	ItemScoreBrandImpersonation = 25
 	ThresholdToSuggestBlocking  = 30
+	// ThresholdToAutoBlock — score, above which Collect() promotes a suggestion
+	// straight into the blocklist without manual review. Two strong signals
+	// (e.g. brand-impersonation + similar-to-blocked, или subdomain + entropy
+	// + similar) must independently agree on the verdict.
+	ThresholdToAutoBlock = 60
 )
+
+// ShouldAutoBlock reports whether a collected suggestion qualifies for
+// auto-promotion to the blocklist. Two independent gates:
+//   - score >= ThresholdToAutoBlock — accumulated heuristic confidence is high
+//     enough that two strong signals must independently agree;
+//   - any reason has CodeSubdomainOfBlocked — the parent is already blocked,
+//     so the subdomain is almost certainly part of the same family and is the
+//     most deterministic signal we have, regardless of the total score.
+//
+// Lives on the use-case package (not the orchestrator) so the rule is unit-
+// testable without touching the DB or the filter singletons.
+func ShouldAutoBlock(s Suggestion) bool {
+	if s.Score >= ThresholdToAutoBlock {
+		return true
+	}
+	for _, r := range s.Reasons {
+		if r.Code == CodeSubdomainOfBlocked {
+			return true
+		}
+	}
+	return false
+}
 
 // Стабильные коды сигналов. Хранятся в БД и в API в неизменном виде —
 // при переименовании ломается история и фронт-маппинг лейблов.

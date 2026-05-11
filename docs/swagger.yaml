@@ -56,6 +56,7 @@ definitions:
     - HaGeZiMulti
     - User
     - SuggestedToBlock
+    - AutoBlocked
     type: string
     x-enum-varnames:
     - SourceStevenBlack
@@ -65,6 +66,7 @@ definitions:
     - SourceHaGeZiMulti
     - SourceUser
     - SourceSuggestedToBlock
+    - SourceAutoBlocked
   db.Client:
     properties:
       created_at:

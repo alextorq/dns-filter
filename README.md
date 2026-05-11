@@ -81,6 +81,12 @@ flowchart TD
   VirusTotal, urlscan.io, and Google Safe Browsing — aggregated into a single
   verdict before adding a domain to the block list (`/inspect` page, `GET
   /api/domain/inspect`)
+- Suggest-to-block heuristic collector (runs every 12h) — flags suspicious
+  allowed domains for review. High-confidence candidates (score ≥ 60, or any
+  subdomain-of-already-blocked) are auto-promoted to the block list with
+  `Source = AutoBlocked`; the rest go to `suggest_blocks` for manual
+  approval via the UI. See [ARCHITECTURE.md §11](ARCHITECTURE.md) for the
+  scoring rules.
 - Event metrics (Prometheus)
 - Configurable logging levels
 - SQLite database for persistent storage

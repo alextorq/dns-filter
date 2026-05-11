@@ -18,6 +18,12 @@ const (
 	SourceUser BlockListSource = "User"
 	// SourceSuggestedToBlock - domains suggested by users to block
 	SourceSuggestedToBlock BlockListSource = "SuggestedToBlock"
+	// SourceAutoBlocked - domains auto-promoted from the suggest list during
+	// Collect: either score >= ThresholdToAutoBlock or any subdomain-of-blocked
+	// reason is present. Kept distinct from SourceSuggestedToBlock so an
+	// operator can audit / mass-revert auto-decisions independently of manual
+	// promotions through the UI.
+	SourceAutoBlocked BlockListSource = "AutoBlocked"
 )
 
 // String returns the string representation of the source

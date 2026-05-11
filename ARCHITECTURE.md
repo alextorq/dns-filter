@@ -198,8 +198,28 @@ type BlockDomainEvent struct {
 - Похожесть доменов (Damerau-Levenshtein)
 - Энтропия (Shannon)
 - Фильтрация по "плохим словам"
+- Brand impersonation, homograph, hex/UUID, numeric run, risky TLD
 
 **Запуск:** Каждые 12 часов (cron)
+
+**Auto-block во время Collect.** Каждое предложение пропускается через
+`ShouldAutoBlock` (см. `business/use-cases/collect/collect.go`) и
+автоматически промоутится в blocklist с `Source = AutoBlocked`, если
+выполнено любое из условий:
+- `Score >= ThresholdToAutoBlock` (60) — два сильных сигнала
+  независимо согласились;
+- среди reasons присутствует `CodeSubdomainOfBlocked` — родитель уже
+  в blocklist, поддомен почти наверняка из той же семьи (самый
+  детерминированный сигнал — bypass score-гейта).
+
+Остальные предложения (score в `[30, 60)` без subdomain-of-blocked)
+по-прежнему уходят в `suggest_blocks` для ручной модерации через
+`POST /api/suggest-to-block/add-to-block`. После авто-промоушенов
+`Collect()` один раз вызывает `filter.UpdateFilterFromDb()`, чтобы
+обновить in-memory bloom без per-domain rebuild. Каждое решение
+логируется (`Auto-blocked domain from suggest: ... score: ... reasons: ...`)
+— audit trail обязателен, иначе непонятно, почему домен оказался в
+blocklist.
 
 ---
 

@@ -385,6 +385,66 @@ func TestCollectSuggest_TrailingDotNormalization(t *testing.T) {
 	}
 }
 
+// ---- ShouldAutoBlock ----
+
+func TestShouldAutoBlock(t *testing.T) {
+	cases := []struct {
+		name string
+		s    Suggestion
+		want bool
+	}{
+		{
+			name: "score at threshold triggers auto-block",
+			s:    Suggestion{Domain: "a.example", Score: ThresholdToAutoBlock},
+			want: true,
+		},
+		{
+			name: "score above threshold triggers auto-block",
+			s:    Suggestion{Domain: "a.example", Score: ThresholdToAutoBlock + 5},
+			want: true,
+		},
+		{
+			name: "subdomain-of-blocked reason triggers regardless of score",
+			s: Suggestion{
+				Domain:  "child.example.com",
+				Score:   ThresholdToSuggestBlocking,
+				Reasons: []Reason{{Code: CodeSubdomainOfBlocked, Match: "example.com"}},
+			},
+			want: true,
+		},
+		{
+			name: "subdomain-of-blocked reason triggers even when below suggest threshold",
+			s: Suggestion{
+				Domain:  "child.example.com",
+				Score:   ItemScoreSubdomainOfBlocked,
+				Reasons: []Reason{{Code: CodeSubdomainOfBlocked, Match: "example.com"}},
+			},
+			want: true,
+		},
+		{
+			name: "score below threshold without trigger reason stays in suggest",
+			s: Suggestion{
+				Domain:  "a.example",
+				Score:   ThresholdToSuggestBlocking,
+				Reasons: []Reason{{Code: CodeRiskyTLD}, {Code: CodeBadKeywords}},
+			},
+			want: false,
+		},
+		{
+			name: "empty suggestion is not auto-blocked",
+			s:    Suggestion{},
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ShouldAutoBlock(tc.s); got != tc.want {
+				t.Fatalf("ShouldAutoBlock(%+v)=%v, want %v", tc.s, got, tc.want)
+			}
+		})
+	}
+}
+
 // SimilarityAtLeast must short-circuit on length mismatch (no DL call), and
 // agree with Similarity on the boundary cases. The pre-check is sound only
 // if it never produces a false negative — locking that down with a test.

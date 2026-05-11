@@ -1047,7 +1047,8 @@
                 "AdGuardRussian",
                 "HaGeZiMulti",
                 "User",
-                "SuggestedToBlock"
+                "SuggestedToBlock",
+                "AutoBlocked"
             ],
             "x-enum-varnames": [
                 "SourceStevenBlack",
@@ -1056,7 +1057,8 @@
                 "SourceAdGuardRussian",
                 "SourceHaGeZiMulti",
                 "SourceUser",
-                "SourceSuggestedToBlock"
+                "SourceSuggestedToBlock",
+                "SourceAutoBlocked"
             ]
         },
         "db.Client": {

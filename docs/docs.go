@@ -1054,7 +1054,8 @@ const docTemplate = `{
                 "AdGuardRussian",
                 "HaGeZiMulti",
                 "User",
-                "SuggestedToBlock"
+                "SuggestedToBlock",
+                "AutoBlocked"
             ],
             "x-enum-varnames": [
                 "SourceStevenBlack",
@@ -1063,7 +1064,8 @@ const docTemplate = `{
                 "SourceAdGuardRussian",
                 "SourceHaGeZiMulti",
                 "SourceUser",
-                "SourceSuggestedToBlock"
+                "SourceSuggestedToBlock",
+                "SourceAutoBlocked"
             ]
         },
         "db.Client": {

@@ -31,6 +31,7 @@ export enum DbBlockListSource {
   SourceHaGeZiMulti = "HaGeZiMulti",
   SourceUser = "User",
   SourceSuggestedToBlock = "SuggestedToBlock",
+  SourceAutoBlocked = "AutoBlocked",
 }
 
 export interface CollectSignalDescriptor {

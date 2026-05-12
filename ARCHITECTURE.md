@@ -152,6 +152,8 @@ type BlockDomainEvent struct {
 - Просроченные записи удаляются из LRU при первом обращении к ним
 - Метрики: hits, misses, evictions, size, **expired** (Prometheus)
 
+**Singleflight (coalescing к upstream).** При промахе кэша поход в upstream идёт через `singleflight.Group` с ключом `name+qtype` (`dns/singleflight.go`). Если N клиентов одновременно запросили один и тот же домен на холодном кэше, делается ровно один HTTP-запрос к DoH, остальные ждут его результат — это устраняет thundering herd при холодном старте и при истечении TTL у популярных доменов. Внутри fn перед походом в upstream выполняется повторная проверка кэша (double-check), на случай если предыдущий in-flight вызов только что его заполнил. Результат, отданный нескольким вызывающим, копируется (`msg.Copy()`) перед возвратом, иначе мутация `msg.Id` в разных горутинах вызвала бы гонку. Метрика: `dns_singleflight_coalesced_total` — число запросов, чей upstream-вызов был сшит с уже летящим.
+
 ### 8. Логирование (`logger/`)
 
 **Назначение:** Централизованное логирование с поддержкой нескольких обработчиков.
@@ -197,6 +199,7 @@ type BlockDomainEvent struct {
 - `dns_cache_evictions_total` — вытеснения из кэша
 - `dns_cache_expired_total` — лукапы, нашедшие истёкшую по TTL запись (подсчитывается отдельно от холодных промахов: показывает, как часто upstream возвращает короткие TTL)
 - `dns_cache_size` — текущий размер кэша
+- `dns_singleflight_coalesced_total` — запросы, чей upstream-вызов был сшит с уже летящим (защита от thundering herd при холодном кэше)
 
 ### 11. Suggest to Block (`suggest-to-block/`)
 

@@ -34,6 +34,9 @@ type DnsServer struct {
 	Handlers   DnsRequestHandlers
 	Identifier identifier.Identifier
 	Clients    ClientStore
+	// upstream collapses concurrent identical queries into a single in-flight
+	// upstream call. Zero value is ready to use.
+	upstream upstreamCoordinator
 	// NotifyStartedFunc is invoked once for each underlying listener (UDP
 	// and TCP) right after it becomes ready to accept queries. Optional;
 	// primarily for tests that need to wait for both listeners.
@@ -79,18 +82,32 @@ func (s *DnsServer) GetFromCacheOrCreateRequest(ctx context.Context, question dn
 		return fromCache, nil
 	}
 
-	resp, err := s.Upstream.Exchange(ctx, &dns.Msg{
-		MsgHdr:   dns.MsgHdr{Id: id, RecursionDesired: true},
-		Question: []dns.Question{question},
+	// Singleflight: N concurrent callers for the same (name, qtype) collapse
+	// into one upstream Exchange. The coordinator already copies the response
+	// for shared callers so each one can safely mutate msg.Id below.
+	resp, err := s.upstream.Do(cacheKey, func() (*dns.Msg, error) {
+		// Double-check the cache: a previous in-flight call may have just
+		// populated it, in which case we can skip the upstream entirely.
+		if cached, ok := s.Cache.Get(cacheKey); ok {
+			return cached, nil
+		}
+		out, err := s.Upstream.Exchange(ctx, &dns.Msg{
+			MsgHdr:   dns.MsgHdr{Id: id, RecursionDesired: true},
+			Question: []dns.Question{question},
+		})
+		if err != nil {
+			return nil, err
+		}
+		// The cache deep-copies internally and decides whether the
+		// response is cacheable (TTL>0, non-SERVFAIL, …).
+		s.Cache.Add(cacheKey, out)
+		return out, nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
-	// The cache deep-copies internally and decides whether the
-	// response is cacheable (TTL>0, non-SERVFAIL, …).
-	s.Cache.Add(cacheKey, resp)
+	resp.Id = id
 	return resp, nil
 }
 

@@ -2,7 +2,9 @@ package dns_cache
 
 import (
 	"sync"
+	"time"
 
+	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/metric"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,10 +40,18 @@ var (
 		Name: "dns_cache_expired_total",
 		Help: "Total number of cache lookups that hit an expired entry",
 	})
+	// cacheStaleHits tracks lookups inside the stale-window — TTL has
+	// elapsed but the entry is still served (with a clamped RR.Ttl) while
+	// a background refresh is fired. A non-zero value means SWR is doing
+	// its job and clients are seeing instant responses on TTL boundaries.
+	cacheStaleHits = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dns_cache_stale_hits_total",
+		Help: "Cache lookups served from the SWR stale-window (past TTL but within staleUntil)",
+	})
 )
 
 func init() {
-	metric.Registry.MustRegister(cacheHits, cacheMisses, cacheEvictions, cacheSize, cacheExpired)
+	metric.Registry.MustRegister(cacheHits, cacheMisses, cacheEvictions, cacheSize, cacheExpired, cacheStaleHits)
 }
 
 type CacheWithMetrics struct {
@@ -51,6 +61,16 @@ type CacheWithMetrics struct {
 func NewCacheWithMetrics(cap int) *CacheWithMetrics {
 	return &CacheWithMetrics{
 		inner: NewCache(cap),
+	}
+}
+
+// NewCacheWithMetricsAndSWR builds a metrics-wrapped cache that serves stale
+// entries past their TTL for up to staleGrace, returning them with RR.Ttl
+// clamped to staleTTL. staleGrace=0 makes Lookup behave exactly like the
+// non-SWR cache (no Stale state).
+func NewCacheWithMetricsAndSWR(cap int, staleGrace, staleTTL time.Duration) *CacheWithMetrics {
+	return &CacheWithMetrics{
+		inner: NewCacheWithSWR(cap, staleGrace, staleTTL),
 	}
 }
 
@@ -78,9 +98,30 @@ func (c *CacheWithMetrics) Get(key string) (*dns.Msg, bool) {
 	return nil, false
 }
 
+// Lookup is the SWR-aware accessor: Fresh and Stale both carry a Msg; Stale
+// also bumps the dedicated stale-hits counter so we can see when SWR is
+// firing on dashboards. Expired and Miss are reported through the
+// pre-existing expired/miss counters.
+func (c *CacheWithMetrics) Lookup(key string) Lookup {
+	r := c.inner.Lookup(key)
+	switch r.State {
+	case StateFresh:
+		cacheHits.Inc()
+	case StateStale:
+		cacheStaleHits.Inc()
+	case StateExpired:
+		cacheExpired.Inc()
+		cacheMisses.Inc()
+	default: // StateMiss
+		cacheMisses.Inc()
+	}
+	return r
+}
+
 func GetCacheWithMetric() *CacheWithMetrics {
 	onceM.Do(func() {
-		globalCacheWithM = NewCacheWithMetrics(1500)
+		conf := config.GetConfig()
+		globalCacheWithM = NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL)
 	})
 	return globalCacheWithM
 }

@@ -138,12 +138,19 @@ type BlockDomainEvent struct {
 
 ### 7. DNS-кэш (`dns-cache/`)
 
-**Назначение:** Кэширование ответов от upstream-резолвера.
+**Назначение:** Кэширование ответов от upstream-резолвера с уважением к TTL (RFC 1035 §3.2.1, RFC 2308).
 
 **Реализация:**
-- LRU-кэш на основе двусвязного списка
+- LRU-кэш на основе двусвязного списка (`lru-cache/`)
 - Емкость: 1500 записей
-- Метрики: hits, misses, evictions (Prometheus)
+- Каждая запись хранит `cachedAt` и `expiresAt`; expiresAt = cachedAt + minTTL
+- Положительные ответы: `expiresAt` рассчитывается по минимальному `RR.Ttl` среди секций Answer/Authority/Additional (псевдо-RR OPT игнорируется — поле Ttl у него используется под EDNS flags)
+- Отрицательные ответы (NXDOMAIN, NODATA): TTL = `min(SOA.Minttl, SOA.Hdr.Ttl)` (RFC 2308 §5), затем clamp до `DefaultNegativeTTLCap = 300s`, чтобы один сбойный SOA с гигантским minimum не залип на сутки
+- Не кэшируются: усечённые ответы (TC=1, RFC 7766 — клиент должен ретраить по TCP), SERVFAIL и прочие Rcode кроме Success/NXDOMAIN, ответы с `TTL=0`, negative-ответы без SOA
+- Просроченная запись остаётся в LRU (не удаляется на `Get`) — следующий `Add` обновит слот in-place; удаление на месте порождало бы гонку с параллельным `Add` по тому же ключу
+- При попадании в кэш `Get` возвращает свежую копию `*dns.Msg`, у которой `RR.Ttl` уменьшен на время, проведённое в кэше (с floor=1, чтобы downstream-резолвер не интерпретировал 0 как «не кэшируй»)
+- Просроченные записи удаляются из LRU при первом обращении к ним
+- Метрики: hits, misses, evictions, size, **expired** (Prometheus)
 
 ### 8. Логирование (`logger/`)
 
@@ -186,8 +193,9 @@ type BlockDomainEvent struct {
 
 **Метрики:**
 - `dns_cache_hits_total` — попадания в кэш
-- `dns_cache_misses_total` — промахи кэша
+- `dns_cache_misses_total` — промахи кэша (включая истёкшие записи)
 - `dns_cache_evictions_total` — вытеснения из кэша
+- `dns_cache_expired_total` — лукапы, нашедшие истёкшую по TTL запись (подсчитывается отдельно от холодных промахов: показывает, как часто upstream возвращает короткие TTL)
 - `dns_cache_size` — текущий размер кэша
 
 ### 11. Suggest to Block (`suggest-to-block/`)

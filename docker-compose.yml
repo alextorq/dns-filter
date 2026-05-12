@@ -82,6 +82,10 @@ services:
     restart: unless-stopped
     volumes:
       - grafana-data:/var/lib/grafana
+      # File-based provisioning: datasource + dashboards are source-of-truth in
+      # ./grafana/. UI edits are reverted on the next sync (allowUiUpdates=false).
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
 

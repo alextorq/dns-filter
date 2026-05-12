@@ -3,7 +3,10 @@ package dns
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,30 +22,57 @@ func (noopLogger) Debug(args ...interface{}) {}
 func (noopLogger) Warn(args ...interface{})  {}
 
 type memoryCache struct {
+	mu     sync.Mutex
 	values map[string]*dnsLib.Msg
 }
 
 func (c *memoryCache) Get(key string) (*dnsLib.Msg, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	v, ok := c.values[key]
 	return v, ok
 }
 
 func (c *memoryCache) Add(key string, val *dnsLib.Msg) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.values[key] = val
 }
 
 type staticResolver struct {
-	calls int
+	calls atomic.Int64
 	err   error
 	rcode int
 }
 
 func (r *staticResolver) Exchange(_ context.Context, msg *dnsLib.Msg) (*dnsLib.Msg, error) {
-	r.calls++
+	r.calls.Add(1)
 	if r.err != nil {
 		return nil, r.err
 	}
 
+	reply := new(dnsLib.Msg)
+	reply.SetReply(msg)
+	reply.Rcode = r.rcode
+	return reply, nil
+}
+
+// blockingResolver counts calls and blocks every Exchange until release is
+// closed. Used to force concurrent callers to pile up on the same in-flight
+// upstream request so we can verify singleflight coalescing.
+type blockingResolver struct {
+	calls   atomic.Int64
+	release chan struct{}
+	err     error
+	rcode   int
+}
+
+func (r *blockingResolver) Exchange(_ context.Context, msg *dnsLib.Msg) (*dnsLib.Msg, error) {
+	r.calls.Add(1)
+	<-r.release
+	if r.err != nil {
+		return nil, r.err
+	}
 	reply := new(dnsLib.Msg)
 	reply.SetReply(msg)
 	reply.Rcode = r.rcode
@@ -126,8 +156,8 @@ func TestGetFromCacheOrCreateRequestUsesDoHResolver(t *testing.T) {
 	if resp.Id != 200 {
 		t.Fatalf("expected cached response id 200, got %d", resp.Id)
 	}
-	if resolver.calls != 1 {
-		t.Fatalf("expected one upstream call, got %d", resolver.calls)
+	if got := resolver.calls.Load(); got != 1 {
+		t.Fatalf("expected one upstream call, got %d", got)
 	}
 }
 
@@ -235,5 +265,148 @@ func TestHandleDNSCopiesUpstreamRcode(t *testing.T) {
 	}
 	if writer.msg.Rcode != dnsLib.RcodeNameError {
 		t.Fatalf("expected NXDOMAIN rcode, got %s", dnsLib.RcodeToString[writer.msg.Rcode])
+	}
+}
+
+// Concurrent identical queries on a cold cache must collapse into exactly one
+// upstream call. Without singleflight, N callers race past the cache miss and
+// each fires its own DoH request — the very thundering-herd this PR fixes.
+func TestGetFromCacheOrCreateRequestCoalescesConcurrentCalls(t *testing.T) {
+	release := make(chan struct{})
+	resolver := &blockingResolver{release: release, rcode: dnsLib.RcodeSuccess}
+	server := &DnsServer{
+		Logger:   noopLogger{},
+		Cache:    &memoryCache{values: map[string]*dnsLib.Msg{}},
+		Upstream: resolver,
+	}
+
+	question := dnsLib.Question{
+		Name:   "example.com.",
+		Qtype:  dnsLib.TypeA,
+		Qclass: dnsLib.ClassINET,
+	}
+
+	const N = 50
+	results := make([]*dnsLib.Msg, N)
+	errs := make([]error, N)
+	var wg sync.WaitGroup
+	wg.Add(N)
+	for i := range N {
+		go func(i int) {
+			defer wg.Done()
+			r, err := server.GetFromCacheOrCreateRequest(context.Background(), question, uint16(i+1))
+			results[i] = r
+			errs[i] = err
+		}(i)
+	}
+
+	// Give callers a moment to pile up on the singleflight key before the
+	// upstream is allowed to return. The blocking resolver guarantees the
+	// first goroutine cannot complete fn() until we close release, so any
+	// goroutine that enters Do during this window will coalesce.
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	if got := resolver.calls.Load(); got != 1 {
+		t.Fatalf("expected exactly 1 upstream call after coalescing, got %d", got)
+	}
+	for i, r := range results {
+		if errs[i] != nil {
+			t.Fatalf("caller %d returned error: %v", i, errs[i])
+		}
+		if r == nil {
+			t.Fatalf("caller %d got nil response", i)
+		}
+		// Each caller must see its own Id even though the underlying upstream
+		// reply is shared — otherwise the response would be racy.
+		if r.Id != uint16(i+1) {
+			t.Fatalf("caller %d: expected id %d, got %d", i, i+1, r.Id)
+		}
+	}
+	// Shared callers must receive distinct *dns.Msg pointers, otherwise the
+	// per-caller `msg.Id = id` mutation in the hot path would be a data race
+	// on the same object. Counting unique pointers across all N callers locks
+	// in the Copy()-on-shared contract in upstreamCoordinator.Do.
+	seen := make(map[*dnsLib.Msg]struct{}, N)
+	for _, r := range results {
+		seen[r] = struct{}{}
+	}
+	if len(seen) != N {
+		t.Fatalf("expected %d distinct response objects, got %d (msg.Copy missing on shared return)", N, len(seen))
+	}
+}
+
+// Distinct cache keys must not coalesce. This protects against a coordinator
+// that over-collapses (e.g. keys off only the name and ignores qtype).
+func TestGetFromCacheOrCreateRequestDoesNotCoalesceDistinctKeys(t *testing.T) {
+	resolver := &staticResolver{rcode: dnsLib.RcodeSuccess}
+	server := &DnsServer{
+		Logger:   noopLogger{},
+		Cache:    &memoryCache{values: map[string]*dnsLib.Msg{}},
+		Upstream: resolver,
+	}
+
+	const N = 10
+	var wg sync.WaitGroup
+	wg.Add(N)
+	for i := range N {
+		go func(i int) {
+			defer wg.Done()
+			q := dnsLib.Question{
+				Name:   fmt.Sprintf("example%d.com.", i),
+				Qtype:  dnsLib.TypeA,
+				Qclass: dnsLib.ClassINET,
+			}
+			if _, err := server.GetFromCacheOrCreateRequest(context.Background(), q, uint16(i+1)); err != nil {
+				t.Errorf("caller %d: %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if got := resolver.calls.Load(); got != int64(N) {
+		t.Fatalf("expected %d upstream calls for distinct keys, got %d", N, got)
+	}
+}
+
+// Coalesced upstream errors must propagate to every waiter; the first caller
+// failing should not leave the others hung or hiding behind a stale nil.
+func TestGetFromCacheOrCreateRequestCoalescesUpstreamErrors(t *testing.T) {
+	release := make(chan struct{})
+	wantErr := errors.New("upstream down")
+	resolver := &blockingResolver{release: release, err: wantErr}
+	server := &DnsServer{
+		Logger:   noopLogger{},
+		Cache:    &memoryCache{values: map[string]*dnsLib.Msg{}},
+		Upstream: resolver,
+	}
+
+	question := dnsLib.Question{
+		Name:   "example.com.",
+		Qtype:  dnsLib.TypeA,
+		Qclass: dnsLib.ClassINET,
+	}
+
+	const N = 20
+	errs := make([]error, N)
+	var wg sync.WaitGroup
+	wg.Add(N)
+	for i := range N {
+		go func(i int) {
+			defer wg.Done()
+			_, err := server.GetFromCacheOrCreateRequest(context.Background(), question, uint16(i+1))
+			errs[i] = err
+		}(i)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	for i, err := range errs {
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("caller %d: expected %v, got %v", i, wantErr, err)
+		}
 	}
 }

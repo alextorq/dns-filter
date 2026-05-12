@@ -70,13 +70,13 @@ func (s *DnsServer) GetFromCacheOrCreateRequest(ctx context.Context, question dn
 	name := question.Name
 	cacheKey := name + ":" + qtype
 
-	// Сначала проверяем кэш
+	// The cache returns a freshly-owned copy with RR.Ttl already
+	// decremented, so we only need to set the client's request Id.
 	fromCache, found := s.Cache.Get(cacheKey)
 	if found {
 		s.Logger.Debug("Из кэша:", name, "Тип:", qtype)
-		cached := fromCache.Copy()
-		cached.Id = id
-		return cached, nil
+		fromCache.Id = id
+		return fromCache, nil
 	}
 
 	resp, err := s.Upstream.Exchange(ctx, &dns.Msg{
@@ -88,8 +88,9 @@ func (s *DnsServer) GetFromCacheOrCreateRequest(ctx context.Context, question dn
 		return nil, err
 	}
 
-	// Кладем в кэш
-	s.Cache.Add(cacheKey, resp.Copy())
+	// The cache deep-copies internally and decides whether the
+	// response is cacheable (TTL>0, non-SERVFAIL, …).
+	s.Cache.Add(cacheKey, resp)
 	return resp, nil
 }
 

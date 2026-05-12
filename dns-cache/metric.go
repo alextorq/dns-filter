@@ -3,7 +3,6 @@ package dns_cache
 import (
 	"sync"
 
-	lru_cache "github.com/alextorq/dns-filter/lru-cache"
 	"github.com/alextorq/dns-filter/metric"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,27 +30,35 @@ var (
 		Name: "dns_cache_size",
 		Help: "Current number of items in cache",
 	})
+	// cacheExpired tracks lookups that found an entry whose TTL had
+	// elapsed. Split from misses so we can tell "upstream gave us a
+	// short TTL" apart from "cold cache" — the former is the signal
+	// that this counter is doing its job.
+	cacheExpired = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "dns_cache_expired_total",
+		Help: "Total number of cache lookups that hit an expired entry",
+	})
 )
 
 func init() {
-	metric.Registry.MustRegister(cacheHits, cacheMisses, cacheEvictions, cacheSize)
+	metric.Registry.MustRegister(cacheHits, cacheMisses, cacheEvictions, cacheSize, cacheExpired)
 }
 
 type CacheWithMetrics struct {
-	inner *lru_cache.LRUCache[*dns.Msg]
-	cap   int
+	inner *Cache
 }
 
 func NewCacheWithMetrics(cap int) *CacheWithMetrics {
 	return &CacheWithMetrics{
-		inner: lru_cache.CreateCache[*dns.Msg](cap),
-		cap:   cap,
+		inner: NewCache(cap),
 	}
 }
 
 func (c *CacheWithMetrics) Add(key string, val *dns.Msg) {
 	res := c.inner.Add(key, val)
-
+	if !res.Cached {
+		return
+	}
 	if res.Evicted {
 		cacheEvictions.Inc()
 	}
@@ -59,13 +66,16 @@ func (c *CacheWithMetrics) Add(key string, val *dns.Msg) {
 }
 
 func (c *CacheWithMetrics) Get(key string) (*dns.Msg, bool) {
-	v, ok := c.inner.Get(key)
-	if ok {
+	res := c.inner.Get(key)
+	if res.Hit {
 		cacheHits.Inc()
-	} else {
-		cacheMisses.Inc()
+		return res.Msg, true
 	}
-	return v, ok
+	if res.Expired {
+		cacheExpired.Inc()
+	}
+	cacheMisses.Inc()
+	return nil, false
 }
 
 func GetCacheWithMetric() *CacheWithMetrics {

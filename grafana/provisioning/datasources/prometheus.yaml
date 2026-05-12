@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# Provisioned datasources are reconciled on every Grafana start: hand-editing
+# in the UI works for ad-hoc tweaks but is overwritten on the next restart.
+# Source of truth is this file.
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # Resolves to the compose-network sibling container running on :9090.
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

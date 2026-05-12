@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -50,6 +52,28 @@ type Config struct {
 	VirusTotalKey   string
 	URLScanKey      string
 	SafeBrowsingKey string
+
+	// CacheSWR toggles proactive stale-while-revalidate: on a stale-window hit
+	// (TTL expired but still inside CacheStaleGrace) the cached response is
+	// returned immediately and a background refresh is fired. When false the
+	// resolver behaves exactly like before SWR — stale hits fall through to a
+	// synchronous upstream lookup. Serve-stale-on-error is independent of this
+	// flag and is always on as long as CacheStaleGrace > 0.
+	CacheSWR bool
+	// CacheStaleGrace is how long past expiresAt a positive cache entry is
+	// still allowed to be served (as stale). Negative responses (NXDOMAIN,
+	// NODATA) never go into stale-window — staleUntil is forced to expiresAt
+	// for them so a misbehaving zone cannot pin "does not exist" past TTL.
+	CacheStaleGrace time.Duration
+	// CacheStaleTTL is the TTL written to RRs in a stale response handed back
+	// to the client. RFC 8767 §6 recommends a small value (≤ 30s) so the
+	// client comes back quickly enough for our async refresh to have landed.
+	CacheStaleTTL time.Duration
+	// CacheRefreshConcurrency caps how many background refresh goroutines may
+	// run at once. When the semaphore is full additional refresh attempts are
+	// dropped (counted in metrics) and stale is still served — the next stale
+	// hit will try again.
+	CacheRefreshConcurrency int
 }
 
 func (c *Config) UpdateLogLevel(l string) {
@@ -99,6 +123,55 @@ func getMode() Mode {
 	}
 }
 
+// getBool parses a bool env var with a default. Accepts "true"/"false"
+// case-insensitively; anything else logs and falls back.
+func getBool(key string, fallback bool) bool {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	switch raw {
+	case "":
+		fmt.Println("Используется значение по умолчанию для", key, ":", fallback)
+		return fallback
+	case "true":
+		return true
+	case "false":
+		return false
+	default:
+		log.Printf("%s=%q is not a bool, falling back to %v", key, raw, fallback)
+		return fallback
+	}
+}
+
+// getDuration parses a Go duration (e.g. "24h", "30s") with a default.
+func getDuration(key string, fallback time.Duration) time.Duration {
+	raw := os.Getenv(key)
+	if raw == "" {
+		fmt.Println("Используется значение по умолчанию для", key, ":", fallback)
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		log.Printf("%s=%q is not a duration, falling back to %s", key, raw, fallback)
+		return fallback
+	}
+	return d
+}
+
+// getInt parses a positive int env var with a default. Non-positive or
+// non-numeric values fall back so a typo cannot e.g. disable the refresh pool.
+func getInt(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		fmt.Println("Используется значение по умолчанию для", key, ":", fallback)
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		log.Printf("%s=%q is not a positive int, falling back to %d", key, raw, fallback)
+		return fallback
+	}
+	return n
+}
+
 func getDoHBootstrapIPs() []string {
 	value := os.Getenv("DNS_FILTER_DOH_BOOTSTRAP_IPS")
 	if value == "" {
@@ -143,6 +216,11 @@ func GetConfig() *Config {
 			VirusTotalKey:   os.Getenv("DNS_FILTER_VT_KEY"),
 			URLScanKey:      os.Getenv("DNS_FILTER_URLSCAN_KEY"),
 			SafeBrowsingKey: os.Getenv("DNS_FILTER_SAFE_BROWSING_KEY"),
+
+			CacheSWR:                getBool("DNS_FILTER_CACHE_SWR", true),
+			CacheStaleGrace:         getDuration("DNS_FILTER_CACHE_STALE_GRACE", 24*time.Hour),
+			CacheStaleTTL:           getDuration("DNS_FILTER_CACHE_STALE_TTL", 30*time.Second),
+			CacheRefreshConcurrency: getInt("DNS_FILTER_CACHE_REFRESH_CONCURRENCY", 32),
 		}
 		instance.Enabled.Store(true)
 	})

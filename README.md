@@ -74,7 +74,9 @@ flowchart TD
 ## Features
 
 - DNS filtering with block lists
-- DNS-over-HTTPS upstream resolver
+- DNS-over-HTTPS upstream resolver with singleflight coalescing and
+  stale-while-revalidate caching (RFC 8767) — keeps answering during short
+  Cloudflare/DoH blips and absorbs thundering-herd on TTL expiry
 - Web-based management interface (Vue.js frontend)
 - RESTful API (Go backend)
 - Domain inspection: reputation, registration age, certificate transparency,

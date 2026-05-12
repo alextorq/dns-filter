@@ -30,6 +30,18 @@ func newCacheWithClock(c *clock, capacity int) *Cache {
 	}
 }
 
+// newCacheWithSWR builds a Cache with a non-zero stale grace window so the
+// SWR-specific tests can exercise the Stale return state.
+func newCacheWithSWR(c *clock, capacity int, grace, staleTTL time.Duration) *Cache {
+	return &Cache{
+		inner:          lru_cache.CreateCache[cachedEntry](capacity),
+		negativeTTLCap: DefaultNegativeTTLCap,
+		staleGrace:     grace,
+		staleTTL:       staleTTL,
+		now:            c.now,
+	}
+}
+
 func answerMsg(name string, ttl uint32) *dns.Msg {
 	msg := new(dns.Msg)
 	msg.Question = []dns.Question{{Name: dns.Fqdn(name), Qtype: dns.TypeA, Qclass: dns.ClassINET}}
@@ -375,5 +387,110 @@ func TestCache_AddRefreshesEntry(t *testing.T) {
 	}
 	if ttl := got.Msg.Answer[0].Header().Ttl; ttl != 5 {
 		t.Fatalf("expected TTL based on refresh time (5), got %d", ttl)
+	}
+}
+
+// Inside the stale-window — after TTL but before staleUntil — a positive
+// answer is served as Stale (not Hit) with RR.Ttl clamped to StaleTTL so the
+// client comes back quickly enough for our async refresh to land. This is the
+// core SWR guarantee.
+func TestCache_StaleHitInGraceWindow(t *testing.T) {
+	c := newClock()
+	cache := newCacheWithSWR(c, 10, 10*time.Minute, 30*time.Second)
+
+	cache.Add("k", answerMsg("example.com", 60))
+	// 1s past expiry — well inside the 10-minute grace window.
+	c.advance(61 * time.Second)
+
+	got := cache.Get("k")
+	if got.Hit || !got.Stale {
+		t.Fatalf("expected Stale=true Hit=false within grace, got %+v", got)
+	}
+	if got.Msg == nil {
+		t.Fatalf("Stale return must carry a message")
+	}
+	if ttl := got.Msg.Answer[0].Header().Ttl; ttl == 0 || ttl > 30 {
+		t.Fatalf("stale TTL must be clamped to StaleTTL=30 and non-zero, got %d", ttl)
+	}
+}
+
+// Once we pass staleUntil (expiresAt + StaleGrace) the entry is dead: it must
+// be reported as Expired, not Stale, so the caller knows to block on upstream.
+func TestCache_PastStaleUntilIsExpired(t *testing.T) {
+	c := newClock()
+	cache := newCacheWithSWR(c, 10, 5*time.Second, 30*time.Second)
+
+	cache.Add("k", answerMsg("example.com", 10))
+	// 10s TTL + 5s grace = staleUntil; advance just past it.
+	c.advance(16 * time.Second)
+
+	got := cache.Get("k")
+	if got.Hit || got.Stale {
+		t.Fatalf("expected Expired after staleUntil, got %+v", got)
+	}
+	if !got.Expired {
+		t.Fatalf("expected Expired=true, got %+v", got)
+	}
+}
+
+// Negative responses (NXDOMAIN, NODATA) must never enter the stale-window
+// even when staleGrace > 0. Serving stale "does not exist" past TTL would
+// pin a wrong negative answer for a domain that was just registered.
+func TestCache_NegativeResponsesNeverGoStale(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  *dns.Msg
+	}{
+		{
+			name: "NXDOMAIN",
+			msg:  nxdomainMsg("nope.example.com", 3600, 60),
+		},
+		{
+			name: "NODATA",
+			msg: func() *dns.Msg {
+				m := new(dns.Msg)
+				m.Question = []dns.Question{{Name: "host.example.com.", Qtype: dns.TypeAAAA, Qclass: dns.ClassINET}}
+				m.Rcode = dns.RcodeSuccess
+				m.Ns = []dns.RR{soaRR("example.com", 7200, 60)}
+				return m
+			}(),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newClock()
+			cache := newCacheWithSWR(c, 10, 24*time.Hour, 30*time.Second)
+
+			cache.Add("k", tc.msg)
+			// Past TTL (60s) — under a fresh cache this would be inside the
+			// 24h grace window for a positive answer. For a negative one it
+			// must be Expired, not Stale.
+			c.advance(61 * time.Second)
+			got := cache.Get("k")
+			if got.Stale {
+				t.Fatalf("negative answer must not be served stale: %+v", got)
+			}
+			if !got.Expired {
+				t.Fatalf("expected Expired for %s past TTL, got %+v", tc.name, got)
+			}
+		})
+	}
+}
+
+// staleGrace=0 must be a true no-op: behaviour stays bit-for-bit identical
+// to the pre-SWR cache. Locks in the back-compat guarantee for embedders.
+func TestCache_ZeroGraceDisablesStale(t *testing.T) {
+	c := newClock()
+	cache := newCacheWithSWR(c, 10, 0, 30*time.Second)
+
+	cache.Add("k", answerMsg("example.com", 5))
+	c.advance(6 * time.Second)
+
+	got := cache.Get("k")
+	if got.Stale {
+		t.Fatalf("staleGrace=0 must never produce Stale, got %+v", got)
+	}
+	if !got.Expired {
+		t.Fatalf("expected Expired with staleGrace=0, got %+v", got)
 	}
 }

@@ -3,10 +3,7 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -22,1386 +19,834 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "id": 14,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
       "panels": [],
-      "title": "DNS",
+      "title": "Overview",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus"
-      },
+      "id": 1,
+      "type": "stat",
+      "title": "Total DNS Requests",
+      "description": "Накопленное число DNS-запросов с момента запуска процесса.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        { "expr": "sum(dns_requests_total)", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          }
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": 0 }] }
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 6,
-        "w": 6,
-        "x": 0,
-        "y": 1
-      },
-      "id": 1,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "auto",
         "wideLayout": true
       },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "expr": "sum(dns_requests_total)",
-          "refId": "A"
-        }
-      ],
-      "title": "Total DNS Requests",
-      "type": "stat"
+      "pluginVersion": "12.3.1"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ff8l9cxedyk8wf"
-      },
+      "id": 2,
+      "type": "stat",
+      "title": "Requests / sec",
+      "description": "Текущий RPS DNS-запросов (rate 5m).",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        { "expr": "sum(rate(dns_requests_total[5m]))", "legendFormat": "qps", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
+          "unit": "reqps",
+          "decimals": 2,
+          "color": { "mode": "fixed", "fixedColor": "green" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 6,
-        "w": 10,
-        "x": 6,
-        "y": 1
-      },
-      "id": 7,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(dns_response_size_bytes_bucket[5m])) by (le))",
-          "refId": "A"
-        }
-      ],
-      "title": "Response Size (95th percentile)",
-      "type": "timeseries"
+      "pluginVersion": "12.3.1"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ff8l9cxedyk8wf"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 1
-      },
-      "id": 6,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(dns_request_duration_seconds_bucket[5m])) by (le))",
-          "refId": "A"
-        }
-      ],
-      "title": "Request Duration (95th percentile)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ff8l9cxedyk8wf"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 0,
-        "y": 7
-      },
       "id": 3,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.1",
+      "type": "stat",
+      "title": "Blocked / sec",
+      "description": "Скорость блокировок (NXDOMAIN, выданных фильтром).",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
       "targets": [
-        {
-          "expr": "sum by(rcode) (dns_errors_total)",
-          "refId": "A"
-        }
+        { "expr": "sum(rate(dns_errors_total{rcode=\"NXDOMAIN\"}[5m]))", "legendFormat": "blocked", "refId": "A", "datasource": { "type": "prometheus" } }
       ],
-      "title": "DNS Errors by RCODE",
-      "type": "timeseries"
-    },
-    {
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
+          "unit": "reqps",
+          "decimals": 2,
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Upstream Errors / sec",
+      "description": "Скорость SERVFAIL — отказов апстрима (или внутренних ошибок). Должно быть около 0.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        { "expr": "sum(rate(dns_errors_total{rcode=\"SERVFAIL\"}[5m]))", "legendFormat": "servfail", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 3,
+          "color": { "mode": "thresholds" },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
+              { "color": "green", "value": 0 },
+              { "color": "orange", "value": 0.1 },
+              { "color": "red", "value": 1 }
             ]
           }
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 7
-      },
-      "id": 4,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "wideLayout": true
       },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "expr": "sum by(qtype) (dns_requests_by_type_total)",
-          "refId": "A"
-        }
-      ],
-      "title": "DNS Requests by Type",
-      "type": "timeseries"
+      "pluginVersion": "12.3.1"
     },
     {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "id": 101,
+      "panels": [],
+      "title": "Traffic",
+      "type": "row"
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Requests by Type",
+      "description": "Распределение типов запросов (A, AAAA, HTTPS, PTR, …) — rate 5m.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "targets": [
+        { "expr": "sum by(qtype) (rate(dns_requests_by_type_total[5m]))", "legendFormat": "{{qtype}}", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": { "mode": "none", "group": "A" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Errors by RCODE",
+      "description": "Скорость non-NOERROR ответов. NXDOMAIN = блокировки фильтра, SERVFAIL = ошибки upstream.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "targets": [
+        { "expr": "sum by(rcode) (rate(dns_errors_total[5m]))", "legendFormat": "{{rcode}}", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "NXDOMAIN" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "SERVFAIL" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 102,
+      "panels": [],
+      "title": "Latency & Size",
+      "type": "row"
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Request Duration (p50 / p95 / p99)",
+      "description": "Латентность DNS-обработки. После SWR p95 должна оставаться низкой даже на TTL-границах.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, sum(rate(dns_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A", "datasource": { "type": "prometheus" } },
+        { "expr": "histogram_quantile(0.95, sum(rate(dns_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B", "datasource": { "type": "prometheus" } },
+        { "expr": "histogram_quantile(0.99, sum(rate(dns_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 4,
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "p50" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p95" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p99" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Response Size (p50 / p95)",
+      "description": "Размер DNS-ответа в байтах.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, sum(rate(dns_response_size_bytes_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A", "datasource": { "type": "prometheus" } },
+        { "expr": "histogram_quantile(0.95, sum(rate(dns_response_size_bytes_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "id": 103,
+      "panels": [],
+      "title": "Top Clients",
+      "type": "row"
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Top Clients (by total queries)",
+      "description": "Топ-10 клиентов по числу запросов с момента запуска процесса. IP берётся из лейбла client.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 26 },
+      "targets": [
+        {
+          "expr": "topk(10, sum by(client) (dns_requests_by_client_total))",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": { "type": "prometheus" }
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": { "client": 0, "Value": 1 },
+            "renameByName": {
+              "client": "Client IP",
+              "Value": "Requests"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [{ "field": "Requests", "desc": true }]
+          }
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "custom": {
             "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "footer": {
-              "reducers": []
-            },
+            "cellOptions": { "type": "auto" },
             "inspect": false
           },
           "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 13
-      },
-      "id": 5,
-      "options": {
-        "cellHeight": "sm",
-        "showHeader": true
-      },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "expr": "topk(10, dns_requests_by_client_total)",
-          "refId": "A"
-        }
-      ],
-      "title": "Top Clients",
-      "type": "table"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 19
-      },
-      "id": 9,
-      "panels": [],
-      "title": "Cache",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ff8l9cxedyk8wf"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 20,
-        "w": 8,
-        "h": 8
-      },
-      "id": 11,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "expr": "(sum(rate(dns_cache_hits_total[5m])) + sum(rate(dns_cache_stale_hits_total[5m]))) / clamp_min(sum(rate(dns_cache_hits_total[5m])) + sum(rate(dns_cache_stale_hits_total[5m])) + sum(rate(dns_cache_misses_total[5m])), 1) * 100",
-          "legendFormat": "hit ratio (incl. stale)",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus"
-          }
-        }
-      ],
-      "title": "Cache Hit Ratio",
-      "type": "stat",
-      "description": "Доля запросов, обслуженных из кэша (Fresh + Stale) от всех лукапов. Stale-hits добавлены в числитель после PR-3."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ff8l9cxedyk8wf"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 20,
-        "w": 8,
-        "h": 8
-      },
-      "id": 10,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "dns_cache_size{} ",
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Cache Size",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ff8l9cxedyk8wf"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 28,
-        "w": 12,
-        "h": 8
-      },
-      "id": 8,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "expr": "sum(rate(dns_cache_hits_total[5m]))",
-          "legendFormat": "fresh hits",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus"
-          }
-        },
-        {
-          "expr": "sum(rate(dns_cache_stale_hits_total[5m]))",
-          "legendFormat": "stale hits",
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus"
-          }
-        },
-        {
-          "expr": "sum(rate(dns_cache_misses_total[5m]))",
-          "legendFormat": "misses (cold+expired)",
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus"
-          }
-        },
-        {
-          "expr": "sum(rate(dns_cache_expired_total[5m]))",
-          "legendFormat": "expired (subset of misses)",
-          "refId": "D",
-          "datasource": {
-            "type": "prometheus"
-          }
-        }
-      ],
-      "title": "Cache Hits vs Misses",
-      "type": "timeseries",
-      "description": "Разбивка событий кэша. expired — подмножество misses (запись существовала, но TTL+grace истёк)."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ff8l9cxedyk8wf"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 28,
-        "w": 12,
-        "h": 8
-      },
-      "id": 12,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "rate(dns_cache_evictions_total[5m])",
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Cache Evictions",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 55,
-        "w": 24,
-        "h": 1
-      },
-      "id": 15,
-      "panels": [],
-      "title": "DB",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ff8l9cxedyk8wf"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 6,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 56,
-        "w": 24,
-        "h": 8
-      },
-      "id": 13,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "sqlite_file_size_bytes",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "legendFormat": "__auto",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "Db size",
-      "type": "timeseries"
-    },
-    {
-      "id": 16,
-      "type": "timeseries",
-      "title": "Stale Hits Rate (SWR)",
-      "gridPos": {
-        "x": 16,
-        "y": 20,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(dns_cache_stale_hits_total[5m]))",
-          "legendFormat": "stale hits/s",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus"
-          }
-        }
-      ],
-      "description": "Скорость попаданий в stale-окно. Растёт после истечения TTL у популярных доменов — SWR работает.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "lineInterpolation": "smooth",
-            "fillOpacity": 15
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 17,
-      "type": "row",
-      "title": "SWR (Stale-While-Revalidate)",
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 36,
-        "w": 24,
-        "h": 1
-      },
-      "panels": []
-    },
-    {
-      "id": 18,
-      "type": "timeseries",
-      "title": "Background Refresh by Result",
-      "gridPos": {
-        "x": 0,
-        "y": 37,
-        "w": 12,
-        "h": 9
-      },
-      "datasource": {
-        "type": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(dns_swr_refresh_total{result=\"ok\"}[5m]))",
-          "legendFormat": "ok",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus"
-          }
-        },
-        {
-          "expr": "sum(rate(dns_swr_refresh_total{result=\"error\"}[5m]))",
-          "legendFormat": "error",
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus"
-          }
-        },
-        {
-          "expr": "sum(rate(dns_swr_refresh_total{result=\"dropped\"}[5m]))",
-          "legendFormat": "dropped",
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus"
-          }
-        }
-      ],
-      "description": "Исходы фоновых рефрешей SWR. dropped > 0 = семафор переполнен; error > 0 = upstream нестабилен.",
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "lineInterpolation": "smooth",
-            "fillOpacity": 50,
-            "stacking": {
-              "mode": "normal",
-              "group": "A"
-            }
-          },
-          "unit": "cps"
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
         },
         "overrides": [
           {
-            "matcher": {
-              "id": "byName",
-              "options": "ok"
-            },
+            "matcher": { "id": "byName", "options": "Requests" },
             "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "green"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "error"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "red"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "dropped"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "orange"
-                }
-              }
+              { "id": "unit", "value": "short" },
+              { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient" } },
+              { "id": "color", "value": { "mode": "continuous-GrYlRd" } }
             ]
           }
         ]
       },
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": { "show": false, "reducer": ["sum"], "countRows": false, "fields": "" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "id": 104,
+      "panels": [],
+      "title": "Cache",
+      "type": "row"
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Cache Hit Ratio",
+      "description": "Доля запросов, обслуженных из кэша (Fresh + Stale) от всех лукапов. Stale-hits в числителе после PR-3.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 36 },
+      "targets": [
+        {
+          "expr": "(sum(rate(dns_cache_hits_total[5m])) + sum(rate(dns_cache_stale_hits_total[5m]))) / clamp_min(sum(rate(dns_cache_hits_total[5m])) + sum(rate(dns_cache_stale_hits_total[5m])) + sum(rate(dns_cache_misses_total[5m])), 1) * 100",
+          "legendFormat": "hit ratio (incl. stale)",
+          "refId": "A",
+          "datasource": { "type": "prometheus" }
         }
-      }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "orange", "value": 50 },
+              { "color": "green", "value": 80 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Cache Size",
+      "description": "Текущее число записей в DNS-кэше (cap = 1500).",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 36 },
+      "targets": [
+        { "expr": "dns_cache_size", "legendFormat": "entries", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Stale Hits Rate (SWR)",
+      "description": "Скорость попаданий в stale-окно. Растёт после истечения TTL у популярных доменов — SWR работает.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 36 },
+      "targets": [
+        { "expr": "sum(rate(dns_cache_stale_hits_total[5m]))", "legendFormat": "stale hits/s", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "fixed", "fixedColor": "yellow" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Cache Hits vs Misses",
+      "description": "Разбивка событий кэша. expired — подмножество misses (запись существовала, но TTL+grace истёк).",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "targets": [
+        { "expr": "sum(rate(dns_cache_hits_total[5m]))", "legendFormat": "fresh hits", "refId": "A", "datasource": { "type": "prometheus" } },
+        { "expr": "sum(rate(dns_cache_stale_hits_total[5m]))", "legendFormat": "stale hits", "refId": "B", "datasource": { "type": "prometheus" } },
+        { "expr": "sum(rate(dns_cache_misses_total[5m]))", "legendFormat": "misses (cold+expired)", "refId": "C", "datasource": { "type": "prometheus" } },
+        { "expr": "sum(rate(dns_cache_expired_total[5m]))", "legendFormat": "expired (subset of misses)", "refId": "D", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "fresh hits" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "stale hits" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "misses (cold+expired)" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "expired (subset of misses)" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Cache Evictions",
+      "description": "Скорость вытеснений LRU. Большое значение = маленький cap или очень разнообразный трафик.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "targets": [
+        { "expr": "sum(rate(dns_cache_evictions_total[5m]))", "legendFormat": "evictions/s", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "fixed", "fixedColor": "purple" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 52 },
+      "id": 105,
+      "panels": [],
+      "title": "SWR (Stale-While-Revalidate)",
+      "type": "row"
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Background Refresh by Result",
+      "description": "Исходы фоновых рефрешей SWR. dropped > 0 = семафор переполнен; error > 0 = upstream нестабилен.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 53 },
+      "targets": [
+        { "expr": "sum(rate(dns_swr_refresh_total{result=\"ok\"}[5m]))", "legendFormat": "ok", "refId": "A", "datasource": { "type": "prometheus" } },
+        { "expr": "sum(rate(dns_swr_refresh_total{result=\"error\"}[5m]))", "legendFormat": "error", "refId": "B", "datasource": { "type": "prometheus" } },
+        { "expr": "sum(rate(dns_swr_refresh_total{result=\"dropped\"}[5m]))", "legendFormat": "dropped", "refId": "C", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 50,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": { "mode": "normal", "group": "A" }
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "ok" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "error" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "dropped" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Serve-Stale-on-Error Rate",
+      "description": "Скорость отдачи stale при упавшем upstream (RFC 8767). Скачок = сбой DoH; flat 0 = норма.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 53 },
+      "targets": [
+        { "expr": "sum(rate(dns_serve_stale_on_error_total[5m]))", "legendFormat": "serve-stale/s", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 30,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 62 },
+      "id": 106,
+      "panels": [],
+      "title": "Resilience (Coalescing & Stale)",
+      "type": "row"
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Singleflight Coalesced Rate",
+      "description": "Запросы, чей upstream-вызов был сшит с уже летящим. Рост = thundering herd обработан корректно (PR-1).",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 63 },
+      "targets": [
+        { "expr": "sum(rate(dns_singleflight_coalesced_total[5m]))", "legendFormat": "coalesced/s", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Coalesced Total",
+      "description": "Всего запросов, сшитых через singleflight с начала процесса.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 4, "x": 16, "y": 63 },
+      "targets": [
+        { "expr": "sum(dns_singleflight_coalesced_total)", "legendFormat": "total", "refId": "A", "datasource": { "type": "prometheus" } }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
     },
     {
       "id": 19,
-      "type": "timeseries",
-      "title": "Serve-Stale-on-Error Rate",
-      "gridPos": {
-        "x": 12,
-        "y": 37,
-        "w": 12,
-        "h": 9
-      },
-      "datasource": {
-        "type": "prometheus"
-      },
+      "type": "stat",
+      "title": "Stale-on-Error Total",
+      "description": "Всего ответов, отданных из stale при сбое upstream с начала процесса.",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 63 },
       "targets": [
-        {
-          "expr": "sum(rate(dns_serve_stale_on_error_total[5m]))",
-          "legendFormat": "serve-stale/s",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus"
-          }
-        }
+        { "expr": "sum(dns_serve_stale_on_error_total)", "legendFormat": "total", "refId": "A", "datasource": { "type": "prometheus" } }
       ],
-      "description": "Скорость отдачи stale при упавшем upstream (RFC 8767). Скачок = сбой DoH; flat 0 = норма.",
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "lineInterpolation": "smooth",
-            "fillOpacity": 30
-          },
-          "unit": "cps",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "orange"
-          }
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": 0 }] }
         },
         "overrides": []
       },
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 71 },
+      "id": 107,
+      "panels": [],
+      "title": "DB",
+      "type": "row"
     },
     {
       "id": 20,
-      "type": "row",
-      "title": "Resilience (Coalescing & Stale)",
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 46,
-        "w": 24,
-        "h": 1
-      },
-      "panels": []
-    },
-    {
-      "id": 21,
       "type": "timeseries",
-      "title": "Singleflight Coalesced Rate",
-      "gridPos": {
-        "x": 0,
-        "y": 47,
-        "w": 16,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus"
-      },
+      "title": "DB Size",
+      "description": "Размер SQLite-файла на диске (sqlite_file_size_bytes).",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 72 },
       "targets": [
-        {
-          "expr": "sum(rate(dns_singleflight_coalesced_total[5m]))",
-          "legendFormat": "coalesced/s",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus"
-          }
-        }
+        { "expr": "sqlite_file_size_bytes", "legendFormat": "filter.sqlite", "refId": "A", "datasource": { "type": "prometheus" } }
       ],
-      "description": "Запросы, чей upstream-вызов был сшит с уже летящим. Рост = thundering herd обработан корректно (PR-1).",
       "fieldConfig": {
         "defaults": {
+          "unit": "bytes",
+          "color": { "mode": "fixed", "fixedColor": "purple" },
           "custom": {
+            "drawStyle": "line",
             "lineInterpolation": "smooth",
-            "fillOpacity": 25
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true
           },
-          "unit": "cps",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          }
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
         },
         "overrides": []
       },
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 22,
-      "type": "stat",
-      "title": "Coalesced Total",
-      "gridPos": {
-        "x": 16,
-        "y": 47,
-        "w": 4,
-        "h": 8
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false },
+        "tooltip": { "mode": "single", "sort": "none" }
       },
-      "datasource": {
-        "type": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(dns_singleflight_coalesced_total)",
-          "legendFormat": "total",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus"
-          }
-        }
-      ],
-      "description": "Всего запросов, сшитых через singleflight с начала процесса.",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        }
-      }
-    },
-    {
-      "id": 23,
-      "type": "stat",
-      "title": "Stale-on-Error Total",
-      "gridPos": {
-        "x": 20,
-        "y": 47,
-        "w": 4,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(dns_serve_stale_on_error_total)",
-          "legendFormat": "total",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus"
-          }
-        }
-      ],
-      "description": "Всего ответов, отданных из stale при сбое upstream с начала процесса.",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "orange"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        }
-      }
+      "pluginVersion": "12.3.1"
     }
   ],
   "preload": false,
-  "refresh": "5s",
+  "refresh": "30s",
   "schemaVersion": 42,
-  "tags": [
-    "dns",
-    "prometheus"
-  ],
-  "templating": {
-    "list": []
-  },
-  "time": {
-    "from": "now-6h",
-    "to": "now"
-  },
+  "tags": ["dns", "prometheus"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
   "title": "DNS Filter",
   "uid": "5e4db19c-cddd-46b6-a570-22b02ebf2b4e",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

@@ -428,6 +428,26 @@
                 }
             }
         },
+        "/api/dns-cache/clear": {
+            "post": {
+                "description": "Drops every entry from the in-memory DNS response cache. The next query for each name will be resolved upstream.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dns-cache"
+                ],
+                "summary": "Clear DNS response cache",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.ClearCacheResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/dns-records": {
             "post": {
                 "consumes": [
@@ -1451,6 +1471,15 @@
                     "type": "boolean"
                 },
                 "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.ClearCacheResponse": {
+            "type": "object",
+            "properties": {
+                "cleared": {
+                    "description": "Cleared is the number of entries removed by this call. Zero is a\nlegitimate outcome (operator flushed an already-cold cache) and the\nfrontend differentiates it from an error in the toast text.",
                     "type": "integer"
                 }
             }

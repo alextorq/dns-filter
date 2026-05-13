@@ -5,6 +5,7 @@ import (
 	eventsWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	clientsWeb "github.com/alextorq/dns-filter/clients/web"
 	dbWeb "github.com/alextorq/dns-filter/db/web"
+	dnsCacheWeb "github.com/alextorq/dns-filter/dns-cache/web"
 	_ "github.com/alextorq/dns-filter/docs"
 	inspectWeb "github.com/alextorq/dns-filter/domain-inspect/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
@@ -68,6 +69,8 @@ func CreateServer() *gin.Engine {
 		api.POST("/clients/discover", clientsWeb.Discover)
 
 		api.GET("/config/db/download", dbWeb.DownloadDb)
+
+		api.POST("/dns-cache/clear", dnsCacheWeb.ClearCache)
 
 		api.GET("/domain/inspect", inspectWeb.Inspect)
 	}

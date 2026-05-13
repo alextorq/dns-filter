@@ -30,6 +30,7 @@ import type {
   WebChangeSourceActiveRequest,
   WebChangeSourceActiveResponse,
   WebChangeSuggestStatusRequest,
+  WebClearCacheResponse,
   WebClientResponse,
   WebCreateClientRequest,
   WebDeleteClientRequest,
@@ -287,6 +288,21 @@ export class Api<
   configLoggerGetLevelCreate = (params: RequestParams = {}) =>
     this.request<WebLogLevelResponse, any>({
       path: `/api/config/logger/get-level`,
+      method: "POST",
+      format: "json",
+      ...params,
+    });
+  /**
+   * @description Drops every entry from the in-memory DNS response cache. The next query for each name will be resolved upstream.
+   *
+   * @tags dns-cache
+   * @name DnsCacheClearCreate
+   * @summary Clear DNS response cache
+   * @request POST:/api/dns-cache/clear
+   */
+  dnsCacheClearCreate = (params: RequestParams = {}) =>
+    this.request<WebClearCacheResponse, any>({
+      path: `/api/dns-cache/clear`,
       method: "POST",
       format: "json",
       ...params,

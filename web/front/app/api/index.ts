@@ -134,6 +134,8 @@ class Api {
 
     inspectDomain = (domain: string, abortSignal: AbortSignal) =>
         this.client.domainInspectList({ domain }, { signal: abortSignal });
+
+    clearDnsCache = () => this.client.dnsCacheClearCreate();
 }
 
 export const api = new Api();

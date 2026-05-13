@@ -477,6 +477,43 @@ func TestCache_NegativeResponsesNeverGoStale(t *testing.T) {
 	}
 }
 
+// Clear must wipe every entry, leave the cache usable, and report the count
+// it removed so the admin endpoint can echo it back to the operator.
+func TestCache_ClearWipesAllEntries(t *testing.T) {
+	c := newClock()
+	cache := newCacheWithClock(c, 10)
+
+	cache.Add("a", answerMsg("a.example.com", 60))
+	cache.Add("b", answerMsg("b.example.com", 60))
+
+	if n := cache.Clear(); n != 2 {
+		t.Fatalf("expected Clear to return 2, got %d", n)
+	}
+	if got := cache.Get("a"); got.Hit || got.Stale || got.Expired {
+		t.Fatalf("expected plain miss after Clear, got %+v", got)
+	}
+	if l := cache.Len(); l != 0 {
+		t.Fatalf("expected Len 0 after Clear, got %d", l)
+	}
+
+	// Cache must remain usable: a fresh Add after Clear behaves like a cold
+	// insert. Without this we could silently break the global singleton.
+	cache.Add("c", answerMsg("c.example.com", 60))
+	if got := cache.Get("c"); !got.Hit {
+		t.Fatalf("cache unusable after Clear, expected hit, got %+v", got)
+	}
+}
+
+// Edge case: Clear on a cold cache must be a 0-returning no-op so the
+// admin endpoint reports "nothing to clear" instead of misleading numbers.
+func TestCache_ClearEmptyReturnsZero(t *testing.T) {
+	c := newClock()
+	cache := newCacheWithClock(c, 10)
+	if n := cache.Clear(); n != 0 {
+		t.Fatalf("expected 0 on empty Clear, got %d", n)
+	}
+}
+
 // staleGrace=0 must be a true no-op: behaviour stays bit-for-bit identical
 // to the pre-SWR cache. Locks in the back-compat guarantee for embedders.
 func TestCache_ZeroGraceDisablesStale(t *testing.T) {

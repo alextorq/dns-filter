@@ -98,6 +98,28 @@ func (c *CacheWithMetrics) Get(key string) (*dns.Msg, bool) {
 	return nil, false
 }
 
+// Clear flushes the underlying cache and resyncs the size gauge. Returns the
+// number of entries that were evicted so the admin UI / API can report it.
+// The eviction counter is intentionally not bumped here: manual flushes are
+// an operator action, not LRU pressure, and conflating the two would make
+// the dns_cache_evictions_total metric impossible to alert on.
+//
+// We Set() the gauge to Len() rather than 0 so a concurrent Add that lands
+// between our Clear and our gauge write doesn't leave the gauge stuck at 0
+// while the LRU has an entry. The gauge can still race with other writers
+// (Prometheus gauges aren't transactional), but it converges to the real
+// size on the next mutation.
+func (c *CacheWithMetrics) Clear() int {
+	n := c.inner.Clear()
+	cacheSize.Set(float64(c.inner.Len()))
+	return n
+}
+
+// Len reports the current entry count from the underlying cache.
+func (c *CacheWithMetrics) Len() int {
+	return c.inner.Len()
+}
+
 // Lookup is the SWR-aware accessor: Fresh and Stale both carry a Msg; Stale
 // also bumps the dedicated stale-hits counter so we can see when SWR is
 // firing on dashboards. Expired and Miss are reported through the

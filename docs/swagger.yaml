@@ -325,6 +325,15 @@ definitions:
       id:
         type: integer
     type: object
+  web.ClearCacheResponse:
+    properties:
+      cleared:
+        description: |-
+          Cleared is the number of entries removed by this call. Zero is a
+          legitimate outcome (operator flushed an already-cold cache) and the
+          frontend differentiates it from an error in the toast text.
+        type: integer
+    type: object
   web.ClientResponse:
     properties:
       client:
@@ -784,6 +793,20 @@ paths:
       summary: Get log level
       tags:
       - config
+  /api/dns-cache/clear:
+    post:
+      description: Drops every entry from the in-memory DNS response cache. The next
+        query for each name will be resolved upstream.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.ClearCacheResponse'
+      summary: Clear DNS response cache
+      tags:
+      - dns-cache
   /api/dns-records:
     post:
       consumes:

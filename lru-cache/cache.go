@@ -75,12 +75,23 @@ func (c *LRUCache[T]) Get(key string) (T, bool) {
 
 // Clear discards every entry. Used by callers that need a hard
 // invalidation point (e.g. block-list mutations that flip the cached
-// verdict for a domain).
-func (c *LRUCache[T]) Clear() {
+// verdict for a domain). Returns how many entries were evicted so
+// callers can report progress (e.g. a manual cache-flush endpoint).
+func (c *LRUCache[T]) Clear() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	n := c.list.Len()
 	c.list.Init()
 	c.items = make(map[string]*list.Element)
+	return n
+}
+
+// Len is a stable, lock-respecting accessor for the current entry count.
+// list.Len() is O(1) so we expose it directly.
+func (c *LRUCache[T]) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.list.Len()
 }
 
 func (c *LRUCache[T]) Delete(key string) bool {

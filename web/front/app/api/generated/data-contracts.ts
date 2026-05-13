@@ -219,6 +219,15 @@ export interface WebChangeSuggestStatusRequest {
   id?: number;
 }
 
+export interface WebClearCacheResponse {
+  /**
+   * Cleared is the number of entries removed by this call. Zero is a
+   * legitimate outcome (operator flushed an already-cold cache) and the
+   * frontend differentiates it from an error in the toast text.
+   */
+  cleared?: number;
+}
+
 export interface WebClientResponse {
   client?: DbClient;
 }

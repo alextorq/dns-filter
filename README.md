@@ -91,6 +91,9 @@ flowchart TD
   scoring rules.
 - Event metrics (Prometheus)
 - Configurable logging levels
+- Manual DNS-cache flush from the Settings page (`POST /api/dns-cache/clear`) —
+  drops every entry in the in-memory response cache, useful after rotating
+  upstream records with a long TTL
 - SQLite database for persistent storage
 - Dockerized deployment
 

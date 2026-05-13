@@ -2,6 +2,7 @@
 import { api } from "~/api";
 import { useComponentStatusWithLoading } from "~~/composables/use-component-status-with-loading";
 import DownloadDb from "~/db/components/download-db/index.vue";
+import ClearDnsCache from "~/dns-cache/components/clear-cache/index.vue";
 import { getErrorMessage } from "~~/utils/get-error-message";
 
 const { isLoading, createLoadingRequest } = useComponentStatusWithLoading();
@@ -82,6 +83,20 @@ onMounted(loadLogLevel);
                     @update:model-value="changeLogLevel"
                 />
             </UFormField>
+        </UCard>
+
+        <UCard>
+            <template #header>
+                <div class="space-y-1">
+                    <h2 class="text-base font-semibold text-highlighted">DNS cache</h2>
+                    <p class="text-sm text-muted">
+                        Flush the in-memory response cache. Use this after changing upstream DNS
+                        records that have a long TTL.
+                    </p>
+                </div>
+            </template>
+
+            <ClearDnsCache />
         </UCard>
 
         <UCard>

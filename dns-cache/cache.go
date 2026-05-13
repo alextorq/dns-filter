@@ -189,6 +189,20 @@ func (c *Cache) Lookup(key string) Lookup {
 	}
 }
 
+// Clear evicts every cached entry and returns how many were removed, so a
+// manual-flush caller (e.g. the admin UI) can show "cleared N entries". It
+// is safe to call concurrently with Get/Add — the LRU serialises mutations
+// under its own mutex.
+func (c *Cache) Clear() int {
+	return c.inner.Clear()
+}
+
+// Len reports the current entry count. Useful for exposing the post-flush
+// size and for assertions in tests.
+func (c *Cache) Len() int {
+	return c.inner.Len()
+}
+
 // computeCacheTTL implements the cacheability rules:
 //   - Truncated (TC=1) → not cached: the message is incomplete and the
 //     client is expected to retry over TCP (RFC 7766).

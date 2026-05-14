@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	easy_list "github.com/alextorq/dns-filter/source/business/use-cases/sync/easy-list"
 )
 
 var httpClient = &http.Client{Timeout: 60 * time.Second}
@@ -44,6 +46,12 @@ func ParseIpHostsLine(r io.Reader) []string {
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
 			domain := strings.ToLower(parts[1])
+			// Та же PSL-защита, что и в EasyList-парсере: запись вроде
+			// "0.0.0.0 ru" положила бы голый TLD в блок-лист и спровоцировала
+			// массовый auto-block через subdomainAncestors.
+			if !easy_list.IsSafeDNSDomain(domain) {
+				continue
+			}
 			// В DNS запросах домены обычно с точкой в конце: "domain.com."
 			result = append(result, domain+".")
 		}

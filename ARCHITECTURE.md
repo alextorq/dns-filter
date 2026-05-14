@@ -237,6 +237,17 @@ type BlockDomainEvent struct {
   в blocklist, поддомен почти наверняка из той же семьи (самый
   детерминированный сигнал — bypass score-гейта).
 
+**PSL-guard.** `subdomainAncestors` (см. `buildBlockedIndex`) выбрасывает
+из subdomain-сета любой `blocked`, который сам является public suffix
+(`golang.org/x/net/publicsuffix`: `ru`, `co.uk`, `xyz`, …). Иначе
+поломанное правило источника (например `||ru^$third-party` из RuAdList,
+которое парсер EasyList должен был отбросить — см. `IsSafeDNSDomain`) или
+ручная ошибка пользователя сделают TLD «родителем» каждого `*.ru` домена
+из allow-events, и `ShouldAutoBlock` оптом промоутит весь рунет в
+blocklist (инцидент 2026-05-14, 25 авто-блокировок за один прогон).
+Защита продублирована: парсер не пускает PSL в `block_lists`, индекс не
+доверяет существующим записям.
+
 Остальные предложения (score в `[30, 60)` без subdomain-of-blocked)
 по-прежнему уходят в `suggest_blocks` для ручной модерации через
 `POST /api/suggest-to-block/add-to-block`. После авто-промоушенов

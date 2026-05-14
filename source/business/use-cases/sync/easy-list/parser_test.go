@@ -74,6 +74,29 @@ example.com##.banner
 `,
 			expected: []string{"blocked.com.", "weird-port.com."},
 		},
+		{
+			// Regression: ruadlist+easylist.txt contains rules like "||ru^$third-party"
+			// that previously left a bare "ru." in block_lists, which then matched
+			// every *.ru domain via subdomainAncestors and triggered mass auto-block.
+			name: "Drop bare public suffixes (ICANN TLD / eTLD)",
+			input: `
+||ru^$third-party
+||xyz^
+||co.uk^
+||ozone.ru^
+||example.co.uk^
+`,
+			expected: []string{"ozone.ru.", "example.co.uk."},
+		},
+		{
+			name: "Drop unknown single-label tokens that yield no eTLD+1",
+			input: `
+||localhost^
+||internal^
+||valid.tld.com^
+`,
+			expected: []string{"valid.tld.com."},
+		},
 	}
 
 	for _, tt := range tests {

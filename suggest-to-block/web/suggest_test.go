@@ -114,7 +114,7 @@ func TestAddToBlock_NewDomain_AddsAndDeactivates(t *testing.T) {
 		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
 	}
 
-	if blocked_domain_db.DomainNotExist(domain) {
+	if blocked_domain_db.NewRepo(app_db.GetConnection()).DomainNotExist(domain) {
 		t.Fatal("domain should be present in blocklist")
 	}
 

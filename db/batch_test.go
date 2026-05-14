@@ -165,3 +165,59 @@ func TestBatchOn_OnConflictWithExplicitColumn(t *testing.T) {
 // Public BatchInsert / BatchUpsert are thin wrappers around batchOn(GetConnection(), ...);
 // the singleton makes them awkward to test here. Their integration is exercised by
 // the existing tests in blocked-domain/db, allow-domain/db, and suggest-to-block/db.
+
+// The *On variants accept the connection explicitly so they can be unit-tested
+// directly without touching the global singleton.
+
+func TestBatchInsertOn_InsertsAll(t *testing.T) {
+	conn := newTestDB(t)
+	items := []testItem{{Name: "a", Age: 1}, {Name: "b", Age: 2}}
+	if err := BatchInsertOn(conn, items, 100); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if got := countItems(t, conn); got != 2 {
+		t.Errorf("expected 2 rows, got %d", got)
+	}
+}
+
+func TestBatchInsertOn_DuplicateUniqueErrors(t *testing.T) {
+	conn := newTestDB(t)
+	if err := BatchInsertOn(conn, []testItem{{Name: "a"}}, 100); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := BatchInsertOn(conn, []testItem{{Name: "a"}}, 100); err == nil {
+		t.Fatal("expected error on duplicate unique key, got nil")
+	}
+}
+
+func TestBatchUpsertOn_IgnoresDuplicates(t *testing.T) {
+	conn := newTestDB(t)
+	if err := BatchUpsertOn(conn, []testItem{{Name: "a", Age: 1}}, 100, "name"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Re-insert with the same Name must be silently ignored, not error.
+	if err := BatchUpsertOn(conn, []testItem{{Name: "a", Age: 99}, {Name: "b", Age: 2}}, 100, "name"); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if got := countItems(t, conn); got != 2 {
+		t.Errorf("expected 2 rows, got %d", got)
+	}
+	// And the original row's Age stays untouched (DoNothing, not DoUpdate).
+	var existing testItem
+	if err := conn.Where("name = ?", "a").First(&existing).Error; err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if existing.Age != 1 {
+		t.Errorf("expected Age=1 preserved, got %d", existing.Age)
+	}
+}
+
+func TestBatchUpsertOn_EmptyIsNoOp(t *testing.T) {
+	conn := newTestDB(t)
+	if err := BatchUpsertOn(conn, []testItem{}, 100, "name"); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if got := countItems(t, conn); got != 0 {
+		t.Errorf("expected 0 rows, got %d", got)
+	}
+}

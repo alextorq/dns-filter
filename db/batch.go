@@ -8,23 +8,36 @@ import (
 // DefaultBatchSize is used by BatchInsert/BatchUpsert when batchSize <= 0.
 const DefaultBatchSize = 1000
 
-// BatchInsert inserts items in batches inside a single transaction.
-// Returns nil if items is empty. batchSize <= 0 falls back to DefaultBatchSize.
-func BatchInsert[T any](items []T, batchSize int) error {
-	return batchOn(GetConnection(), items, batchSize, nil)
+// BatchInsertOn inserts items in batches inside a single transaction on the
+// given connection. Returns nil if items is empty. batchSize <= 0 falls back
+// to DefaultBatchSize.
+func BatchInsertOn[T any](conn *gorm.DB, items []T, batchSize int) error {
+	return batchOn(conn, items, batchSize, nil)
 }
 
-// BatchUpsert inserts items in batches, ignoring rows that violate the unique
-// constraint on conflictColumns. With no conflictColumns, any unique violation
-// is silently skipped (SQLite "INSERT OR IGNORE" semantics).
-// Wraps all batches in a single transaction so SQLite issues one fsync at commit
-// instead of one per batch.
-func BatchUpsert[T any](items []T, batchSize int, conflictColumns ...string) error {
+// BatchUpsertOn inserts items in batches on the given connection, ignoring
+// rows that violate the unique constraint on conflictColumns. With no
+// conflictColumns, any unique violation is silently skipped (SQLite
+// "INSERT OR IGNORE" semantics). All batches run inside a single transaction.
+func BatchUpsertOn[T any](conn *gorm.DB, items []T, batchSize int, conflictColumns ...string) error {
 	cols := make([]clause.Column, 0, len(conflictColumns))
 	for _, c := range conflictColumns {
 		cols = append(cols, clause.Column{Name: c})
 	}
-	return batchOn(GetConnection(), items, batchSize, &clause.OnConflict{Columns: cols, DoNothing: true})
+	return batchOn(conn, items, batchSize, &clause.OnConflict{Columns: cols, DoNothing: true})
+}
+
+// Deprecated: use BatchInsertOn(conn, items, batchSize) so the connection is
+// passed in explicitly. This wrapper exists only until allow-domain / auth /
+// suggest-to-block migrate off the singleton.
+func BatchInsert[T any](items []T, batchSize int) error {
+	return BatchInsertOn(GetConnection(), items, batchSize)
+}
+
+// Deprecated: use BatchUpsertOn(conn, items, batchSize, conflictColumns...).
+// Same rationale as BatchInsert above.
+func BatchUpsert[T any](items []T, batchSize int, conflictColumns ...string) error {
+	return BatchUpsertOn(GetConnection(), items, batchSize, conflictColumns...)
 }
 
 func batchOn[T any](conn *gorm.DB, items []T, batchSize int, onConflict *clause.OnConflict) error {

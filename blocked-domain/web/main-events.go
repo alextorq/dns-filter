@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/alextorq/dns-filter/blocked-domain/db"
-	"github.com/alextorq/dns-filter/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,9 +13,8 @@ import (
 // @Produce      json
 // @Success      200 {object} GetAmountResponse
 // @Router       /api/events/block/amount [post]
-func GetAmount(c *gin.Context) {
-	amount := db.GetAmountRows()
-
+func (h *Handlers) GetAmount(c *gin.Context) {
+	amount := h.Repo.GetEventsAmount()
 	c.JSON(http.StatusOK, GetAmountResponse{Amount: amount})
 }
 
@@ -28,12 +25,11 @@ func GetAmount(c *gin.Context) {
 // @Success      200 {object} GetAmountByDomainResponse
 // @Failure      500 {object} ErrorResponse
 // @Router       /api/events/block/amount-by-group [post]
-func GetAmountByDomain(c *gin.Context) {
-	l := logger.GetLogger()
-	groups, err := db.GetRowsByDomains()
+func (h *Handlers) GetAmountByDomain(c *gin.Context) {
+	groups, err := h.Repo.GetEventsByDomain()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: "Failed to retrieve data"})
-		l.Error(fmt.Errorf("failed to get rows by domains: %w", err))
+		h.Log.Error(fmt.Errorf("failed to get rows by domains: %w", err))
 		return
 	}
 

@@ -498,3 +498,30 @@ func main() {
 4. **In-memory словари** — для Bloom filter и списка исключений клиентов (быстрый доступ без блокировок)
 
 5. **Singleton паттерн** — для фильтра, логгера, кэшей (sync.Once)
+
+6. **Постепенный переход на DI (выполняется).** Глобальный `db.GetConnection()`
+   делает unit-тесты use-case'ов невозможными без in-memory sqlite и скрывает
+   граф зависимостей. Пилот переведён в `blocked-domain/`:
+   - `blocked-domain/db.Repo` — конкретный адаптер хранилища, принимает
+     `*gorm.DB` через `NewRepo(conn)`.
+   - Use-case'ы (`blocked-domain/business/use-cases/*`) — функции, зависящие
+     от **узких output-портов**, объявленных рядом с потребителем
+     (например `create_domain.Repo interface{ DomainNotExist; CreateDomain }`).
+     `Repo` удовлетворяет всем портам через structural typing — «accept
+     interfaces, return structs».
+   - HTTP-хендлеры (`blocked-domain/web.Handlers`) — структура с полями-
+     зависимостями (`Repo`, `Log`, `RefreshFilter func() error`); методы
+     этого типа регистрируются роутами в `web/server.go`.
+   - Тесты use-case'ов — на фейках без sqlite; репозиторий покрыт
+     отдельными интеграционными тестами с in-memory `:memory:`-sqlite
+     (`blocked-domain/db/repo_test.go`).
+   - `BatchInsertOn` / `BatchUpsertOn` (в `db/batch.go`) — DI-варианты,
+     принимающие `*gorm.DB` явно. Старые `BatchInsert`/`BatchUpsert`
+     остались как thin-wrapper'ы вокруг singleton для пока не
+     переписанных потребителей.
+
+   `blocked-domain/blocked_domain.go` временно работает shim'ом
+   (singleton-`Repo` на каждый вызов), чтобы внешние потребители
+   (`filter`, `suggest-to-block`, `source`) продолжали компилироваться до
+   их собственного перевода на DI. Этот файл удаляется в следующем PR
+   вместе с переключением остальных модулей.

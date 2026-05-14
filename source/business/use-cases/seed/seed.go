@@ -15,6 +15,7 @@ func SeedSyncs(db *gorm.DB) {
 		{Name: syncDb.SourceHaGeZiMulti, Active: true},
 		{Name: syncDb.SourceUser, Active: true},
 		{Name: syncDb.SourceSuggestedToBlock, Active: true},
+		{Name: syncDb.SourceAutoBlocked, Active: true},
 	}
 
 	for _, item := range defaults {

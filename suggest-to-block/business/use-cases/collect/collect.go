@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 // Reason is a single signal that contributed to a suggestion. Code identifies
@@ -259,6 +261,16 @@ func buildBlockedIndex(blocked []string) *blockedIndex {
 		similarBuckets: make(map[string][]similarEntry),
 	}
 	for _, b := range blocked {
+		// Skip entries that are themselves a public suffix (e.g. "ru",
+		// "co.uk"). They should never have ended up in the blocklist (the
+		// source parser now filters them via easy_list.IsSafeDNSDomain), but
+		// historical poisoned rows from RuAdList still live in block_lists.
+		// If we kept them in subdomainSet, subdomainAncestors would match
+		// every *.ru domain as a "subdomain of blocked" and ShouldAutoBlock
+		// would mass-promote them — exactly the 2026-05-14 incident.
+		if isPublicSuffix(b) {
+			continue
+		}
 		idx.subdomainSet[b] = struct{}{}
 		parts := strings.Split(b, ".")
 		if len(parts) < 4 {
@@ -271,6 +283,17 @@ func buildBlockedIndex(blocked []string) *blockedIndex {
 		})
 	}
 	return idx
+}
+
+// isPublicSuffix reports whether domain is itself a public suffix or has no
+// registrable eTLD+1. Mirrors the parser-side guard so that even if a poisoned
+// row sneaks through (legacy data, future source bugs), auto-block stays safe.
+func isPublicSuffix(domain string) bool {
+	if domain == "" {
+		return true
+	}
+	_, err := publicsuffix.EffectiveTLDPlusOne(domain)
+	return err != nil
 }
 
 // subdomainAncestors returns blocked entries that contain domain as

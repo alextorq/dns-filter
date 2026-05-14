@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 var httpClient = &http.Client{Timeout: 60 * time.Second}
@@ -30,17 +32,40 @@ func LoadFromURL(url string) ([]string, error) {
 	return ParseEasyList(resp.Body), nil
 }
 
-// IsSafeDNSDomain проверяет, является ли строка валидным доменом для DNS блокировки
+// IsSafeDNSDomain проверяет, является ли строка валидным доменом для DNS блокировки.
+//
+// Помимо очевидных проверок (непустой, без wildcard) отбрасывает «голые»
+// public suffix вроде "ru", "co.uk", "xyz". В EasyList такие появляются из
+// правил уровня "||ru^$third-party" — браузер применяет их с контекстом
+// (третья сторона / domain=...), но DNS-фильтр этого контекста не знает и
+// положил бы голый TLD в блок-лист. Дальше subdomainAncestors в auto-block
+// нашёл бы этот TLD предком ЛЮБОГО *.ru домена и оптом банил бы рунет —
+// инцидент 2026-05-14 с 25 авто-блокировками за один прогон Collect()
+// случился именно так после добавления RuAdList.
 func IsSafeDNSDomain(domain string) bool {
-	// Домен не должен содержать звездочек (если ваш DNS не поддерживает regex)
 	if strings.Contains(domain, "*") {
 		return false
 	}
-	// Домен не должен быть пустым
 	if len(domain) == 0 {
 		return false
 	}
+	if isPublicSuffix(domain) {
+		return false
+	}
 	return true
+}
+
+// isPublicSuffix reports whether domain is itself a public suffix (or has no
+// registrable eTLD+1 — same outcome for our purposes: nothing meaningful to
+// block). EffectiveTLDPlusOne returns an error for entries like "ru" / "co.uk"
+// and for unknown single-label tokens like "localhost"; both are rejected.
+func isPublicSuffix(domain string) bool {
+	d := strings.TrimSuffix(strings.ToLower(domain), ".")
+	if d == "" {
+		return true
+	}
+	_, err := publicsuffix.EffectiveTLDPlusOne(d)
+	return err != nil
 }
 
 func MergeLists(blocked []string, allowed []string) []string {

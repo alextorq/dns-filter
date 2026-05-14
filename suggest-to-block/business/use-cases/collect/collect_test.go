@@ -385,6 +385,53 @@ func TestCollectSuggest_TrailingDotNormalization(t *testing.T) {
 	}
 }
 
+// Regression for the 2026-05-14 mass auto-block: a poisoned source rule
+// (RuAdList "||ru^$third-party") landed bare "ru." in block_lists, and the
+// next Collect() then walked subdomainAncestors("ir.ozone.ru") all the way
+// up to "ru", which matched and (via ShouldAutoBlock's CodeSubdomainOfBlocked
+// gate) auto-blocked 25 popular *.ru domains in one shot. PSL ancestors must
+// not contribute a subdomain-of-blocked signal.
+func TestCollectSuggest_PSLAncestorIsIgnored(t *testing.T) {
+	cases := []struct {
+		name    string
+		blocked []string
+		allowed string
+	}{
+		{"bare ICANN TLD as blocked", []string{"ru"}, "ir.ozone.ru"},
+		{"bare eTLD as blocked", []string{"co.uk"}, "x.example.co.uk"},
+		{"trailing-dot TLD normalised then ignored", []string{"ru."}, "ir.ozone.ru."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := CollectSuggest(tc.blocked, []string{tc.allowed})
+			for _, s := range res {
+				for _, r := range s.Reasons {
+					if r.Code == CodeSubdomainOfBlocked {
+						t.Fatalf("PSL ancestor leaked into reasons: %+v", r)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Counterpart to PSLAncestorIsIgnored: a real registrable parent (eTLD+1 or
+// deeper) must still match. Without this we couldn't tell whether the PSL
+// guard is doing its job or just disabling subdomain detection wholesale.
+func TestCollectSuggest_RealParentStillMatches(t *testing.T) {
+	res := CollectSuggest([]string{"ozone.ru"}, []string{"ir.ozone.ru"})
+	if len(res) != 0 {
+		// Score = 20 (one ancestor) is below ThresholdToSuggestBlocking=30,
+		// so it shouldn't surface as a suggestion — but ShouldAutoBlock would
+		// still trip on the reason. Verify via the index directly.
+	}
+	idx := buildBlockedIndex([]string{"ozone.ru"})
+	matches := idx.subdomainAncestors("ir.ozone.ru")
+	if len(matches) != 1 || matches[0] != "ozone.ru" {
+		t.Fatalf("expected [ozone.ru], got %v", matches)
+	}
+}
+
 // ---- ShouldAutoBlock ----
 
 func TestShouldAutoBlock(t *testing.T) {

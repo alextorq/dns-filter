@@ -63,23 +63,19 @@ func ChangeSourceActive(c *gin.Context) {
 		return
 	}
 	source.Active = req.Active
-	syncDb.UpdateRecord(source)
-	if err != nil {
+	if err := syncDb.UpdateRecord(source); err != nil {
 		l.Error(fmt.Errorf("error update source active in db: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	blDb.ChangeRecordStatusBySource(source.Name.String(), req.Active)
-	if err != nil {
+	if err := blDb.ChangeRecordStatusBySource(source.Name.String(), req.Active); err != nil {
 		l.Error(fmt.Errorf("error change blocked domains by source in db: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	err = filter.UpdateFilterFromDb()
-
-	if err != nil {
+	if err := filter.UpdateFilterFromDb(); err != nil {
 		l.Error(fmt.Errorf("error update filter after changing source active: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return

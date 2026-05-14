@@ -30,6 +30,7 @@ func TestMain(m *testing.M) {
 		&allow_domain_db.AllowDomainEvent{},
 		&suggest_to_block_db.SuggestBlock{},
 		&suggest_to_block_db.SuggestBlockReason{},
+		&source_db.Source{},
 	); err != nil {
 		os.RemoveAll(tmp)
 		panic(err)
@@ -52,6 +53,28 @@ func resetTables(t *testing.T) {
 	conn.Exec("DELETE FROM allow_domain_events")
 	conn.Exec("DELETE FROM suggest_block_reasons")
 	conn.Exec("DELETE FROM suggest_blocks")
+	conn.Exec("DELETE FROM sources")
+}
+
+// setSourceActive seeds/overwrites the row that source_db.IsActive consults.
+// Used by the auto-block-kill-switch test to disable the AutoBlocked source
+// without touching the HTTP handler — and by default fixtures to make tests
+// independent of seed order.
+func setSourceActive(t *testing.T, name source_db.BlockListSource, active bool) {
+	t.Helper()
+	conn := app_db.GetConnection()
+	var s source_db.Source
+	err := conn.Where("name = ?", name).First(&s).Error
+	if err == nil {
+		s.Active = active
+		if err := conn.Save(&s).Error; err != nil {
+			t.Fatalf("update source %s: %v", name, err)
+		}
+		return
+	}
+	if err := conn.Create(&source_db.Source{Name: name, Active: active}).Error; err != nil {
+		t.Fatalf("seed source %s: %v", name, err)
+	}
 }
 
 func seedBlocked(t *testing.T, domain string) {
@@ -91,6 +114,7 @@ func seedAllowed(t *testing.T, domain string) {
 // uniquely identifies a regression in the variant-2 gate (not in scoring).
 func TestCollect_AutoBlocksSubdomainOfBlocked(t *testing.T) {
 	resetTables(t)
+	setSourceActive(t, source_db.SourceAutoBlocked, true)
 
 	const allowed = "x8z7c4kqjfpw9.example.com"
 	seedBlocked(t, "example.com")
@@ -129,6 +153,118 @@ func TestCollect_AutoBlocksSubdomainOfBlocked(t *testing.T) {
 	}
 }
 
+// TestCollect_AutoBlockDisabled_FallsThroughToSuggest is the kill-switch
+// контракт: если оператор выключил источник AutoBlocked через UI, Collect
+// НЕ должен писать ничего в block_lists, даже для кандидатов, которые иначе
+// прошли бы ShouldAutoBlock. Они должны мирно осесть в suggest_blocks под
+// ручной разбор, а bloom-фильтр — остаться нетронутым (иначе включение/
+// выключение источника фактически ничего не меняло бы для подобных доменов).
+// Регрессия, которую тест ловит: до фикса autoBlock() слепо вставлял запись
+// с Active=true, и следующий Collect-тик перезаливал bloom — то есть
+// «выключенный» список всё равно начинал блокировать новые домены.
+func TestCollect_AutoBlockDisabled_FallsThroughToSuggest(t *testing.T) {
+	resetTables(t)
+	if err := filter.UpdateFilterFromDb(); err != nil {
+		t.Fatalf("reset bloom: %v", err)
+	}
+
+	// Кандидат, который без kill-switch'а был бы авто-заблокирован
+	// (subdomain-of-blocked → ShouldAutoBlock=true), см.
+	// TestCollect_AutoBlocksSubdomainOfBlocked.
+	const allowed = "x8z7c4kqjfpw9.example.com"
+	seedBlocked(t, "example.com")
+	seedAllowed(t, allowed)
+
+	// Setup invariant: убедимся, что без отключения это бы прошло авто-блок.
+	suggestions := collect.CollectSuggest([]string{"example.com"}, []string{allowed})
+	if len(suggestions) != 1 || !collect.ShouldAutoBlock(suggestions[0]) {
+		t.Fatalf("setup invariant: expected exactly 1 auto-block candidate, got %+v", suggestions)
+	}
+
+	setSourceActive(t, source_db.SourceAutoBlocked, false)
+
+	if err := Collect(); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	var inBlock int64
+	app_db.GetConnection().Model(&blocked_domain_db.BlockList{}).
+		Where("url = ?", allowed).Count(&inBlock)
+	if inBlock != 0 {
+		t.Errorf("AutoBlocked source is disabled but Collect wrote %d block_lists rows for %s — kill-switch ignored", inBlock, allowed)
+	}
+
+	var suggest suggest_to_block_db.SuggestBlock
+	if err := app_db.GetConnection().
+		Preload("Reasons").
+		Where("domain = ?", allowed).
+		First(&suggest).Error; err != nil {
+		t.Fatalf("expected %s to land in suggest_blocks when auto-block is off: %v", allowed, err)
+	}
+	if len(suggest.Reasons) == 0 {
+		t.Error("expected reasons attached to suggest row, got none")
+	}
+
+	if filter.CheckExist(allowed) {
+		t.Errorf("bloom must stay clean when auto-block is disabled, but %s is visible — UpdateFilterFromDb was called", allowed)
+	}
+}
+
+// TestCollect_AutoBlockSourceQueryFails_FailClosed закрепляет контракт
+// «при ошибке source_db.IsActive Collect не блочит автоматически»: если
+// БД не отвечает (здесь имитируем дропом таблицы sources), вся ветка
+// auto-promote выключается — иначе транзиентная проблема превращалась бы в
+// тихий обход kill-switch'а. Дополнительно проверяем, что сам Collect не
+// падает (логирует и идёт дальше) — suggest-only ветка обязана продолжать
+// работать даже без доступа к source_db.
+func TestCollect_AutoBlockSourceQueryFails_FailClosed(t *testing.T) {
+	resetTables(t)
+	if err := filter.UpdateFilterFromDb(); err != nil {
+		t.Fatalf("reset bloom: %v", err)
+	}
+
+	const allowed = "x8z7c4kqjfpw9.example.com"
+	seedBlocked(t, "example.com")
+	seedAllowed(t, allowed)
+
+	conn := app_db.GetConnection()
+	// Дроп через сырой SQL: AutoMigrate ниже опирается на тот же gorm-инстанс,
+	// и тут хочется именно «таблицы нет» (а не «строки нет»), чтобы тригернуть
+	// error-ветку IsActive, а не ErrRecordNotFound-ветку.
+	if err := conn.Migrator().DropTable(&source_db.Source{}); err != nil {
+		t.Fatalf("drop sources: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := conn.AutoMigrate(&source_db.Source{}); err != nil {
+			t.Fatalf("re-migrate sources: %v", err)
+		}
+	})
+
+	if err := Collect(); err != nil {
+		t.Fatalf("Collect must not surface IsActive error to caller, got: %v", err)
+	}
+
+	var inBlock int64
+	app_db.GetConnection().Model(&blocked_domain_db.BlockList{}).
+		Where("url = ?", allowed).Count(&inBlock)
+	if inBlock != 0 {
+		t.Errorf("auto-block must fail closed on IsActive error, but %d rows landed in block_lists", inBlock)
+	}
+
+	// Suggest-ветка обязана работать — иначе один сбой source_db парализует
+	// весь цикл сбора.
+	var inSuggest int64
+	app_db.GetConnection().Model(&suggest_to_block_db.SuggestBlock{}).
+		Where("domain = ?", allowed).Count(&inSuggest)
+	if inSuggest != 1 {
+		t.Errorf("expected suggest_blocks to still receive the candidate, got %d rows", inSuggest)
+	}
+
+	if filter.CheckExist(allowed) {
+		t.Errorf("bloom must stay clean when auto-block fails closed, but %s is visible", allowed)
+	}
+}
+
 // TestCollect_AutoBlocksByScoreThreshold covers the score-based gate
 // (variant 1): a domain whose accumulated score clears
 // ThresholdToAutoBlock but has no subdomain-of-blocked reason still gets
@@ -136,6 +272,7 @@ func TestCollect_AutoBlocksSubdomainOfBlocked(t *testing.T) {
 // similar-to-blocked + risky-TLD on a same-depth blocked sibling.
 func TestCollect_AutoBlocksByScoreThreshold(t *testing.T) {
 	resetTables(t)
+	setSourceActive(t, source_db.SourceAutoBlocked, true)
 
 	// Combo that hits ThresholdToAutoBlock without any blocked-parent:
 	//   - apex `paypa1.com` ≈ `paypal.com` → brand impersonation (+25)
@@ -238,6 +375,7 @@ func TestCollect_BelowAutoBlockGate_StaysInSuggest(t *testing.T) {
 // резолвить домен.
 func TestCollect_AutoBlockUpdatesBloomFilter(t *testing.T) {
 	resetTables(t)
+	setSourceActive(t, source_db.SourceAutoBlocked, true)
 	// сбросить bloom от предыдущих тестов — иначе CheckExist может вернуть
 	// true из-за артефактов чужого теста.
 	if err := filter.UpdateFilterFromDb(); err != nil {
@@ -302,6 +440,7 @@ func TestCollect_NoAutoBlock_SkipsFilterRebuild(t *testing.T) {
 // — пользователь добавил вручную через UI или импортнул из HaGeZi).
 func TestCollect_MixedBatch(t *testing.T) {
 	resetTables(t)
+	setSourceActive(t, source_db.SourceAutoBlocked, true)
 
 	// auto-block кандидаты (subdomain-of-blocked, score < 60).
 	seedBlocked(t, "example.com")
@@ -379,6 +518,7 @@ func TestCollect_MixedBatch(t *testing.T) {
 // запуск — хорошее покрытие).
 func TestCollect_Idempotent(t *testing.T) {
 	resetTables(t)
+	setSourceActive(t, source_db.SourceAutoBlocked, true)
 
 	seedBlocked(t, "example.com")
 	seedAllowed(t, "x8z7c4kqjfpw9.example.com")

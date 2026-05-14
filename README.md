@@ -87,8 +87,10 @@ flowchart TD
   allowed domains for review. High-confidence candidates (score ≥ 60, or any
   subdomain-of-already-blocked) are auto-promoted to the block list with
   `Source = AutoBlocked`; the rest go to `suggest_blocks` for manual
-  approval via the UI. See [ARCHITECTURE.md §11](ARCHITECTURE.md) for the
-  scoring rules.
+  approval via the UI. Auto-promotion can be turned off by toggling the
+  `AutoBlocked` source on the Sources page — disabled candidates fall through
+  to `suggest_blocks` instead. See [ARCHITECTURE.md §11](ARCHITECTURE.md) for
+  the scoring rules.
 - Event metrics (Prometheus)
 - Configurable logging levels
 - Manual DNS-cache flush from the Settings page (`POST /api/dns-cache/clear`) —

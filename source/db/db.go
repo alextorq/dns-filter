@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"time"
 
 	dbCon "github.com/alextorq/dns-filter/db"
@@ -61,7 +62,26 @@ func GetRecordByID(id uint) (*Source, error) {
 	return &source, nil
 }
 
-func UpdateRecord(s *Source) {
+func UpdateRecord(s *Source) error {
 	conn := dbCon.GetConnection()
-	conn.Save(s)
+	return conn.Save(s).Error
+}
+
+// IsActive reports whether the named source is currently enabled. Missing
+// row → false (fail-closed): startup Seed guarantees every known source has
+// a row, so an absent one means the DB is in an unknown state and we'd
+// rather skip the auto-promotion than silently re-enable a kill-switch the
+// operator may have disabled. Same logic for DB errors — callers must
+// surface them and treat as "not active" defensively.
+func IsActive(name BlockListSource) (bool, error) {
+	conn := dbCon.GetConnection()
+	var s Source
+	err := conn.Where("name = ?", name).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return s.Active, nil
 }

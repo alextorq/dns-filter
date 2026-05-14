@@ -248,6 +248,17 @@ blocklist (инцидент 2026-05-14, 25 авто-блокировок за о
 Защита продублирована: парсер не пускает PSL в `block_lists`, индекс не
 доверяет существующим записям.
 
+**Kill-switch источника AutoBlocked.** Перед обработкой батча `Collect()`
+читает `source_db.IsActive(SourceAutoBlocked)`. Если оператор выключил
+источник в UI (`POST /api/sources/change-status`), авто-промоушн целиком
+отключается: кандидаты, которые иначе прошли бы `ShouldAutoBlock`,
+падают в обычную ветку и пишутся в `suggest_blocks` для ручной разборки,
+а bloom не пересобирается. Без этого гейта `ChangeRecordStatusBySource`
+сбрасывал `Active=false` у существующих строк, но следующий тик Collect
+вставлял новые с `Active=true` — выключение оказывалось бессмысленным.
+На ошибке чтения статуса fail-closed (auto-block выключается), чтобы не
+обходить kill-switch при транзиентной DB-проблеме.
+
 Остальные предложения (score в `[30, 60)` без subdomain-of-blocked)
 по-прежнему уходят в `suggest_blocks` для ручной модерации через
 `POST /api/suggest-to-block/add-to-block`. После авто-промоушенов

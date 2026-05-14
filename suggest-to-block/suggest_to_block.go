@@ -39,12 +39,24 @@ func Collect() error {
 		return err
 	}
 
+	// When the operator has disabled the AutoBlocked source via the UI, Collect
+	// must not write anything to block_lists — neither active nor inactive
+	// rows. Such candidates fall through to the suggest queue for manual
+	// review, mirroring how Sync() skips disabled sources entirely. We fail
+	// closed on a DB error: silently auto-blocking when we can't confirm the
+	// source is active would defeat the kill-switch.
+	autoBlockEnabled, err := source_db.IsActive(source_db.SourceAutoBlocked)
+	if err != nil {
+		l.Error(err)
+		autoBlockEnabled = false
+	}
+
 	forBlock := suggest_to_block_use_cases_collect.CollectSuggest(blocked, allowed)
 	suggests := make([]suggest_to_block_db.SuggestBlock, 0, len(forBlock))
 	var autoBlocked, autoAlreadyBlocked, autoErrors int
 
 	for _, domain := range forBlock {
-		if suggest_to_block_use_cases_collect.ShouldAutoBlock(domain) {
+		if autoBlockEnabled && suggest_to_block_use_cases_collect.ShouldAutoBlock(domain) {
 			switch autoBlock(domain) {
 			case autoBlockInserted:
 				autoBlocked++

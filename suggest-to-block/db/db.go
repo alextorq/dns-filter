@@ -1,7 +1,6 @@
 package db
 
 import (
-	"github.com/alextorq/dns-filter/db"
 	"gorm.io/gorm"
 )
 
@@ -20,15 +19,11 @@ type SuggestBlockReason struct {
 	MatchValue string `json:"match,omitempty"`
 }
 
-// CreateSuggestBlockBatch inserts only suggestions whose Domain is not yet
+// createSuggestBlockBatchOn inserts only suggestions whose Domain is not yet
 // stored — preserving the previous "do nothing on conflict" semantics.
 // The reasons attached to a Suggestion are inserted via GORM associations
 // in the same transaction, so existing rows keep their original reasons
 // and never accumulate duplicates across collector runs.
-func CreateSuggestBlockBatch(suggests []SuggestBlock) error {
-	return createSuggestBlockBatchOn(db.GetConnection(), suggests)
-}
-
 func createSuggestBlockBatchOn(conn *gorm.DB, suggests []SuggestBlock) error {
 	if len(suggests) == 0 {
 		return nil
@@ -65,22 +60,6 @@ func createSuggestBlockBatchOn(conn *gorm.DB, suggests []SuggestBlock) error {
 	})
 }
 
-func DeleteSuggestBlock(domain string) error {
-	conn := db.GetConnection()
-	if err := conn.Where("domain = ?", domain).Delete(&SuggestBlock{}).Error; err != nil {
-		return err
-	}
-	return nil
-}
-
-func UpdateActiveStatus(id uint, active bool) error {
-	conn := db.GetConnection()
-	if err := conn.Model(&SuggestBlock{}).Where("id = ?", id).Update("active", active).Error; err != nil {
-		return err
-	}
-	return nil
-}
-
 type GetAllParams struct {
 	Limit  int
 	Offset int
@@ -95,10 +74,6 @@ type GetAllParams struct {
 type GetAllResult struct {
 	List  []SuggestBlock `json:"list"`
 	Total int64          `json:"total"`
-}
-
-func GetAllSuggestBlocks(params GetAllParams) (*GetAllResult, error) {
-	return getAllSuggestBlocksOn(db.GetConnection(), params)
 }
 
 func getAllSuggestBlocksOn(conn *gorm.DB, params GetAllParams) (*GetAllResult, error) {

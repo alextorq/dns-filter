@@ -8,17 +8,27 @@ import (
 	"github.com/alextorq/dns-filter/config"
 )
 
+type nopLog struct{}
+
+func (nopLog) Info(args ...any) {}
+
+func freshConf() *config.Config {
+	c := &config.Config{}
+	c.Enabled.Store(true)
+	return c
+}
+
 // Locks in the #28 fix: concurrent toggles must not lose updates.
 // With an even total number of toggles, parity must return Enabled to its
 // starting value. The previous read-modify-write would drop updates and
 // also race under -race.
 func TestChangeFilterDnsRecords_ConcurrentTogglesPreserveParity(t *testing.T) {
-	conf := config.GetConfig()
+	conf := freshConf()
 	start := conf.Enabled.Load()
 
 	const goroutines = 32
 	const togglesPerG = 500
-	total := goroutines * togglesPerG // even -> parity returns to start
+	total := goroutines * togglesPerG
 
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
@@ -26,7 +36,7 @@ func TestChangeFilterDnsRecords_ConcurrentTogglesPreserveParity(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range togglesPerG {
-				ChangeFilterDnsRecords()
+				ChangeFilterDnsRecords(conf, nopLog{})
 			}
 		}()
 	}
@@ -43,15 +53,10 @@ func TestChangeFilterDnsRecords_ConcurrentTogglesPreserveParity(t *testing.T) {
 // Toggling the filter must invalidate any in-flight pause. Otherwise the UI
 // would show "Active" while the deadline still suppresses blocking.
 func TestChangeFilterDnsRecords_ClearsPause(t *testing.T) {
-	conf := config.GetConfig()
-	conf.Enabled.Store(true)
+	conf := freshConf()
 	conf.PausedUntilUnix.Store(time.Now().Add(10 * time.Minute).Unix())
-	t.Cleanup(func() {
-		conf.Enabled.Store(true)
-		conf.PausedUntilUnix.Store(0)
-	})
 
-	ChangeFilterDnsRecords()
+	ChangeFilterDnsRecords(conf, nopLog{})
 
 	if got := conf.PausedUntilUnix.Load(); got != 0 {
 		t.Fatalf("toggle did not clear pause: got %d, want 0", got)

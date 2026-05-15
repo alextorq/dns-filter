@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	app_db "github.com/alextorq/dns-filter/db"
 	"gorm.io/gorm"
 )
 
@@ -46,39 +45,4 @@ type GetRecordsResult struct {
 type DomainCount struct {
 	Domain string `json:"domain"`
 	Count  int64  `json:"count"`
-}
-
-// ===== legacy shim =====
-//
-// These package-level functions are kept ONLY for callers that haven't been
-// migrated to DI yet (filter, source). New code MUST construct *Repo via
-// NewRepo(conn) at the composition root. All four functions delegate to a
-// freshly-built Repo over the singleton connection, so the production path
-// goes through exactly one implementation — no logic dupes between the
-// package-level functions and Repo methods.
-//
-// Deprecated: each function disappears as its caller migrates to *Repo.
-
-func legacyRepo() *Repo {
-	return NewRepo(app_db.GetConnection())
-}
-
-// Deprecated: use Repo.GetAllActiveURLs.
-func GetAllActiveFilters() ([]string, error) {
-	return legacyRepo().GetAllActiveURLs()
-}
-
-// Deprecated: use Repo.IsActivelyBlocked.
-func IsDomainActivelyBlocked(domain string) (bool, error) {
-	return legacyRepo().IsActivelyBlocked(domain)
-}
-
-// Deprecated: use Repo.CreateDNSRecordsByDomains.
-func CreateDNSRecordsByDomains(urls []string, source string) error {
-	return legacyRepo().CreateDNSRecordsByDomains(urls, source)
-}
-
-// Deprecated: use Repo.ChangeRecordStatusBySource.
-func ChangeRecordStatusBySource(source string, active bool) error {
-	return legacyRepo().ChangeRecordStatusBySource(source, active)
 }

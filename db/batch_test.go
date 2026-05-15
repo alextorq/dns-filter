@@ -162,13 +162,6 @@ func TestBatchOn_OnConflictWithExplicitColumn(t *testing.T) {
 	}
 }
 
-// Public BatchInsert / BatchUpsert are thin wrappers around batchOn(GetConnection(), ...);
-// the singleton makes them awkward to test here. Their integration is exercised by
-// the existing tests in blocked-domain/db, allow-domain/db, and suggest-to-block/db.
-
-// The *On variants accept the connection explicitly so they can be unit-tested
-// directly without touching the global singleton.
-
 func TestBatchInsertOn_InsertsAll(t *testing.T) {
 	conn := newTestDB(t)
 	items := []testItem{{Name: "a", Age: 1}, {Name: "b", Age: 2}}

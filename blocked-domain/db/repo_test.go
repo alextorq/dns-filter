@@ -284,7 +284,7 @@ func TestRepo_CreateDNSRecordsByDomains(t *testing.T) {
 		if err := r.CreateDNSRecordsByDomains([]string{"x.example"}, "src"); err != nil {
 			t.Fatalf("first: %v", err)
 		}
-		// Second import of the same URL must not error (BatchUpsert/DoNothing).
+		// Second import of the same URL must not error (BatchUpsertOn/DoNothing).
 		if err := r.CreateDNSRecordsByDomains([]string{"x.example", "y.example"}, "src"); err != nil {
 			t.Fatalf("second: %v", err)
 		}

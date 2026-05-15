@@ -5,7 +5,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// DefaultBatchSize is used by BatchInsert/BatchUpsert when batchSize <= 0.
+// DefaultBatchSize is used by BatchInsertOn/BatchUpsertOn when batchSize <= 0.
 const DefaultBatchSize = 1000
 
 // BatchInsertOn inserts items in batches inside a single transaction on the
@@ -25,19 +25,6 @@ func BatchUpsertOn[T any](conn *gorm.DB, items []T, batchSize int, conflictColum
 		cols = append(cols, clause.Column{Name: c})
 	}
 	return batchOn(conn, items, batchSize, &clause.OnConflict{Columns: cols, DoNothing: true})
-}
-
-// Deprecated: use BatchInsertOn(conn, items, batchSize) so the connection is
-// passed in explicitly. This wrapper exists only until allow-domain / auth /
-// suggest-to-block migrate off the singleton.
-func BatchInsert[T any](items []T, batchSize int) error {
-	return BatchInsertOn(GetConnection(), items, batchSize)
-}
-
-// Deprecated: use BatchUpsertOn(conn, items, batchSize, conflictColumns...).
-// Same rationale as BatchInsert above.
-func BatchUpsert[T any](items []T, batchSize int, conflictColumns ...string) error {
-	return BatchUpsertOn(GetConnection(), items, batchSize, conflictColumns...)
 }
 
 func batchOn[T any](conn *gorm.DB, items []T, batchSize int, onConflict *clause.OnConflict) error {

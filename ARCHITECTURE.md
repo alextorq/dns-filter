@@ -492,14 +492,14 @@ func main() {
         blockRepo, allowRepo, sourceRepo, filterModule, suggestRepo, chanLogger,
     )
     go clear_events_uc.ClearEvent(blockRepo)
-    go allow_domain.ClearOldEvent()
+    go allow_clear_events_uc.ClearEvent(allowRepo)
     go suggestModule.Start(context.Background())
     go authBusiness.ClearExpiredSessions()
 
     // 7. DNS-сервер: filter.CheckExist передаётся как method value
     cacheWithMetric := dns_cache.GetCacheWithMetric()
     metricInstance := dns.CreateMetric()
-    allowWorker := allow_domain.CreateAllowDomainEventStore(100)
+    allowWorker := allow_domain_use_cases.CreateAllowDomainEventStore(allowRepo, chanLogger, 100)
     blockWorker := block_domain_uc.NewBlockDomainEventStore(blockRepo, chanLogger, 100)
     dnsServer := dns.CreateServer(
         chanLogger, cacheWithMetric, filterModule.CheckExist, metricInstance,
@@ -569,7 +569,8 @@ func main() {
    (`*/web.Handlers{Repo, Module, Filter, Log, …}`); `web.CreateServer`
    принимает их пакетом и не читает singleton'ов.
 
-   `db/batch.go` оставляет `BatchInsertOn` / `BatchUpsertOn` (DI-варианты,
-   принимающие `*gorm.DB` явно). Старые `BatchInsert`/`BatchUpsert` —
-   thin-wrapper'ы для не-переведённых потребителей (`allow-domain`,
-   `auth`); их миграция — отдельный точечный PR.
+   `db/batch.go` — только DI-варианты `BatchInsertOn` / `BatchUpsertOn`,
+   принимающие `*gorm.DB` явно. Тонкие wrapper'ы `BatchInsert`/`BatchUpsert`
+   на singleton-коннекшене удалены — последним их потребителем был
+   `allow-domain/db`, который теперь сам на `Repo.CreateBatch` →
+   `BatchUpsertOn(r.db, ...)`.

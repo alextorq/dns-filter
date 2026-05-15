@@ -7,7 +7,8 @@ package main
 import (
 	"context"
 
-	allow_domain "github.com/alextorq/dns-filter/allow-domain"
+	allow_domain_use_cases "github.com/alextorq/dns-filter/allow-domain/business/use-cases"
+	allow_clear_events_uc "github.com/alextorq/dns-filter/allow-domain/business/use-cases/clear-events"
 	allow_domain_db "github.com/alextorq/dns-filter/allow-domain/db"
 	authBusiness "github.com/alextorq/dns-filter/auth/business"
 	block_domain_uc "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/block-domain"
@@ -114,7 +115,7 @@ func main() {
 	suggestModule := suggest_to_block.NewModule(blockRepo, allowRepo, sourceRepo, filterModule, suggestRepo, chanLogger)
 
 	go clear_events_uc.ClearEvent(blockRepo)
-	go allow_domain.ClearOldEvent()
+	go allow_clear_events_uc.ClearEvent(allowRepo)
 	go suggestModule.Start(context.Background())
 	go authBusiness.ClearExpiredSessions()
 
@@ -128,7 +129,7 @@ func main() {
 
 	cacheWithMetric := dns_cache.GetCacheWithMetric()
 	metricInstance := dns.CreateMetric()
-	allowWorker := allow_domain.CreateAllowDomainEventStore(100)
+	allowWorker := allow_domain_use_cases.CreateAllowDomainEventStore(allowRepo, chanLogger, 100)
 	blockWorker := block_domain_uc.NewBlockDomainEventStore(blockRepo, chanLogger, 100)
 
 	ident := buildIdentifier(conf.Mode)

@@ -177,6 +177,39 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
   `TestHandlerPauseFilter_FilterDisabled_Returns409` — маппинг
   business-error → HTTP-status в `filter/web` (раньше не пиннился вообще).
 
+### Этап 4 — каждая фича сама регистрирует роуты
+
+- **DI-фичи** получили метод `(h *Handlers) RegisterRoutes(rg *gin.RouterGroup)`:
+  `blocked-domain/web`, `filter/web`, `suggest-to-block/web`, `source/web`.
+- **Package-level фичи** получили функцию пакета `Register(rg *gin.RouterGroup)`:
+  `clients/web`, `db/web`, `dns-cache/web`, `domain-inspect/web`,
+  `logger/web`.
+- **`auth/web`** разнесён на два экспорта: `RegisterPublic(r gin.IRouter)` —
+  только `POST /api/auth/login`; `Register(rg)` — `/auth/logout`,
+  `/auth/me`. Middleware `RequireAuth()` остаётся отдельным экспортом.
+- **`suggest-to-block/web.GetSignalCodes`** конвертирован из package-level
+  функции в метод `*Handlers` — фича теперь регистрируется унифицированно.
+- **`web/server.go`** ужат до cross-cutting wiring: CORS, public/protected
+  split, Swagger, и набор вызовов `RegisterRoutes` / `Register`. Введена
+  внутренняя функция `buildRouter(h Handlers)` (без `r.Run`) — нужна для
+  тестов; `CreateServer` теперь = `buildRouter` + go-`r.Run`.
+
+**Регрессионный якорь.**
+- `web/server_test.go::TestBuildRouter_RegistersAllExpectedRoutes` —
+  snapshot `(method, path)` всех 30 публичных роутов сравнивается с
+  `gin.Engine.Routes()`. Любое случайное удаление / переименование падает в
+  CI; добавление эндпойнта требует одновременной правки `expectedRoutes`.
+- `TestBuildRouter_LoginIsPublic` — `POST /api/auth/login` не возвращает
+  401 от RequireAuth (то есть middleware не сработал, login был вызван).
+- `TestBuildRouter_ProtectedRoutesRequireAuth` — таблично: каждый
+  репрезентативный путь из каждой фичи без cookie → 401.
+- `TestBuildRouter_CORSPreflightOnLogin` — OPTIONS на `/api/auth/login`
+  возвращает 204 + корректные CORS-заголовки (login — единственный путь
+  до auth, его preflight ломать особенно опасно).
+
+**Документация:** `CLAUDE.md` (раздел Cross-cutting conventions),
+`ARCHITECTURE.md` (раздел 9 Web API) — описывают self-routing-контракт.
+
 ---
 
 ## Кандидат на следующий рефакторинг
@@ -185,6 +218,9 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 острый из оставшихся: на SIGTERM текущая реализация обрывает соединения
 без дренажа. После этапа 2 все зависимости явные — graceful shutdown
 ложится поверх естественно, не требуя дополнительной инфраструктуры.
+После этапа 4 у нас уже есть `buildRouter(h Handlers) *gin.Engine`,
+отделяющий построение от запуска — это естественная точка, куда
+встраивается возврат `*http.Server` для graceful shutdown.
 
 ### Что сейчас плохо
 
@@ -336,13 +372,12 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
 | 3 | DI вместо singleton'ов | **готово для core + allow-domain**. Остатки: `auth`, `domain-inspect`, `dns-cache` — отдельные PR |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
-| 5 | Каждая фича сама регистрирует роуты | не начат (Handlers есть, но routes всё ещё в `web/server.go`) |
+| 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes`/`Register` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |
 | 7 | Свести фоновые задачи в один scheduler | не начат |
 | 8 | Конвенция именования пакетов | не начат |
 | 9 | Graceful shutdown (HTTP + DNS + workers) | **следующий кандидат** |
 | 10 | Hot path не читает глобальный config | частично (через `Deps.Conf` use-case'ы получают конфиг явно, но `*config.Config` всё ещё singleton) |
 
-Логично закрывать в порядке п.9 → п.5 (feature-self-routing, маленький PR
-поверх Handlers) → п.4. Пункты 1, 6, 7, 8, 10 — независимы и можно
-включать по мере касания соответствующих файлов.
+Логично закрывать в порядке п.9 → п.4. Пункты 1, 6, 7, 8, 10 —
+независимы и можно включать по мере касания соответствующих файлов.

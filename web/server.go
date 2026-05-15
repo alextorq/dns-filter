@@ -18,8 +18,10 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-// Handlers bundles every per-feature *Handlers struct the HTTP layer wires up.
-// main builds it as the single composition-root step for the HTTP API.
+// Handlers bundles every per-feature *Handlers struct that requires
+// constructor-injected dependencies. main builds it as the single
+// composition-root step for the HTTP API. Feature packages without DI
+// register themselves via package-level Register(rg) functions instead.
 type Handlers struct {
 	Blocked *eventsWeb.Handlers
 	Filter  *filterWeb.Handlers
@@ -31,6 +33,20 @@ type Handlers struct {
 // :8080 in a goroutine. All per-feature dependencies are injected via the
 // Handlers bundle — this function reads no singletons.
 func CreateServer(h Handlers) *gin.Engine {
+	r := buildRouter(h)
+
+	go func() {
+		r.Run(":8080")
+	}()
+
+	return r
+}
+
+// buildRouter assembles the gin.Engine with every route the API exposes but
+// does NOT start listening. Each feature contributes its own paths via
+// RegisterRoutes / Register — this function only owns cross-cutting concerns
+// (CORS, the public/protected split, Swagger).
+func buildRouter(h Handlers) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
@@ -43,56 +59,22 @@ func CreateServer(h Handlers) *gin.Engine {
 	}))
 
 	// Public auth endpoints — login is the only way in.
-	r.POST("/api/auth/login", authWeb.Login)
+	authWeb.RegisterPublic(r)
 
 	// Everything else under /api/* requires a valid session.
 	api := r.Group("/api", authWeb.RequireAuth())
-	{
-		api.POST("/auth/logout", authWeb.Logout)
-		api.GET("/auth/me", authWeb.Me)
-
-		api.POST("/dns-records", h.Blocked.GetAllDnsRecords)
-		api.POST("/dns-records/create", h.Blocked.CreateDnsRecords)
-		api.POST("/dns-records/update", h.Blocked.ChangeDnsRecordActive)
-
-		api.GET("/filter/status", h.Filter.GetFilterStatus)
-		api.POST("/filter/change-status", h.Filter.ChangeFilterStatus)
-		api.POST("/filter/pause", h.Filter.PauseFilter)
-		api.POST("/filter/resume", h.Filter.ResumeFilter)
-
-		api.POST("/events/block/amount", h.Blocked.GetAmount)
-		api.POST("/events/block/amount-by-group", h.Blocked.GetAmountByDomain)
-
-		api.POST("/suggest-to-block", h.Suggest.GetAllSuggestBlocks)
-		api.GET("/suggest-to-block/codes", suggestWeb.GetSignalCodes)
-		api.POST("/suggest-to-block/add-to-block", h.Suggest.AddToBlock)
-		api.POST("/suggest-to-block/change-status", h.Suggest.ChangeActiveStatus)
-
-		api.POST("/config/logger/change-level", loggerWeb.ChangeLogLevel)
-		api.POST("/config/logger/get-level", loggerWeb.GetLogLevel)
-
-		api.POST("/sources", h.Source.GetAllSources)
-		api.POST("/sources/change-status", h.Source.ChangeSourceActive)
-
-		api.POST("/clients", clientsWeb.ListClients)
-		api.POST("/clients/create", clientsWeb.CreateClient)
-		api.POST("/clients/update", clientsWeb.UpdateClient)
-		api.POST("/clients/change-filter", clientsWeb.ChangeFilter)
-		api.POST("/clients/delete", clientsWeb.DeleteClient)
-		api.POST("/clients/discover", clientsWeb.Discover)
-
-		api.GET("/config/db/download", dbWeb.DownloadDb)
-
-		api.POST("/dns-cache/clear", dnsCacheWeb.ClearCache)
-
-		api.GET("/domain/inspect", inspectWeb.Inspect)
-	}
+	authWeb.Register(api)
+	h.Blocked.RegisterRoutes(api)
+	h.Filter.RegisterRoutes(api)
+	h.Suggest.RegisterRoutes(api)
+	h.Source.RegisterRoutes(api)
+	clientsWeb.Register(api)
+	dbWeb.Register(api)
+	dnsCacheWeb.Register(api)
+	inspectWeb.Register(api)
+	loggerWeb.Register(api)
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	go func() {
-		r.Run(":8080")
-	}()
 
 	return r
 }

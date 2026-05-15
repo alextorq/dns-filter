@@ -140,7 +140,7 @@ func (h *Handlers) AddToBlock(c *gin.Context) {
 // @Produce      json
 // @Success      200  {object} GetSignalCodesResponse
 // @Router       /api/suggest-to-block/codes [get]
-func GetSignalCodes(c *gin.Context) {
+func (h *Handlers) GetSignalCodes(c *gin.Context) {
 	c.JSON(http.StatusOK, GetSignalCodesResponse{List: collect.Catalog()})
 }
 

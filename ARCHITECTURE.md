@@ -190,6 +190,23 @@ type BlockDomainEvent struct {
 
 **Порт:** 8080
 
+**Self-routing.** `web/server.go` тонкий — он владеет только cross-cutting
+concerns: CORS, разделение public/protected, Swagger. Каждая фича сама
+регистрирует свои пути:
+
+- Фичи с DI (`blocked-domain`, `filter`, `suggest-to-block`, `source`)
+  экспортируют метод `(h *Handlers) RegisterRoutes(rg *gin.RouterGroup)`.
+- Фичи без DI (`auth`, `clients`, `db`, `dns-cache`, `domain-inspect`,
+  `logger`) экспортируют функцию пакета `Register(rg *gin.RouterGroup)`.
+- `auth/web` — особый случай: `RegisterPublic(r gin.IRouter)` вешает
+  `POST /api/auth/login` мимо `RequireAuth()`, остальное идёт через обычный
+  `Register(rg)` под защитой.
+
+Контракт зашит регрессионным тестом `web/server_test.go::TestBuildRouter_RegistersAllExpectedRoutes`
+— snapshot полного набора `(method, path)` сравнивается с тем, что отдаёт
+`gin.Engine.Routes()` после `buildRouter`. Любое случайное удаление /
+переименование роута падает в CI.
+
 **Эндпоинты:**
 
 | Маршрут | Описание |

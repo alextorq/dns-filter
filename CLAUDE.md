@@ -64,7 +64,7 @@ Per-query flow, matching the diagrams in `ARCHITECTURE.md`:
 - **Singletons via `sync.Once`** for the bloom filter, logger, DNS cache, and `config.GetConfig()`. Don't construct second instances; use the getters.
 - **Channel-based async logger** (`logger/`) with pluggable handlers (console, Loki). Logging never blocks the DNS path.
 - **`config.GetConfig().Enabled`** is a runtime flag toggled via `POST /api/filter/change-status`; it gates filtering globally, so the DNS path always re-reads it.
-- Module package layout repeats `<feature>/{db,business,web}` (see `blocked-domain/`, `allow-domain/`, `clients/`, `suggest-to-block/`, `source/`) — `web/` packages are mounted by `web/server.go`, which is the single registry of HTTP routes.
+- Module package layout repeats `<feature>/{db,business,web}` (see `blocked-domain/`, `allow-domain/`, `clients/`, `suggest-to-block/`, `source/`). Each feature self-registers its HTTP paths: DI features expose `(h *Handlers) RegisterRoutes(rg *gin.RouterGroup)`; package-level features expose `Register(rg *gin.RouterGroup)`; `auth/web` additionally exposes `RegisterPublic(r gin.IRouter)` for the only pre-auth endpoint (`POST /api/auth/login`). `web/server.go` owns only the cross-cutting wiring — CORS, the public/protected split, Swagger — and calls into each feature's registrar. Adding or renaming an endpoint never requires editing `web/server.go`; update the feature's routes file and adjust `web/server_test.go::expectedRoutes`.
 
 ### Configuration
 All config comes from env vars (loaded from `.env` if present). The full list lives in `config/config.go`; the most load-bearing ones:

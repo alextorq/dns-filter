@@ -246,7 +246,8 @@ func TestAddToBlock_DomainAlreadyInBlocklist_Returns200AndDeactivates(t *testing
 func TestGetSignalCodes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.GET("/api/suggest-to-block/codes", GetSignalCodes)
+	h := &Handlers{}
+	r.GET("/api/suggest-to-block/codes", h.GetSignalCodes)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/suggest-to-block/codes", nil)
 	w := httptest.NewRecorder()

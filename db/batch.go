@@ -5,26 +5,26 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// DefaultBatchSize is used by BatchInsert/BatchUpsert when batchSize <= 0.
+// DefaultBatchSize is used by BatchInsertOn/BatchUpsertOn when batchSize <= 0.
 const DefaultBatchSize = 1000
 
-// BatchInsert inserts items in batches inside a single transaction.
-// Returns nil if items is empty. batchSize <= 0 falls back to DefaultBatchSize.
-func BatchInsert[T any](items []T, batchSize int) error {
-	return batchOn(GetConnection(), items, batchSize, nil)
+// BatchInsertOn inserts items in batches inside a single transaction on the
+// given connection. Returns nil if items is empty. batchSize <= 0 falls back
+// to DefaultBatchSize.
+func BatchInsertOn[T any](conn *gorm.DB, items []T, batchSize int) error {
+	return batchOn(conn, items, batchSize, nil)
 }
 
-// BatchUpsert inserts items in batches, ignoring rows that violate the unique
-// constraint on conflictColumns. With no conflictColumns, any unique violation
-// is silently skipped (SQLite "INSERT OR IGNORE" semantics).
-// Wraps all batches in a single transaction so SQLite issues one fsync at commit
-// instead of one per batch.
-func BatchUpsert[T any](items []T, batchSize int, conflictColumns ...string) error {
+// BatchUpsertOn inserts items in batches on the given connection, ignoring
+// rows that violate the unique constraint on conflictColumns. With no
+// conflictColumns, any unique violation is silently skipped (SQLite
+// "INSERT OR IGNORE" semantics). All batches run inside a single transaction.
+func BatchUpsertOn[T any](conn *gorm.DB, items []T, batchSize int, conflictColumns ...string) error {
 	cols := make([]clause.Column, 0, len(conflictColumns))
 	for _, c := range conflictColumns {
 		cols = append(cols, clause.Column{Name: c})
 	}
-	return batchOn(GetConnection(), items, batchSize, &clause.OnConflict{Columns: cols, DoNothing: true})
+	return batchOn(conn, items, batchSize, &clause.OnConflict{Columns: cols, DoNothing: true})
 }
 
 func batchOn[T any](conn *gorm.DB, items []T, batchSize int, onConflict *clause.OnConflict) error {

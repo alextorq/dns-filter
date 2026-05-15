@@ -40,7 +40,7 @@ func (f *Filter) DomainExist(domain string) bool {
 	return f.Bloom.Test([]byte(domain))
 }
 
-func (f *Filter) UpdateFilter(rows []string) *Filter {
+func (f *Filter) UpdateFilter(rows []string) {
 	n := max(uint(len(rows)), expectedDomains)
 	filter := bloom.NewWithEstimates(n, falsePositive)
 	for _, item := range rows {
@@ -50,5 +50,4 @@ func (f *Filter) UpdateFilter(rows []string) *Filter {
 	f.mu.Lock()
 	f.Bloom = filter
 	f.mu.Unlock()
-	return f
 }

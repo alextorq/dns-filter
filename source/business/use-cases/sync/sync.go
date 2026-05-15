@@ -3,45 +3,59 @@ package sync
 import (
 	"fmt"
 
-	blockDb "github.com/alextorq/dns-filter/blocked-domain/db"
-	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/source/business/use-cases/sync/easy-list"
 	"github.com/alextorq/dns-filter/source/db"
 )
+
+type Logger interface {
+	Debug(args ...any)
+	Error(err error)
+}
+
+// SourceLister is the narrow read port over the sources table.
+type SourceLister interface {
+	GetAllActive() ([]db.Source, error)
+}
+
+// BlockWriter is the narrow write port over the blocklist.
+type BlockWriter interface {
+	CreateDNSRecordsByDomains(urls []string, source string) error
+}
 
 type DomainBySource struct {
 	Source  db.BlockListSource
 	Domains []string
 }
 
-func LoadAndParseActiveSources() []DomainBySource {
-	l := logger.GetLogger()
+// LoadAndParseActiveSources downloads + parses every enabled source. Network /
+// parser errors are logged and skipped so a single bad source does not abort
+// the whole batch.
+func LoadAndParseActiveSources(repo SourceLister, log Logger) []DomainBySource {
 	result := make([]DomainBySource, 0)
 
-	items, err := db.GetAllActiveRecords()
-
+	items, err := repo.GetAllActive()
 	if err != nil {
-		logger.GetLogger().Error(err)
+		log.Error(err)
 		return result
 	}
 
 	loadAdBlock := func(source db.BlockListSource, url string) {
 		partial, err := easy_list.LoadFromURL(url)
 		if err != nil {
-			l.Error(fmt.Errorf("failed to load %s: %w", source, err))
+			log.Error(fmt.Errorf("failed to load %s: %w", source, err))
 			return
 		}
-		l.Debug(fmt.Sprintf("Loaded %s domains: %d", source, len(partial)))
+		log.Debug(fmt.Sprintf("Loaded %s domains: %d", source, len(partial)))
 		result = append(result, DomainBySource{Source: source, Domains: partial})
 	}
 
 	loadHosts := func(source db.BlockListSource, url string) {
 		partial, err := LoadHostsFromURL(url)
 		if err != nil {
-			l.Error(fmt.Errorf("failed to load %s: %w", source, err))
+			log.Error(fmt.Errorf("failed to load %s: %w", source, err))
 			return
 		}
-		l.Debug(fmt.Sprintf("Loaded %s domains: %d", source, len(partial)))
+		log.Debug(fmt.Sprintf("Loaded %s domains: %d", source, len(partial)))
 		result = append(result, DomainBySource{Source: source, Domains: partial})
 	}
 
@@ -63,11 +77,13 @@ func LoadAndParseActiveSources() []DomainBySource {
 	return result
 }
 
-func Sync() error {
-	list := LoadAndParseActiveSources()
+// Sync downloads every active source and upserts the parsed domains into the
+// blocklist via blockRepo. Errors from a single upsert abort the whole batch
+// (a half-imported source would leave the bloom out-of-sync with the DB).
+func Sync(repo SourceLister, blockRepo BlockWriter, log Logger) error {
+	list := LoadAndParseActiveSources(repo, log)
 	for _, item := range list {
-		err := blockDb.CreateDNSRecordsByDomains(item.Domains, item.Source.String())
-		if err != nil {
+		if err := blockRepo.CreateDNSRecordsByDomains(item.Domains, item.Source.String()); err != nil {
 			return err
 		}
 	}

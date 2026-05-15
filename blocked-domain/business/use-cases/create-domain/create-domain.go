@@ -3,37 +3,55 @@ package create_domain
 import (
 	"errors"
 	"fmt"
-
-	"github.com/alextorq/dns-filter/blocked-domain/db"
-	"github.com/alextorq/dns-filter/logger"
 )
 
 // ErrDomainAlreadyExists is returned when the domain is already present in the blocklist.
 var ErrDomainAlreadyExists = errors.New("domain already exists")
+
+// ErrEmptyDomain is a sentinel for empty-string input — the HTTP layer maps
+// it to 400 rather than 500.
+var ErrEmptyDomain = errors.New("domain is empty")
 
 type RequestBody struct {
 	Domain string `json:"domain"`
 	Source string `json:"source"`
 }
 
-func CreateDomain(domain RequestBody) error {
-	l := logger.GetLogger()
-	if domain.Domain == "" {
-		return fmt.Errorf("domain is empty")
+// Repo is the output port: the narrow slice of blocklist storage this use-case
+// needs. Implemented by *blocked-domain/db.Repo via structural typing.
+type Repo interface {
+	DomainNotExist(domain string) bool
+	CreateDomain(domain, source string) error
+}
+
+type Logger interface {
+	Info(args ...any)
+	Error(err error)
+}
+
+type Deps struct {
+	Repo Repo
+	Log  Logger
+}
+
+// CreateDomain validates the request, refuses duplicates, and writes the new
+// row through the repository port. The caller (HTTP handler, suggest worker)
+// is responsible for refreshing the in-memory bloom filter afterwards.
+func CreateDomain(d Deps, req RequestBody) error {
+	if req.Domain == "" {
+		return ErrEmptyDomain
 	}
 
-	if !db.DomainNotExist(domain.Domain) {
-		return fmt.Errorf("%w: %s", ErrDomainAlreadyExists, domain.Domain)
+	if !d.Repo.DomainNotExist(req.Domain) {
+		return fmt.Errorf("%w: %s", ErrDomainAlreadyExists, req.Domain)
 	}
 
-	err := db.CreateDomain(domain.Domain, domain.Source)
-	if err != nil {
+	if err := d.Repo.CreateDomain(req.Domain, req.Source); err != nil {
 		wrap := fmt.Errorf("error create domain: %w", err)
-		l.Error(wrap)
+		d.Log.Error(wrap)
 		return wrap
 	}
 
-	l.Info("Domain created:", domain.Domain)
-
+	d.Log.Info("Domain created:", req.Domain)
 	return nil
 }

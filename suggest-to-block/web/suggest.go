@@ -5,16 +5,41 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/alextorq/dns-filter/blocked-domain"
-	blocked_domain_use_cases_create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
-	"github.com/alextorq/dns-filter/filter"
-	"github.com/alextorq/dns-filter/logger"
-	blocked_domain_db "github.com/alextorq/dns-filter/source/db"
-	"github.com/alextorq/dns-filter/suggest-to-block"
+	create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
+	source_db "github.com/alextorq/dns-filter/source/db"
 	collect "github.com/alextorq/dns-filter/suggest-to-block/business/use-cases/collect"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
 	"github.com/gin-gonic/gin"
 )
+
+// BlockRepo is the narrow port over the blocklist that AddToBlock needs.
+// *blocked-domain/db.Repo satisfies it.
+type BlockRepo interface {
+	DomainNotExist(domain string) bool
+	CreateDomain(domain, source string) error
+}
+
+type SuggestRepo interface {
+	GetByFilter(params suggest_to_block_db.GetAllParams) (*suggest_to_block_db.GetAllResult, error)
+	UpdateActive(id uint, active bool) error
+}
+
+type Filter interface {
+	UpdateFromDb() error
+}
+
+type Logger interface {
+	Info(args ...any)
+	Error(err error)
+}
+
+// Handlers groups the suggest-to-block HTTP endpoints with their dependencies.
+type Handlers struct {
+	Repo      SuggestRepo
+	BlockRepo BlockRepo
+	Filter    Filter
+	Log       Logger
+}
 
 // GetAllSuggestBlocks lists collected domain suggestions awaiting moderation.
 // @Summary      List suggested-to-block domains
@@ -26,18 +51,16 @@ import (
 // @Failure      400  {object} ErrorResponse
 // @Failure      500  {object} ErrorResponse
 // @Router       /api/suggest-to-block [post]
-func GetAllSuggestBlocks(c *gin.Context) {
-	l := logger.GetLogger()
-
+func (h *Handlers) GetAllSuggestBlocks(c *gin.Context) {
 	var req GetAllSuggestBlocksRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		l.Error(fmt.Errorf("error bind json when getting suggest blocks: %w", err))
+		h.Log.Error(fmt.Errorf("error bind json when getting suggest blocks: %w", err))
 		c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	res, err := suggest_to_block.GetRecordsByFilter(suggest_to_block_db.GetAllParams{
+	res, err := h.Repo.GetByFilter(suggest_to_block_db.GetAllParams{
 		Limit:  req.Limit,
 		Offset: req.Offset,
 		Filter: req.Filter,
@@ -45,7 +68,7 @@ func GetAllSuggestBlocks(c *gin.Context) {
 		Codes:  req.Codes,
 	})
 	if err != nil {
-		l.Error(fmt.Errorf("error get suggest blocks from db: %w", err))
+		h.Log.Error(fmt.Errorf("error get suggest blocks from db: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
@@ -65,32 +88,32 @@ func GetAllSuggestBlocks(c *gin.Context) {
 // @Failure      400  {object} ErrorResponse
 // @Failure      500  {object} ErrorResponse
 // @Router       /api/suggest-to-block/add-to-block [post]
-func AddToBlock(c *gin.Context) {
-	l := logger.GetLogger()
-
+func (h *Handlers) AddToBlock(c *gin.Context) {
 	var req AddToBlockRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		l.Error(fmt.Errorf("error bind json suggest block: %w", err))
+		h.Log.Error(fmt.Errorf("error bind json suggest block: %w", err))
 		c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	err := blocked_domain.CreateDomain(blocked_domain_use_cases_create_domain.RequestBody{
-		Domain: req.Domain,
-		Source: blocked_domain_db.SourceSuggestedToBlock.String(),
-	})
+	err := create_domain.CreateDomain(
+		create_domain.Deps{Repo: h.BlockRepo, Log: h.Log},
+		create_domain.RequestBody{
+			Domain: req.Domain,
+			Source: source_db.SourceSuggestedToBlock.String(),
+		},
+	)
 
-	alreadyBlocked := errors.Is(err, blocked_domain_use_cases_create_domain.ErrDomainAlreadyExists)
+	alreadyBlocked := errors.Is(err, create_domain.ErrDomainAlreadyExists)
 	if err != nil && !alreadyBlocked {
-		l.Error(fmt.Errorf("error create domain from suggest: %w", err))
+		h.Log.Error(fmt.Errorf("error create domain from suggest: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	err = suggest_to_block.ChangeActiveStatus(req.ID, false)
-	if err != nil {
-		l.Error(fmt.Errorf("error change status suggest block: %w", err))
+	if err := h.Repo.UpdateActive(req.ID, false); err != nil {
+		h.Log.Error(fmt.Errorf("error change status suggest block: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
@@ -100,10 +123,8 @@ func AddToBlock(c *gin.Context) {
 		return
 	}
 
-	err = filter.UpdateFilterFromDb()
-
-	if err != nil {
-		l.Error(fmt.Errorf("error update filter after add to block: %w", err))
+	if err := h.Filter.UpdateFromDb(); err != nil {
+		h.Log.Error(fmt.Errorf("error update filter after add to block: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}
@@ -133,21 +154,17 @@ func GetSignalCodes(c *gin.Context) {
 // @Failure      400  {object} ErrorResponse
 // @Failure      500  {object} ErrorResponse
 // @Router       /api/suggest-to-block/change-status [post]
-func ChangeActiveStatus(c *gin.Context) {
-	l := logger.GetLogger()
-
+func (h *Handlers) ChangeActiveStatus(c *gin.Context) {
 	var req ChangeSuggestStatusRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		l.Error(fmt.Errorf("error bind json when change suggest block status: %w", err))
+		h.Log.Error(fmt.Errorf("error bind json when change suggest block status: %w", err))
 		c.JSON(http.StatusBadRequest, ErrorResponse{Message: err.Error()})
 		return
 	}
 
-	err := suggest_to_block.ChangeActiveStatus(req.ID, req.Active)
-
-	if err != nil {
-		l.Error(fmt.Errorf("error change suggest block status: %w", err))
+	if err := h.Repo.UpdateActive(req.ID, req.Active); err != nil {
+		h.Log.Error(fmt.Errorf("error change suggest block status: %w", err))
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: err.Error()})
 		return
 	}

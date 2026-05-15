@@ -4,11 +4,16 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/filter"
 	pausefilter "github.com/alextorq/dns-filter/filter/business/use-cases/pause-filter"
 	"github.com/gin-gonic/gin"
 )
+
+// Handlers groups the filter HTTP endpoints with their module dependency.
+// Construct one at the composition root and reuse it across route registrations.
+type Handlers struct {
+	Module *filter.Module
+}
 
 type FilterStatusResponse struct {
 	Status bool `json:"status"`
@@ -28,9 +33,9 @@ type PauseFilterRequest struct {
 // @Produce      json
 // @Success      200 {object} FilterStatusResponse
 // @Router       /api/filter/change-status [post]
-func ChangeFilterStatus(c *gin.Context) {
-	val := filter.ChangeFilterDnsRecords()
-	c.JSON(http.StatusOK, FilterStatusResponse{Status: val, PausedUntil: filter.GetPausedUntil()})
+func (h *Handlers) ChangeFilterStatus(c *gin.Context) {
+	val := h.Module.ChangeStatus()
+	c.JSON(http.StatusOK, FilterStatusResponse{Status: val, PausedUntil: h.Module.PausedUntil()})
 }
 
 // GetFilterStatus returns whether the DNS filter is enabled.
@@ -39,11 +44,10 @@ func ChangeFilterStatus(c *gin.Context) {
 // @Produce      json
 // @Success      200 {object} FilterStatusResponse
 // @Router       /api/filter/status [get]
-func GetFilterStatus(c *gin.Context) {
-	conf := config.GetConfig()
+func (h *Handlers) GetFilterStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, FilterStatusResponse{
-		Status:      conf.Enabled.Load(),
-		PausedUntil: filter.GetPausedUntil(),
+		Status:      h.Module.Enabled(),
+		PausedUntil: h.Module.PausedUntil(),
 	})
 }
 
@@ -56,13 +60,13 @@ func GetFilterStatus(c *gin.Context) {
 // @Success      200 {object} FilterStatusResponse
 // @Failure      400 {object} map[string]string
 // @Router       /api/filter/pause [post]
-func PauseFilter(c *gin.Context) {
+func (h *Handlers) PauseFilter(c *gin.Context) {
 	var req PauseFilterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
-	until, err := filter.PauseFilter(req.Minutes)
+	until, err := h.Module.Pause(req.Minutes)
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
@@ -75,7 +79,7 @@ func PauseFilter(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, FilterStatusResponse{
-		Status:      config.GetConfig().Enabled.Load(),
+		Status:      h.Module.Enabled(),
 		PausedUntil: until,
 	})
 }
@@ -86,10 +90,10 @@ func PauseFilter(c *gin.Context) {
 // @Produce      json
 // @Success      200 {object} FilterStatusResponse
 // @Router       /api/filter/resume [post]
-func ResumeFilter(c *gin.Context) {
-	filter.ResumeFilter()
+func (h *Handlers) ResumeFilter(c *gin.Context) {
+	h.Module.Resume()
 	c.JSON(http.StatusOK, FilterStatusResponse{
-		Status:      config.GetConfig().Enabled.Load(),
+		Status:      h.Module.Enabled(),
 		PausedUntil: 0,
 	})
 }

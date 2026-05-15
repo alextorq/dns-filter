@@ -75,13 +75,17 @@ dns-filter/
 
 #### Проверка домена (`filter/business/use-cases/check-exist/check-block.go`)
 ```go
-func CheckBlock(domain string) bool {
-    // 1. Проверяем включен ли фильтр (config.Enabled)
-    // 2. Проверяем Bloom filter
-    // 3. Если есть в Bloom → проверяем кэш
-    // 4. Если нет в кэши → запрос к БД blocked-domain
+func CheckBlock(deps Deps, domain string) bool {
+    // 1. Проверяем включен ли фильтр (deps.Conf.Enabled) и нет ли активной паузы
+    // 2. Проверяем Bloom filter (deps.Bloom)
+    // 3. Если есть в Bloom → проверяем LRU-кэш (deps.Cache)
+    // 4. Если нет в кэше → запрос к БД через deps.Repo (BlockChecker)
+    // На любую DB-ошибку — fail-open (false), без записи в кэш
 }
 ```
+
+`filter.Module` (composed in `main.go`) собирает `Deps` один раз и
+предоставляет `Module.CheckExist(domain)` для DNS hot path.
 
 ### 3. Черный список (`blocked-domain/`)
 
@@ -105,11 +109,13 @@ type BlockDomainEvent struct {
 }
 ```
 
-**Операции:**
-- `GetAllActiveFilters()` — получить все активные домены
-- `DomainNotExist()` — проверить существование домена
-- `CreateDomain()` / `UpdateDnsRecord()` — управление записями
-- `BatchCreateBlockDomainEvents()` — логирование событий блокировки
+**Операции `*blocked-domain/db.Repo`:**
+- `GetAllActiveURLs()` — список URL'ов с `Active=true` (используется `filter.Module.UpdateFromDb`)
+- `IsActivelyBlocked(domain)` — авторитетная проверка с учётом `Active` (hot path, шаг после bloom-hit + LRU-miss)
+- `DomainNotExist(domain)` — для валидации дубля при `CreateDomain`
+- `CreateDomain` / `UpdateBlockList` — управление записями
+- `CreateDNSRecordsByDomains` / `ChangeRecordStatusBySource` — bulk-операции для `source.Module`
+- `BatchCreateBlockDomainEvents` — логирование событий блокировки (через `BlockDomainEventStore` с буфером)
 
 ### 4. Белый список (`allow-domain/`)
 
@@ -262,11 +268,11 @@ blocklist (инцидент 2026-05-14, 25 авто-блокировок за о
 Остальные предложения (score в `[30, 60)` без subdomain-of-blocked)
 по-прежнему уходят в `suggest_blocks` для ручной модерации через
 `POST /api/suggest-to-block/add-to-block`. После авто-промоушенов
-`Collect()` один раз вызывает `filter.UpdateFilterFromDb()`, чтобы
-обновить in-memory bloom без per-domain rebuild. Каждое решение
-логируется (`Auto-blocked domain from suggest: ... score: ... reasons: ...`)
-— audit trail обязателен, иначе непонятно, почему домен оказался в
-blocklist.
+`Collect()` один раз вызывает `m.filter.UpdateFromDb()` (порт
+`Filter`), чтобы обновить in-memory bloom без per-domain rebuild.
+Каждое решение логируется (`Auto-blocked domain from suggest: ...
+score: ... reasons: ...`) — audit trail обязателен, иначе непонятно,
+почему домен оказался в blocklist.
 
 ---
 
@@ -284,18 +290,18 @@ flowchart TB
     end
 
     subgraph Filter_System["Система фильтрации"]
-        Filter_Facade["Filter Facade<br/>(filter_facade.go)"]
-        
+        Filter_Module["filter.Module<br/>(module.go)"]
+
         subgraph Bloom_Layer["Bloom Filter (filter/filter/)"]
             BF["BloomFilter<br/>Проверка O(1)"]
         end
-        
+
         subgraph Check_Logic["Business Logic (check-exist/)"]
             Check_Cache["LRU Cache<br/>проверок"]
-            DB_Check["БД blocked-domain"]
+            DB_Check["BlockChecker.IsActivelyBlocked<br/>(blocked-domain Repo)"]
         end
-        
-        Filter_Facade --> BF
+
+        Filter_Module --> BF
         BF -->|"есть в Bloom"| Check_Cache
         Check_Cache -->|"miss"| DB_Check
     end
@@ -348,7 +354,7 @@ flowchart TB
     
     %% Web API -> Компоненты
     API -->|"CRUD"| DB
-    API -->|"update filter"| Filter_Facade
+    API -->|"update filter"| Filter_Module
     API -->|"sync sources"| Source
     API -->|"update clients"| Clients_Map
 ```
@@ -362,33 +368,34 @@ sequenceDiagram
     participant C as Клиент
     participant DNS as DNS сервер
     participant Clients as Clients (исключения)
-    participant Filter as Filter.CheckExist
+    participant Filter as filter.Module.CheckExist
     participant BF as Bloom Filter
     participant Cache as Check Cache
-    participant DB as blocked-domain DB
+    participant DB as BlockChecker (Repo.IsActivelyBlocked)
     participant Up as Upstream DoH
     participant DnsCache as DNS Cache
     participant Metric as Metrics
 
     C->>DNS: DNS запрос (domain.example)
-    
+
     alt Клиент в исключениях
         DNS->>Clients: ClientExist(ip)
         Clients-->>DNS: true
     else Клиент НЕ в исключениях
-        DNS->>Filter: CheckBlock(domain)
-        
+        DNS->>Filter: CheckExist(domain)
+
         alt Домен в Bloom Filter
             Filter->>Cache: Get(domain)
-            
+
             alt Есть в кэше
                 Cache-->>Filter: result
             else Нет в кэше
-                Filter->>DB: DomainNotExist(domain)
-                DB-->>Filter: false (существует = заблокирован)
-                Filter->>Cache: Add(domain, true)
+                Filter->>DB: IsActivelyBlocked(domain)
+                DB-->>Filter: true / false (учитывает Active=true)
+                Filter->>Cache: Add(domain, exist)
+                Note right of DB: На DB-ошибке fail-open (false) без записи в кэш
             end
-            
+
             Filter-->>DNS: true (заблокирован)
             DNS-->>C: NXDOMAIN
         else Домен НЕ в Bloom Filter
@@ -446,41 +453,77 @@ sequenceDiagram
 
 ## Точка входа (main.go)
 
+`main.go` — единственный composition root. `db.GetConnection()`
+вызывается ровно один раз; остальные пакеты получают зависимости через
+конструкторы:
+
 ```go
 func main() {
-    // 1. Миграция БД
+    // 1. Миграция БД и admin bootstrap
     migrate.Migrate()
-    
-    // 2. Синхронизация источников
-    source.Sync()
-    
-    // 3. Загрузка фильтра в память
-    filter.UpdateFilterFromDb()
-    
-    // 4. Обновление списка клиентов
-    clients.UpdateClients()
-    
-    // 5. Запуск фоновых задач
-    go blocked_domain.ClearOldEvent()
-    go allow_domain.ClearOldEvent()
-    go suggest_to_block.StartCollectSuggest()
-    
-    // 6. Создание компонентов
-    logger := logger.GetLogger()
-    dnsCache := dns_cache.GetCacheWithMetric()
-    metric := dns.CreateMetric()
-    allowWorker := allow_domain.CreateAllowDomainEventStore(100)
-    blockWorker := blocked_domain.CreateBlockDomainEventStore(100)
-    
-    // 7. Запуск DNS сервера
-    s := dns.CreateServer(logger, dnsCache, filter.CheckExist, 
-                          metric, Handlers{...})
-    s.Serve()
-    
-    // 8. Запуск Web API
-    web.CreateServer()
+    authBusiness.BootstrapAdmin()
+
+    conn := app_db.GetConnection()
+    conf := config.GetConfig()
+    chanLogger := logger.GetLogger()
+
+    // 2. Repos (по одному на фичу) — единственная точка, где фигурирует *gorm.DB
+    blockRepo   := blocked_domain_db.NewRepo(conn)
+    allowRepo   := allow_domain_db.NewRepo(conn)
+    sourceRepo  := source_db.NewRepo(conn)
+    suggestRepo := suggest_to_block_db.NewRepo(conn)
+
+    // 3. filter.Module: впитывает singleton'ы bloom + LRU cache
+    bloom := filter_bloom.GetFilter()
+    cache := filter_cache.GetCache()
+    filterModule := filter.NewModule(blockRepo, bloom, cache, conf, chanLogger)
+
+    // 4. Sources: сидим каталог, тянем активные списки в blocklist
+    sourceModule := source.NewModule(sourceRepo, blockRepo, chanLogger)
+    sourceModule.Seed()
+    if err := sourceModule.Sync(); err != nil { panic(err) }
+
+    // 5. Bloom = snapshot активных доменов из БД
+    if err := filterModule.UpdateFromDb(); err != nil { panic(err) }
+    if err := clients.Sync(); err != nil { panic(err) }
+
+    // 6. Suggest module + фоновые задачи
+    suggestModule := suggest_to_block.NewModule(
+        blockRepo, allowRepo, sourceRepo, filterModule, suggestRepo, chanLogger,
+    )
+    go clear_events_uc.ClearEvent(blockRepo)
+    go allow_clear_events_uc.ClearEvent(allowRepo)
+    go suggestModule.Start(context.Background())
+    go authBusiness.ClearExpiredSessions()
+
+    // 7. DNS-сервер: filter.CheckExist передаётся как method value
+    cacheWithMetric := dns_cache.GetCacheWithMetric()
+    metricInstance := dns.CreateMetric()
+    allowWorker := allow_domain_use_cases.CreateAllowDomainEventStore(allowRepo, chanLogger, 100)
+    blockWorker := block_domain_uc.NewBlockDomainEventStore(blockRepo, chanLogger, 100)
+    dnsServer := dns.CreateServer(
+        chanLogger, cacheWithMetric, filterModule.CheckExist, metricInstance,
+        Handlers{allowWorker.SendAllowDomainEvent, blockWorker.SendBlockDomainEvent},
+        buildIdentifier(conf.Mode),
+    )
+
+    // 8. HTTP API: все per-feature *Handlers собраны в web.Handlers и проброшены явно
+    web.CreateServer(web.Handlers{
+        Blocked: &blockedWeb.Handlers{Repo: blockRepo, Log: chanLogger, RefreshFilter: filterModule.UpdateFromDb},
+        Filter:  &filterWeb.Handlers{Module: filterModule},
+        Suggest: &suggestWeb.Handlers{Repo: suggestRepo, BlockRepo: blockRepo, Filter: filterModule, Log: chanLogger},
+        Source:  &sourceWeb.Handlers{Repo: sourceRepo, BlockRepo: blockRepo, Filter: filterModule, Log: chanLogger},
+    })
+
+    if err := dnsServer.Serve(); err != nil { panic(err) }
 }
 ```
+
+Порядок load-bearing:
+- `migrate.Migrate()` обязан пройти до `NewRepo(conn)` — Repo молча сломается на первой записи без схемы.
+- `sourceModule.Sync()` идёт ДО `filterModule.UpdateFromDb()` — иначе bloom загрузится из пустой БД при первом старте и сервер начнёт пропускать всё.
+- `clients.Sync()` — после Migrate, до DNS Serve.
+- HTTP запускается в горутине внутри `web.CreateServer`, блокирующий `dnsServer.Serve()` держит main живым.
 
 ---
 
@@ -497,4 +540,37 @@ func main() {
 
 4. **In-memory словари** — для Bloom filter и списка исключений клиентов (быстрый доступ без блокировок)
 
-5. **Singleton паттерн** — для фильтра, логгера, кэшей (sync.Once)
+5. **Singleton паттерн** — для логгера, bloom-фильтра, LRU-кэша,
+   DNS-кэша, конфига (sync.Once). Эти singleton'ы обёрнуты `*Module` с явными
+   зависимостями; новые модули их не вызывают напрямую — `*Module` собирается
+   в `main.go` и передаётся туда, где раньше дёргался singleton.
+
+6. **Dependency injection.** `main.go` — единственный composition root.
+   `db.GetConnection()` вызывается ровно один раз там же; дальше каждая
+   фича получает свой `*Repo` (`blocked-domain/db.Repo`,
+   `allow-domain/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`),
+   а оркестрация — `*Module`:
+   - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`,
+     `Pause/Resume`. Hot path DNS — `filterModule.CheckExist` передаётся в
+     `dns.CreateServer` напрямую.
+   - `source.Module` — `Seed` + `Sync`; вызываются на старте.
+   - `suggest_to_block.Module` — `Collect` и `Start(ctx)` (12h ticker).
+
+   Use-case'ы (`*/business/use-cases/*`) — функции, зависящие от **узких
+   output-портов**, объявленных рядом с потребителем (например
+   `create_domain.Repo interface{ DomainNotExist; CreateDomain }`,
+   `check_exist_domain.Deps{Repo, Cache, Bloom, Conf, Log}`). Конкретные
+   `*Repo` удовлетворяют всем портам через structural typing — «accept
+   interfaces, return structs». Тесты use-case'ов гоняются на фейках без
+   sqlite; репозитории покрыты отдельными интеграционными тестами с
+   in-memory `:memory:`-sqlite.
+
+   HTTP-хендлеры — структуры с полями-зависимостями
+   (`*/web.Handlers{Repo, Module, Filter, Log, …}`); `web.CreateServer`
+   принимает их пакетом и не читает singleton'ов.
+
+   `db/batch.go` — только DI-варианты `BatchInsertOn` / `BatchUpsertOn`,
+   принимающие `*gorm.DB` явно. Тонкие wrapper'ы `BatchInsert`/`BatchUpsert`
+   на singleton-коннекшене удалены — последним их потребителем был
+   `allow-domain/db`, который теперь сам на `Repo.CreateBatch` →
+   `BatchUpsertOn(r.db, ...)`.

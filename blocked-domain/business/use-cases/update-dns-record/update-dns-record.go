@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/alextorq/dns-filter/blocked-domain/db"
-	"github.com/alextorq/dns-filter/logger"
 )
 
 type UpdateBlockList struct {
@@ -12,27 +11,38 @@ type UpdateBlockList struct {
 	Active bool `json:"active"`
 }
 
-func UpdateDnsRecord(update UpdateBlockList) (*db.BlockList, error) {
-	l := logger.GetLogger()
+// Repo is the output port for this use-case. *blocked-domain/db.Repo satisfies
+// it via structural typing.
+type Repo interface {
+	GetByID(id uint) (*db.BlockList, error)
+	UpdateBlockList(*db.BlockList) error
+}
 
-	record, err := db.GetBlockListByID(update.ID)
+type Logger interface {
+	Info(args ...any)
+	Error(err error)
+}
 
+type Deps struct {
+	Repo Repo
+	Log  Logger
+}
+
+func UpdateDnsRecord(d Deps, update UpdateBlockList) (*db.BlockList, error) {
+	record, err := d.Repo.GetByID(update.ID)
 	if err != nil {
 		wrap := fmt.Errorf("error get record by id when change record: %w", err)
-		l.Error(wrap)
+		d.Log.Error(wrap)
 		return nil, wrap
 	}
 
 	record.Active = update.Active
 
-	err = record.Update()
-	if err != nil {
+	if err := d.Repo.UpdateBlockList(record); err != nil {
 		wrap := fmt.Errorf("error update record when change record: %w", err)
-		l.Error(wrap)
+		d.Log.Error(wrap)
 		return nil, wrap
-	} else {
-		l.Info("Record updated:", record)
 	}
-
+	d.Log.Info("Record updated:", record)
 	return record, nil
 }

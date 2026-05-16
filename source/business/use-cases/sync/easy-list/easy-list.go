@@ -68,6 +68,54 @@ func isPublicSuffix(domain string) bool {
 	return err != nil
 }
 
+// dnsSafeModifiers — единственные $-модификаторы, при которых blocking-правило
+// ||domain^$... всё ещё означает безусловную блокировку ВСЕГО домена и его
+// можно уплощать в голую запись DNS-блок-листа:
+//   - important — только приоритет правила, область действия не сужает;
+//   - all — наоборот, расширяет на все типы запросов (полная блокировка).
+//
+// Всё остальное делает правило неуплощаемым:
+//   - контекстные (domain=, third-party/3p, popup) — браузер применяет их по
+//     контексту страницы/стороны, DNS-фильтр этого контекста не знает;
+//   - частичные (script, image, document и прочие типы ресурсов) — сужают
+//     правило до конкретного типа запроса;
+//   - меняющие действие (badfilter отключает другое правило, dnsrewrite
+//     подменяет ответ, csp/removeparam/redirect — это не блокировка).
+//
+// Срезание $... и блокировка голого домена для таких правил — это и есть баг,
+// из-за которого ||mail.ru^$domain=dzen.ru заблокировал mail.ru целиком.
+// Подход — allowlist (а не denylist): неизвестный будущий модификатор делает
+// правило неуплощаемым и оно отбрасывается — fail-safe в сторону недоблока.
+var dnsSafeModifiers = map[string]struct{}{
+	"important": {},
+	"all":       {},
+}
+
+// isFlattenableModifierSet reports whether every modifier in the $-options of
+// a blocking rule keeps it an unconditional whole-domain block — i.e. the rule
+// may be flattened into a bare-domain DNS block. options is the substring
+// after the first '$'. Empty / whitespace-only options (no modifiers, or a
+// bare trailing '$') are flattenable.
+func isFlattenableModifierSet(options string) bool {
+	options = strings.ToLower(strings.TrimSpace(options))
+	if options == "" {
+		return true
+	}
+	for _, tok := range strings.Split(options, ",") {
+		name := strings.TrimSpace(tok)
+		if eq := strings.IndexByte(name, '='); eq != -1 {
+			name = strings.TrimSpace(name[:eq])
+		}
+		if name == "" {
+			continue // tolerate stray / leading / trailing commas
+		}
+		if _, ok := dnsSafeModifiers[name]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func MergeLists(blocked []string, allowed []string) []string {
 	// Создаем карту для быстрого поиска разрешенных доменов
 	allowMap := make(map[string]bool)
@@ -123,13 +171,18 @@ func ParseEasyList(r io.Reader) []string {
 		}
 		line = line[2:] // Удаляем ||
 
-		// 5. Очистка опций ($)
+		// 5. Опции ($).
 		if idx := strings.Index(line, "$"); idx != -1 {
-			// Тут можно добавить логику проверки опций, например:
-			// options := line[idx+1:]
-			// if strings.Contains(options, "third-party") { ... }
-
+			options := line[idx+1:]
 			line = line[:idx]
+			// Blocking-правило с контекстными/частичными/действие-меняющими
+			// модификаторами нельзя свести к безусловной блокировке домена —
+			// пропускаем его целиком (см. dnsSafeModifiers). Для exception-
+			// правил (@@) опции просто срезаем: расширение whitelist лишь
+			// снимает блокировку и ложно заблокировать домен не может.
+			if !isException && !isFlattenableModifierSet(options) {
+				continue
+			}
 		}
 
 		// 6. Проверка на наличие пути
@@ -146,7 +199,12 @@ func ParseEasyList(r io.Reader) []string {
 			line = line[:idx]
 		}
 
-		// 9. Финальная валидация
+		// 9. Нормализация: нижний регистр + срез anchor-символа '|'
+		// (||domain| / ||domain|^). Домены регистронезависимы, а '|' в
+		// block_lists сделал бы запись невалидной и непробиваемой запросом.
+		line = strings.ToLower(strings.Trim(line, "|"))
+
+		// 10. Финальная валидация
 		if IsSafeDNSDomain(line) {
 			if isException {
 				whitelist[line] = struct{}{}

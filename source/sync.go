@@ -1,7 +1,8 @@
 // Package source is the composition root for the block-list source feature.
 // Module wires the source repository, the blocklist writer, and the logger;
-// main constructs one and calls Seed + Sync at startup, then hands the
-// reference to web.Handlers.
+// main constructs one, calls Seed synchronously at startup and Sync from a
+// background goroutine (see main.backgroundSync), then hands the reference to
+// web.Handlers.
 package source
 
 import (
@@ -41,8 +42,9 @@ func (m *Module) Seed() {
 }
 
 // Sync downloads + parses every active source and applies it to the blocklist
-// (new domains added, vanished ones dropped). Failure aborts main at startup —
-// partial sync would leave the bloom out-of-sync with the DB.
+// (new domains added, vanished ones dropped). At startup it runs inside the
+// backgroundSync goroutine (see main.go) so the DNS server can serve traffic
+// immediately; the caller refreshes the in-memory filter once Sync returns.
 func (m *Module) Sync() error {
 	return syncRec.Sync(m.repo, m.blockRepo, m.log)
 }

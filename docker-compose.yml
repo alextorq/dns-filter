@@ -88,22 +88,6 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    restart: unless-stopped
-    # Host networking + host rootfs mount: reports the real Pi5 host (CPU,
-    # temperature, disk, RAM, net), not the container. Prometheus reaches it at
-    # host.docker.internal:9100 — same pattern as the dns-filter target.
-    network_mode: host
-    pid: host
-    command:
-      - '--path.rootfs=/host'
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|run)($$|/)'
-    volumes:
-      - '/:/host:ro,rslave'
 
 volumes:
   prometheus-data:

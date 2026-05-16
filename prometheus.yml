@@ -9,19 +9,3 @@ scrape_configs:
       # `extra_hosts: host-gateway` on the prometheus service in compose
       # makes host.docker.internal resolve to the host gateway on Linux.
       - targets: ["host.docker.internal:2112"]
-
-  # node_exporter on Pi5 — host-networked container in this compose.
-  - job_name: "node-pi5"
-    scrape_interval: 15s
-    static_configs:
-      - targets: ["host.docker.internal:9100"]
-        labels:
-          host: "pi5"
-
-  # node_exporter on Pi4 — systemd service on 192.168.100.13 (xray gateway).
-  - job_name: "node-pi4"
-    scrape_interval: 15s
-    static_configs:
-      - targets: ["192.168.100.13:9100"]
-        labels:
-          host: "pi4"

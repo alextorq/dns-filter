@@ -103,9 +103,27 @@ func getAllSuggestBlocksOn(conn *gorm.DB, params GetAllParams) (*GetAllResult, e
 	// сначала считаем количество
 	query.Count(&total)
 
+	// По умолчанию подозрительные домены идут по убыванию score. Но при поиске
+	// по строке релевантность важнее: точное совпадение → искомый домен как
+	// поддомен (суффикс по точке) → префикс → произвольная подстрока; внутри
+	// тира сохраняется сортировка по score. relevance не маппится в
+	// SuggestBlock и нужен только для ORDER BY.
+	order := "score DESC, id DESC"
+	if params.Filter != "" {
+		query = query.Select(
+			"*, CASE"+
+				" WHEN domain = ? THEN 0"+
+				" WHEN domain LIKE ? THEN 1"+
+				" WHEN domain LIKE ? THEN 2"+
+				" ELSE 3 END AS relevance",
+			params.Filter, "%."+params.Filter, params.Filter+"%",
+		)
+		order = "relevance, " + order
+	}
+
 	err := query.
 		Preload("Reasons").
-		Order("score DESC, id DESC").
+		Order(order).
 		Limit(params.Limit).
 		Offset(params.Offset).
 		Find(&suggests).

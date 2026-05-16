@@ -14,6 +14,7 @@ import (
 	changefilter "github.com/alextorq/dns-filter/filter/business/use-cases/change-filter-dns-records"
 	checkexist "github.com/alextorq/dns-filter/filter/business/use-cases/check-exist"
 	pausefilter "github.com/alextorq/dns-filter/filter/business/use-cases/pause-filter"
+	"github.com/alextorq/dns-filter/utils"
 )
 
 // BlockChecker is the repository port the module needs. *blocked-domain/db.Repo
@@ -58,6 +59,11 @@ func NewModule(repo BlockChecker, bloom Bloom, cache Cache, conf *config.Config,
 }
 
 // CheckExist is the hot-path entry — see check-exist/check-block.go.
+//
+// The query name arrives straight from miekg/dns (q.Name): FQDN-form but with
+// no guaranteed letter case (DNS 0x20 encoding). Canonicalizing here keeps the
+// bloom filter, the LRU verdict cache and the SQLite lookup all keyed on the
+// same form the block list is stored in (#30).
 func (m *Module) CheckExist(domain string) bool {
 	return checkexist.CheckBlock(checkexist.Deps{
 		Repo:  m.repo,
@@ -65,7 +71,7 @@ func (m *Module) CheckExist(domain string) bool {
 		Bloom: m.bloom,
 		Conf:  m.conf,
 		Log:   m.log,
-	}, domain)
+	}, utils.CanonicalDomain(domain))
 }
 
 // UpdateFromDb rebuilds the bloom from the active block list and discards the

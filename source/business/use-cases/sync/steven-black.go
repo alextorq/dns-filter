@@ -8,13 +8,14 @@ import (
 	"time"
 
 	easy_list "github.com/alextorq/dns-filter/source/business/use-cases/sync/easy-list"
+	"github.com/alextorq/dns-filter/utils"
 )
 
 var httpClient = &http.Client{Timeout: 60 * time.Second}
 
 const (
-	StevenBlackURL  = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
-	HaGeZiMultiURL  = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt"
+	StevenBlackURL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+	HaGeZiMultiURL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt"
 )
 
 func LoadStevenBlack() ([]string, error) {
@@ -52,8 +53,8 @@ func ParseIpHostsLine(r io.Reader) []string {
 			if !easy_list.IsSafeDNSDomain(domain) {
 				continue
 			}
-			// В DNS запросах домены обычно с точкой в конце: "domain.com."
-			result = append(result, domain+".")
+			// Каноническая FQDN-форма — единая для всего блок-листа (#30).
+			result = append(result, utils.CanonicalDomain(domain))
 		}
 	}
 	return result

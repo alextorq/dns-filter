@@ -3,6 +3,8 @@ package create_domain
 import (
 	"errors"
 	"fmt"
+
+	"github.com/alextorq/dns-filter/utils"
 )
 
 // ErrDomainAlreadyExists is returned when the domain is already present in the blocklist.
@@ -38,6 +40,10 @@ type Deps struct {
 // row through the repository port. The caller (HTTP handler, suggest worker)
 // is responsible for refreshing the in-memory bloom filter afterwards.
 func CreateDomain(d Deps, req RequestBody) error {
+	// Канонизируем вход до проверки пустоты и дубликата: и POST-форма
+	// (example.com / Example.com), и domain из suggestion должны лечь в БД
+	// в той же FQDN-форме, в какой их потом ищет горячий путь DNS (#30).
+	req.Domain = utils.CanonicalDomain(req.Domain)
 	if req.Domain == "" {
 		return ErrEmptyDomain
 	}

@@ -7,15 +7,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alextorq/dns-filter/utils"
 	"golang.org/x/net/publicsuffix"
 )
 
 var httpClient = &http.Client{Timeout: 60 * time.Second}
 
 const (
-	EasyListURL        = "https://easylist.to/easylist/easylist.txt"
-	RuAdListURL        = "https://easylist-downloads.adblockplus.org/ruadlist+easylist.txt"
-	AdGuardRussianURL  = "https://filters.adtidy.org/extension/ublock/filters/1.txt"
+	EasyListURL       = "https://easylist.to/easylist/easylist.txt"
+	RuAdListURL       = "https://easylist-downloads.adblockplus.org/ruadlist+easylist.txt"
+	AdGuardRussianURL = "https://filters.adtidy.org/extension/ublock/filters/1.txt"
 )
 
 func LoadEasyList() ([]string, error) {
@@ -232,12 +233,7 @@ func ParseEasyList(r io.Reader) []string {
 
 	withDot := make([]string, 0, len(merge))
 	for _, domain := range merge {
-		if strings.HasSuffix(domain, ".") {
-			withDot = append(withDot, domain)
-			continue
-		} else {
-			withDot = append(withDot, domain+".")
-		}
+		withDot = append(withDot, utils.CanonicalDomain(domain))
 	}
 	return withDot
 }

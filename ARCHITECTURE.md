@@ -148,8 +148,9 @@ EasyList, RuAdList, AdGuardRussian (EasyList/AdBlock-формат).
 делает правило неуплощаемым). Дополнительно `IsSafeDNSDomain` отбрасывает
 голые public suffix (`||ru^` → `ru`) и wildcard-правила.
 
-**Процесс синхронизации** (`Sync`, только на старте — `main.go`, периодического
-ре-синка нет; «следующий синк» = следующий запуск процесса):
+**Процесс синхронизации** (`Sync`, на старте в фоне — `backgroundSync` в
+`main.go`, плюс ручной триггер из web; периодического ре-синка нет, «следующий
+синк» = следующий запуск процесса):
 1. Загрузка и парсинг каждого активного источника. Ошибка одного источника
    логируется и не прерывает остальные — он просто не доходит до записи, его
    домены сохраняются; но весь батч помечается `complete = false`.
@@ -528,12 +529,11 @@ func main() {
     cache := filter_cache.GetCache()
     filterModule := filter.NewModule(blockRepo, bloom, cache, conf, chanLogger)
 
-    // 4. Sources: сидим каталог, тянем активные списки в blocklist
+    // 4. Sources: сидим каталог (синк списков уйдёт в фон, шаг 6)
     sourceModule := source.NewModule(sourceRepo, blockRepo, chanLogger)
     sourceModule.Seed()
-    if err := sourceModule.Sync(); err != nil { panic(err) }
 
-    // 5. Bloom = snapshot активных доменов из БД
+    // 5. Bloom = snapshot активных доменов из того, что УЖЕ есть в БД
     if err := filterModule.UpdateFromDb(); err != nil { panic(err) }
     if err := clients.Sync(); err != nil { panic(err) }
 
@@ -545,6 +545,10 @@ func main() {
     go allow_clear_events_uc.ClearEvent(allowRepo)
     go suggestModule.Start(context.Background())
     go authBusiness.ClearExpiredSessions()
+    // Синк источников в фоне: тянет списки и затем перестраивает фильтр
+    // (filterModule.UpdateFromDb). Не паникует; упавший синк повторяется
+    // с экспоненциальным backoff, пока не пройдёт.
+    go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
     // 7. DNS-сервер: filter.CheckExist передаётся как method value
     cacheWithMetric := dns_cache.GetCacheWithMetric()
@@ -571,8 +575,9 @@ func main() {
 
 Порядок load-bearing:
 - `migrate.Migrate()` обязан пройти до `NewRepo(conn)` — Repo молча сломается на первой записи без схемы.
-- `sourceModule.Sync()` идёт ДО `filterModule.UpdateFromDb()` — иначе bloom загрузится из пустой БД при первом старте и сервер начнёт пропускать всё.
-- `clients.Sync()` — после Migrate, до DNS Serve.
+- `filterModule.UpdateFromDb()` (стартовый, синхронный) поднимает bloom из того, что **уже** лежит в БД, ДО старта DNS — рестарт сразу отдаёт прошлый блок-лист. На честном первом запуске БД пуста и до конца фонового синка ничего не блокируется (осознанный компромисс ради неблокирующего старта).
+- `sourceModule.Sync()` ушёл из синхронного пути в фоновую горутину `backgroundSync` — DNS-сервер стартует не дожидаясь сети. По завершении синка `backgroundSync` повторно вызывает `filterModule.UpdateFromDb()` (пересборка bloom + чистка verdict-кеша). Горутина **не паникует**: `panic` убил бы уже обслуживающий запросы DNS-сервер. Упавший синк (обычно — нет сети на первом старте) повторяется с экспоненциальным backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`), пока не пройдёт успешно.
+- `clients.Sync()` — после Migrate, до DNS Serve (чтение локальной БД, без сети).
 - HTTP запускается в горутине внутри `web.CreateServer`, блокирующий `dnsServer.Serve()` держит main живым.
 
 ---

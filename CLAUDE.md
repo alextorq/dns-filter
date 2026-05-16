@@ -44,11 +44,11 @@ This is a sinkhole DNS server with a management UI. The backend is a single Go b
 ### Entry point and startup ordering (`main.go`)
 Order matters and is non-obvious:
 1. `migrate.Migrate()` — schema migrations
-2. `source.Sync()` — pulls block lists from external sources (Steven Black, EasyList) into the DB. **Panics on failure**, so the process won't start without network access on first run.
-3. `filter.UpdateFilterFromDb()` — populates the in-memory bloom filter from the DB. Must run before the DNS server accepts traffic.
-4. `clients.UpdateClients()` — loads the IP-exclusion list into memory.
-5. Background goroutines: `blocked_domain.ClearOldEvent`, `allow_domain.ClearOldEvent`, `suggest_to_block.StartCollectSuggest` (12h cron).
-6. `web.CreateServer()` returns immediately because `r.Run(":8080")` is launched inside a goroutine — only `s.Serve()` blocks.
+2. `filterModule.UpdateFromDb()` — populates the in-memory bloom filter from whatever the DB **already holds**. Runs before the DNS server accepts traffic, so a restart serves the previous block list immediately. On a genuine first run the DB is empty and nothing is blocked until the background sync (step 5) completes — the deliberate trade-off for a non-blocking start. **Panics on failure** (a failed local DB read means the DB is broken).
+3. `clients.Sync()` — loads the IP-exclusion list into memory (local DB read, no network).
+4. Background goroutines: `clear-events` for blocked/allow domains, `suggestModule.Start` (12h cron), `authBusiness.ClearExpiredSessions`.
+5. `backgroundSync` goroutine — `sourceModule.Sync()` pulls block lists from external sources (Steven Black, EasyList, …) into the DB, then re-runs `filterModule.UpdateFromDb()` to rebuild the bloom and clear the verdict cache. It runs **in the background** so the DNS server starts without waiting on network I/O. It never panics — a panic here would kill an already-serving DNS server; instead a failed sync (typically no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds.
+6. `web.CreateServer()` returns immediately because `r.Run(":8080")` is launched inside a goroutine — only `dnsServer.Serve()` blocks.
 
 ### DNS request path (`dns/`)
 Per-query flow, matching the diagrams in `ARCHITECTURE.md`:

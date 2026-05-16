@@ -6,6 +6,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	allow_domain_use_cases "github.com/alextorq/dns-filter/allow-domain/business/use-cases"
 	allow_clear_events_uc "github.com/alextorq/dns-filter/allow-domain/business/use-cases/clear-events"
@@ -77,6 +79,57 @@ func buildIdentifier(mode config.Mode) identifier.Identifier {
 	}
 }
 
+// syncLogger is the narrow logging port backgroundSync needs.
+type syncLogger interface {
+	Info(args ...any)
+	Error(err error)
+}
+
+// Retry backoff for the startup source sync: a failed sync (typically no
+// network on first boot) is retried with exponential backoff so the sinkhole
+// eventually loads its block lists without a process restart. The delay starts
+// at syncRetryBaseDelay and doubles up to syncRetryMaxDelay.
+const (
+	syncRetryBaseDelay = 30 * time.Second
+	syncRetryMaxDelay  = 30 * time.Minute
+)
+
+// backgroundSync pulls the block lists and, on success, rebuilds the in-memory
+// filter (UpdateFromDb refreshes the bloom and clears the verdict cache so a
+// freshly blocked domain is not served from a stale verdict).
+//
+// It is launched as a goroutine after the DNS server is already serving, so —
+// unlike the synchronous startup path — it never panics: a panic here would
+// take down a DNS server that is already answering traffic. A failed sync is
+// retried with exponential backoff (see syncRetryBaseDelay) until it succeeds;
+// in the meantime the server keeps running on whatever the DB already held.
+func backgroundSync(sync, refresh func() error, log syncLogger) {
+	runBackgroundSync(sync, refresh, log, time.Sleep)
+}
+
+// runBackgroundSync is backgroundSync with an injectable sleep so the retry
+// backoff is testable without real-time delays.
+func runBackgroundSync(sync, refresh func() error, log syncLogger, sleep func(time.Duration)) {
+	log.Info("Фоновая синхронизация источников запущена")
+
+	delay := syncRetryBaseDelay
+	for attempt := 1; ; attempt++ {
+		err := sync()
+		if err == nil {
+			break
+		}
+		log.Error(fmt.Errorf("фоновая синхронизация источников не удалась (попытка %d), повтор через %s: %w", attempt, delay, err))
+		sleep(delay)
+		delay = min(delay*2, syncRetryMaxDelay)
+	}
+
+	if err := refresh(); err != nil {
+		log.Error(fmt.Errorf("обновление фильтра после фоновой синхронизации не удалось: %w", err))
+		return
+	}
+	log.Info("Фоновая синхронизация источников завершена, фильтр обновлён")
+}
+
 func main() {
 	migrate.Migrate()
 	if err := authBusiness.BootstrapAdmin(); err != nil {
@@ -101,10 +154,11 @@ func main() {
 
 	sourceModule := source.NewModule(sourceRepo, blockRepo, chanLogger)
 	sourceModule.Seed()
-	if err := sourceModule.Sync(); err != nil {
-		panic(err)
-	}
 
+	// Populate the bloom from whatever the DB already holds so the DNS server
+	// can answer queries immediately, without waiting on the network. On a
+	// genuine first run the DB is empty and nothing is blocked until the
+	// background sync below finishes — the trade-off for a non-blocking start.
 	if err := filterModule.UpdateFromDb(); err != nil {
 		panic(err)
 	}
@@ -118,6 +172,10 @@ func main() {
 	go allow_clear_events_uc.ClearEvent(allowRepo)
 	go suggestModule.Start(context.Background())
 	go authBusiness.ClearExpiredSessions()
+
+	// Pull the block lists in the background and refresh the filter once done.
+	// The DNS server (started below via dnsServer.Serve) does not wait on this.
+	go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
 	// Start the ARP watcher only in LAN mode. Public mode has no LAN to
 	// observe; the watcher would just spam ErrUnsupported (or, in a hosted

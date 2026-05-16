@@ -71,6 +71,73 @@ func TestCreateSuggestBlockBatchLogic(t *testing.T) {
 	}
 }
 
+// TestGetAllSuggestBlocks_FilterRelevanceOrder pins that a string search ranks
+// by relevance (exact → subdomain → prefix → substring) ahead of the default
+// score sort, and that without a filter the score sort is untouched.
+func TestGetAllSuggestBlocks_FilterRelevanceOrder(t *testing.T) {
+	newConn := func(t *testing.T) *gorm.DB {
+		t.Helper()
+		conn, err := gorm.Open(sqlite.Open("file::memory:?cache=private"), &gorm.Config{})
+		if err != nil {
+			t.Fatalf("open db: %v", err)
+		}
+		if err := conn.AutoMigrate(&SuggestBlock{}, &SuggestBlockReason{}); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+		return conn
+	}
+
+	// Все домены содержат "mail.ru". Score намеренно противоречит релевантности:
+	// при сортировке только по score первой была бы webmail.ru.
+	seed := []SuggestBlock{
+		{Domain: "webmail.ru", Score: 100},          // подстрока → tier 3
+		{Domain: "mail.ru.phishing.com", Score: 80}, // префикс   → tier 2
+		{Domain: "ads.mail.ru", Score: 60},          // поддомен  → tier 1
+		{Domain: "mail.ru", Score: 1},               // точное    → tier 0
+	}
+
+	t.Run("string search ranks by relevance over score", func(t *testing.T) {
+		conn := newConn(t)
+		if err := createSuggestBlockBatchOn(conn, seed); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		res, err := getAllSuggestBlocksOn(conn, GetAllParams{Limit: 100, Filter: "mail.ru"})
+		if err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		want := []string{"mail.ru", "ads.mail.ru", "mail.ru.phishing.com", "webmail.ru"}
+		if len(res.List) != len(want) {
+			t.Fatalf("got %d rows, want %d", len(res.List), len(want))
+		}
+		for i, w := range want {
+			if res.List[i].Domain != w {
+				got := make([]string, len(res.List))
+				for j, rec := range res.List {
+					got[j] = rec.Domain
+				}
+				t.Fatalf("order mismatch: got %v, want %v", got, want)
+			}
+		}
+	})
+
+	t.Run("no filter keeps the score sort", func(t *testing.T) {
+		conn := newConn(t)
+		if err := createSuggestBlockBatchOn(conn, seed); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		res, err := getAllSuggestBlocksOn(conn, GetAllParams{Limit: 100})
+		if err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		want := []string{"webmail.ru", "mail.ru.phishing.com", "ads.mail.ru", "mail.ru"}
+		for i, w := range want {
+			if res.List[i].Domain != w {
+				t.Fatalf("score order broken at %d: got %q, want %q", i, res.List[i].Domain, w)
+			}
+		}
+	})
+}
+
 // TestGetAllSuggestBlocks_FilterByCodes pins the OR-semantic of the Codes
 // filter and the invariant that Preload("Reasons") returns ALL reasons of a
 // matched suggest, not only the ones that satisfied the filter.

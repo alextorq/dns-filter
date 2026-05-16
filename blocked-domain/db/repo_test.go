@@ -112,6 +112,63 @@ func TestRepo_GetRecordsByFilter_PaginationAndFilters(t *testing.T) {
 	})
 }
 
+func TestRepo_GetRecordsByFilter_RelevanceOrder(t *testing.T) {
+	// Все четыре домена содержат подстроку "mail.ru", но релевантность разная:
+	// точное совпадение → поддомен → префикс → произвольная подстрока.
+	seed := []string{
+		"webmail.ru",           // подстрока  → tier 3
+		"mail.ru.phishing.com", // префикс    → tier 2
+		"ads.mail.ru",          // поддомен   → tier 1
+		"mail.ru",              // точное     → tier 0
+	}
+
+	t.Run("exact and subdomain rank above substring", func(t *testing.T) {
+		r := newTestRepo(t)
+		for _, u := range seed {
+			if err := r.CreateDomain(u, "easy-list"); err != nil {
+				t.Fatalf("seed %s: %v", u, err)
+			}
+		}
+		res, err := r.GetRecordsByFilter(GetAllParams{Filter: "mail.ru", Limit: 10})
+		if err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		want := []string{"mail.ru", "ads.mail.ru", "mail.ru.phishing.com", "webmail.ru"}
+		if len(res.List) != len(want) {
+			t.Fatalf("got %d rows, want %d", len(res.List), len(want))
+		}
+		for i, w := range want {
+			if res.List[i].Url != w {
+				got := make([]string, len(res.List))
+				for j, rec := range res.List {
+					got[j] = rec.Url
+				}
+				t.Fatalf("order mismatch: got %v, want %v", got, want)
+			}
+		}
+	})
+
+	t.Run("limit keeps the most relevant match", func(t *testing.T) {
+		r := newTestRepo(t)
+		for _, u := range seed {
+			if err := r.CreateDomain(u, "easy-list"); err != nil {
+				t.Fatalf("seed %s: %v", u, err)
+			}
+		}
+		// При Limit=1 должно вернуться точное совпадение, а не случайная подстрока.
+		res, err := r.GetRecordsByFilter(GetAllParams{Filter: "mail.ru", Limit: 1})
+		if err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		if res.Total != 4 {
+			t.Errorf("expected total=4, got %d", res.Total)
+		}
+		if len(res.List) != 1 || res.List[0].Url != "mail.ru" {
+			t.Errorf("expected only exact match on page 1, got %v", res.List)
+		}
+	})
+}
+
 // ----- GetAllActiveURLs -----
 
 func TestRepo_GetAllActiveURLs(t *testing.T) {

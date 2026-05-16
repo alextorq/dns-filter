@@ -47,6 +47,21 @@ func (r *Repo) GetRecordsByFilter(filter GetAllParams) (GetRecordsResult, error)
 
 	query.Count(&total)
 
+	if filter.Filter != "" {
+		// Релевантность: точное совпадение → искомый домен как поддомен
+		// (суффикс по точке) → префикс → произвольная подстрока. Внутри тира
+		// короче и алфавитно — выше. relevance не маппится в BlockList и
+		// нужен только для ORDER BY.
+		query = query.Select(
+			"*, CASE"+
+				" WHEN url = ? THEN 0"+
+				" WHEN url LIKE ? THEN 1"+
+				" WHEN url LIKE ? THEN 2"+
+				" ELSE 3 END AS relevance",
+			filter.Filter, "%."+filter.Filter, filter.Filter+"%",
+		).Order("relevance, LENGTH(url), url")
+	}
+
 	err := query.Limit(filter.Limit).Offset(filter.Offset).Find(&lists).Error
 	return GetRecordsResult{Total: total, List: lists}, err
 }

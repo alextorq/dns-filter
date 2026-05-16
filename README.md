@@ -7,8 +7,6 @@
 ╚═════╝ ╚═╝  ╚═══╝╚══════╝      ╚═╝     ╚═╝╚══════╝╚═╝   ╚══════╝╚═╝  ╚═╝
 ```
 
-# DNS Filter
-
 [![Tests](https://github.com/alextorq/dns-filter/actions/workflows/test.yml/badge.svg)](https://github.com/alextorq/dns-filter/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/alextorq/dns-filter/branch/main/graph/badge.svg)](https://codecov.io/gh/alextorq/dns-filter)
 [![Go Report Card](https://goreportcard.com/badge/github.com/alextorq/dns-filter)](https://goreportcard.com/report/github.com/alextorq/dns-filter)
@@ -19,6 +17,12 @@
 
 it is simple dns service for block advertisement and malicious
 you need seed block domains and set it server like dns in your network
+
+![img](docs/main.png)
+![img](docs/domains.png)
+![img](docs/grafana-dashboard.png)
+
+
 
 ```mermaid
 sequenceDiagram
@@ -160,10 +164,6 @@ git-ignored, so secrets don't end up in the repo.
 - Prometheus metrics endpoint
 - Loki logging integration
 - Grafana dashboards in `docs/`
-
-![img](docs/main.png)
-![img](docs/domains.png)
-![img](docs/grafana-dashboard.png)
 
 
 ## License

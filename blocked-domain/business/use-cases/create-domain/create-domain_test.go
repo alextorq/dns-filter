@@ -39,8 +39,25 @@ func TestCreateDomain_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(repo.created) != 1 || repo.created[0].domain != "ads.example" || repo.created[0].source != "user" {
-		t.Errorf("expected create with (ads.example, user), got %+v", repo.created)
+	// Домен попадает в БД в канонической FQDN-форме (#30).
+	if len(repo.created) != 1 || repo.created[0].domain != "ads.example." || repo.created[0].source != "user" {
+		t.Errorf("expected create with (ads.example., user), got %+v", repo.created)
+	}
+}
+
+// TestCreateDomain_NormalizesInput — ручной ввод в любой форме (регистр,
+// пробелы, без точки) должен лечь в БД в одной канонической форме, иначе
+// горячий путь DNS его не найдёт (#30).
+func TestCreateDomain_NormalizesInput(t *testing.T) {
+	for _, in := range []string{"Example.com", "  example.com  ", "example.com.", "EXAMPLE.COM."} {
+		repo := &fakeRepo{notExist: true}
+		err := CreateDomain(Deps{Repo: repo, Log: &nopLog{}}, RequestBody{Domain: in})
+		if err != nil {
+			t.Fatalf("input %q: unexpected error: %v", in, err)
+		}
+		if len(repo.created) != 1 || repo.created[0].domain != "example.com." {
+			t.Errorf("input %q: expected stored domain %q, got %+v", in, "example.com.", repo.created)
+		}
 	}
 }
 
@@ -52,6 +69,19 @@ func TestCreateDomain_RejectsEmpty(t *testing.T) {
 	}
 	if len(repo.created) != 0 {
 		t.Errorf("repo must not be called for empty domain, got %v", repo.created)
+	}
+}
+
+// TestCreateDomain_RejectsWhitespaceOnly — вход из одних пробелов после
+// нормализации пуст и должен отклоняться так же, как пустая строка.
+func TestCreateDomain_RejectsWhitespaceOnly(t *testing.T) {
+	repo := &fakeRepo{notExist: true}
+	err := CreateDomain(Deps{Repo: repo, Log: &nopLog{}}, RequestBody{Domain: "   "})
+	if !errors.Is(err, ErrEmptyDomain) {
+		t.Fatalf("expected ErrEmptyDomain, got %v", err)
+	}
+	if len(repo.created) != 0 {
+		t.Errorf("repo must not be called for blank domain, got %v", repo.created)
 	}
 }
 

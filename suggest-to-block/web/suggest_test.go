@@ -12,6 +12,7 @@ import (
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	source_db "github.com/alextorq/dns-filter/source/db"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
+	"github.com/alextorq/dns-filter/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -138,7 +139,8 @@ func (h *harness) seedSuggestion(domain string) uint {
 func (h *harness) seedBlocklist(domain string) {
 	h.t.Helper()
 	b := blocked_domain_db.BlockList{
-		Url:    domain,
+		// block_lists всегда хранит домены в канонической FQDN-форме (#30).
+		Url:    utils.CanonicalDomain(domain),
 		Active: true,
 		Source: source_db.SourceSuggestedToBlock.String(),
 	}
@@ -187,7 +189,7 @@ func TestAddToBlock_NewDomain_AddsAndDeactivates(t *testing.T) {
 		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
 	}
 
-	if blocked_domain_db.NewRepo(h.conn).DomainNotExist(domain) {
+	if blocked_domain_db.NewRepo(h.conn).DomainNotExist(utils.CanonicalDomain(domain)) {
 		t.Fatal("domain should be present in blocklist")
 	}
 	if h.refresh.calls != 1 {
@@ -224,7 +226,7 @@ func TestAddToBlock_DomainAlreadyInBlocklist_Returns200AndDeactivates(t *testing
 	}
 
 	var count int64
-	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", domain).Count(&count)
+	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", utils.CanonicalDomain(domain)).Count(&count)
 	if count != 1 {
 		t.Fatalf("expected exactly one blocklist entry for %s, got %d", domain, count)
 	}

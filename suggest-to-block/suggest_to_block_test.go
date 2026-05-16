@@ -12,6 +12,7 @@ import (
 	source_db "github.com/alextorq/dns-filter/source/db"
 	collect "github.com/alextorq/dns-filter/suggest-to-block/business/use-cases/collect"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
+	"github.com/alextorq/dns-filter/utils"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -93,8 +94,11 @@ func (h *harness) seedBlocked(domain string) {
 
 func (h *harness) seedBlockedWithSource(domain, src string) {
 	h.t.Helper()
+	// block_lists всегда хранит домены в канонической FQDN-форме (#30) —
+	// сид-хелпер обязан это повторять, иначе DomainNotExist в Collect не
+	// распознает «уже заблокирован» и создаст дубликат.
 	if err := h.conn.Create(&blocked_domain_db.BlockList{
-		Url:    domain,
+		Url:    utils.CanonicalDomain(domain),
 		Active: true,
 		Source: src,
 	}).Error; err != nil {
@@ -139,8 +143,10 @@ func TestCollect_AutoBlocksSubdomainOfBlocked(t *testing.T) {
 		t.Fatalf("Collect: %v", err)
 	}
 
+	// CreateDomain пишет домен в канонической FQDN-форме (#30), поэтому в
+	// block_lists он лежит с точкой на конце независимо от формы кандидата.
 	var blockEntry blocked_domain_db.BlockList
-	if err := h.conn.Where("url = ?", allowed).First(&blockEntry).Error; err != nil {
+	if err := h.conn.Where("url = ?", utils.CanonicalDomain(allowed)).First(&blockEntry).Error; err != nil {
 		t.Fatalf("expected %s auto-blocked, lookup failed: %v", allowed, err)
 	}
 	if blockEntry.Source != source_db.SourceAutoBlocked.String() {
@@ -179,7 +185,7 @@ func TestCollect_AutoBlockDisabled_FallsThroughToSuggest(t *testing.T) {
 	}
 
 	var inBlock int64
-	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", allowed).Count(&inBlock)
+	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", utils.CanonicalDomain(allowed)).Count(&inBlock)
 	if inBlock != 0 {
 		t.Errorf("AutoBlocked source is disabled but Collect wrote %d block_lists rows for %s — kill-switch ignored", inBlock, allowed)
 	}
@@ -218,7 +224,7 @@ func TestCollect_AutoBlockSourceQueryFails_FailClosed(t *testing.T) {
 	}
 
 	var inBlock int64
-	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", allowed).Count(&inBlock)
+	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", utils.CanonicalDomain(allowed)).Count(&inBlock)
 	if inBlock != 0 {
 		t.Errorf("auto-block must fail closed on IsActive error, but %d rows landed in block_lists", inBlock)
 	}
@@ -264,7 +270,7 @@ func TestCollect_AutoBlocksByScoreThreshold(t *testing.T) {
 	}
 
 	var entry blocked_domain_db.BlockList
-	if err := h.conn.Where("url = ?", allowed).First(&entry).Error; err != nil {
+	if err := h.conn.Where("url = ?", utils.CanonicalDomain(allowed)).First(&entry).Error; err != nil {
 		t.Fatalf("expected %s auto-blocked, lookup failed: %v", allowed, err)
 	}
 	if entry.Source != source_db.SourceAutoBlocked.String() {
@@ -301,7 +307,7 @@ func TestCollect_BelowAutoBlockGate_StaysInSuggest(t *testing.T) {
 	}
 
 	var blockCount int64
-	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", allowed).Count(&blockCount)
+	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", utils.CanonicalDomain(allowed)).Count(&blockCount)
 	if blockCount != 0 {
 		t.Errorf("domain must not be auto-blocked, got %d blocklist rows", blockCount)
 	}
@@ -392,7 +398,7 @@ func TestCollect_MixedBatch(t *testing.T) {
 
 	for _, d := range []string{autoA, autoB} {
 		var entry blocked_domain_db.BlockList
-		if err := h.conn.Where("url = ?", d).First(&entry).Error; err != nil {
+		if err := h.conn.Where("url = ?", utils.CanonicalDomain(d)).First(&entry).Error; err != nil {
 			t.Errorf("expected %s auto-blocked: %v", d, err)
 			continue
 		}
@@ -402,7 +408,7 @@ func TestCollect_MixedBatch(t *testing.T) {
 	}
 
 	var pre blocked_domain_db.BlockList
-	if err := h.conn.Where("url = ?", preBlocked).First(&pre).Error; err != nil {
+	if err := h.conn.Where("url = ?", utils.CanonicalDomain(preBlocked)).First(&pre).Error; err != nil {
 		t.Fatalf("preBlocked vanished from blocklist: %v", err)
 	}
 	if pre.Source != source_db.SourceHaGeZiMulti.String() {
@@ -417,7 +423,7 @@ func TestCollect_MixedBatch(t *testing.T) {
 	}
 
 	var sugInBlock int64
-	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", suggested).Count(&sugInBlock)
+	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", utils.CanonicalDomain(suggested)).Count(&sugInBlock)
 	if sugInBlock != 0 {
 		t.Errorf("suggest-only domain leaked into blocklist, got %d rows", sugInBlock)
 	}

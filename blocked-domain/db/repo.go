@@ -77,6 +77,12 @@ func (r *Repo) GetAllActiveURLs() ([]string, error) {
 	return urls, nil
 }
 
+// DomainNotExist reports whether the domain has no row in the block list.
+//
+// Invariant: domain must already be in canonical form (utils.CanonicalDomain) —
+// the `url` column stores only canonical FQDNs, so a non-canonical argument
+// would always look absent. Callers go through create_domain.CreateDomain,
+// which canonicalizes first (#30).
 func (r *Repo) DomainNotExist(domain string) bool {
 	var rec BlockList
 	err := r.db.Where("url = ?", domain).First(&rec).Error
@@ -86,6 +92,10 @@ func (r *Repo) DomainNotExist(domain string) bool {
 // IsActivelyBlocked reports whether the domain has an active record in the
 // block list. Errors must propagate: caching "not blocked" on a transient DB
 // failure would silently disable filtering for the LRU window (issue #25).
+//
+// Invariant: domain must already be canonical (utils.CanonicalDomain) — the
+// hot path passes it through filter.Module.CheckExist, which canonicalizes
+// the miekg/dns query name first (#30).
 func (r *Repo) IsActivelyBlocked(domain string) (bool, error) {
 	var count int64
 	if err := r.db.Model(&BlockList{}).

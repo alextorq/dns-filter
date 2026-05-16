@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -292,6 +293,195 @@ func TestRepo_CreateDNSRecordsByDomains(t *testing.T) {
 		r.db.Model(&BlockList{}).Count(&n)
 		if n != 2 {
 			t.Errorf("expected 2 rows, got %d", n)
+		}
+	})
+}
+
+// ----- DeleteDNSRecordsBySourceNotIn -----
+
+func countBlockList(t *testing.T, r *Repo) int64 {
+	t.Helper()
+	var n int64
+	r.db.Model(&BlockList{}).Count(&n)
+	return n
+}
+
+func urlsOfSource(t *testing.T, r *Repo, source string) map[string]struct{} {
+	t.Helper()
+	var urls []string
+	if err := r.db.Model(&BlockList{}).Where("source = ?", source).Pluck("url", &urls).Error; err != nil {
+		t.Fatalf("pluck %s: %v", source, err)
+	}
+	set := make(map[string]struct{}, len(urls))
+	for _, u := range urls {
+		set[u] = struct{}{}
+	}
+	return set
+}
+
+func TestRepo_DeleteDNSRecordsBySourceNotIn(t *testing.T) {
+	t.Run("drops domains absent from keep, leaves the rest", func(t *testing.T) {
+		r := newTestRepo(t)
+		if err := r.CreateDNSRecordsByDomains([]string{"a.example", "b.example", "c.example"}, "src"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		// b исчезла из всех источников — keep её не содержит.
+		if err := r.DeleteDNSRecordsBySourceNotIn("src", []string{"a.example", "c.example"}); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+		got := urlsOfSource(t, r, "src")
+		if len(got) != 2 {
+			t.Fatalf("got %v, want 2 domains", got)
+		}
+		for _, u := range []string{"a.example", "c.example"} {
+			if _, ok := got[u]; !ok {
+				t.Errorf("missing %q", u)
+			}
+		}
+		if _, ok := got["b.example"]; ok {
+			t.Error("b.example должна быть удалена как отсутствующая в keep")
+		}
+	})
+
+	t.Run("empty keep is a no-op and never wipes the source", func(t *testing.T) {
+		r := newTestRepo(t)
+		if err := r.CreateDNSRecordsByDomains([]string{"a.example", "b.example"}, "src"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		// Сбойный синк → пустой keep. Источник стирать нельзя.
+		if err := r.DeleteDNSRecordsBySourceNotIn("src", nil); err != nil {
+			t.Fatalf("prune nil: %v", err)
+		}
+		if err := r.DeleteDNSRecordsBySourceNotIn("src", []string{}); err != nil {
+			t.Fatalf("prune empty: %v", err)
+		}
+		if n := countBlockList(t, r); n != 2 {
+			t.Errorf("источник вычистился на пустом keep: got %d rows, want 2", n)
+		}
+	})
+
+	t.Run("touches only the named source", func(t *testing.T) {
+		r := newTestRepo(t)
+		if err := r.CreateDNSRecordsByDomains([]string{"a.example", "b.example"}, "easylist"); err != nil {
+			t.Fatalf("seed easylist: %v", err)
+		}
+		if err := r.CreateDNSRecordsByDomains([]string{"c.example", "d.example"}, "ruadlist"); err != nil {
+			t.Fatalf("seed ruadlist: %v", err)
+		}
+		// Ручная запись — её синк не трогает, даже когда её url нет в keep.
+		if err := r.CreateDomain("manual.example", "User"); err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+
+		// Прун easylist с keep, где нет ни b.example, ни ruadlist-, ни User-доменов.
+		if err := r.DeleteDNSRecordsBySourceNotIn("easylist", []string{"a.example"}); err != nil {
+			t.Fatalf("prune easylist: %v", err)
+		}
+
+		if easy := urlsOfSource(t, r, "easylist"); len(easy) != 1 {
+			t.Errorf("easylist=%v, want only a.example", easy)
+		}
+		if ru := urlsOfSource(t, r, "ruadlist"); len(ru) != 2 {
+			t.Errorf("ruadlist затронут: %v", ru)
+		}
+		if user := urlsOfSource(t, r, "User"); len(user) != 1 {
+			t.Errorf("ручная запись затронута: %v", user)
+		}
+	})
+
+	t.Run("keeps id and created_at of surviving rows", func(t *testing.T) {
+		r := newTestRepo(t)
+		if err := r.CreateDNSRecordsByDomains([]string{"keep.example", "gone.example"}, "src"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		var before BlockList
+		if err := r.db.Where("url = ?", "keep.example").First(&before).Error; err != nil {
+			t.Fatalf("lookup: %v", err)
+		}
+		if err := r.DeleteDNSRecordsBySourceNotIn("src", []string{"keep.example"}); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+		var after BlockList
+		if err := r.db.Where("url = ?", "keep.example").First(&after).Error; err != nil {
+			t.Fatalf("lookup after: %v", err)
+		}
+		if after.ID != before.ID {
+			t.Errorf("id уцелевшей строки сменился: %d → %d (история block_domain_events осиротела бы)", before.ID, after.ID)
+		}
+		if !after.CreatedAt.Equal(before.CreatedAt) {
+			t.Errorf("created_at уцелевшей строки сброшен: %v → %v", before.CreatedAt, after.CreatedAt)
+		}
+	})
+
+	t.Run("idempotent on repeated prune", func(t *testing.T) {
+		r := newTestRepo(t)
+		if err := r.CreateDNSRecordsByDomains([]string{"a.example", "b.example"}, "src"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		keep := []string{"a.example"}
+		if err := r.DeleteDNSRecordsBySourceNotIn("src", keep); err != nil {
+			t.Fatalf("first: %v", err)
+		}
+		if err := r.DeleteDNSRecordsBySourceNotIn("src", keep); err != nil {
+			t.Fatalf("second: %v", err)
+		}
+		if n := countBlockList(t, r); n != 1 {
+			t.Errorf("повторный прун изменил число строк: got %d, want 1", n)
+		}
+	})
+
+	t.Run("removes block_domain_events of pruned domains, keeps the rest", func(t *testing.T) {
+		r := newTestRepo(t)
+		if err := r.CreateDNSRecordsByDomains([]string{"stays.example", "vanishes.example"}, "src"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		// По событию блокировки на каждый домен.
+		if err := r.BatchCreateBlockDomainEvents([]string{"stays.example", "vanishes.example"}); err != nil {
+			t.Fatalf("seed events: %v", err)
+		}
+		if err := r.DeleteDNSRecordsBySourceNotIn("src", []string{"stays.example"}); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+
+		var total int64
+		r.db.Model(&BlockDomainEvent{}).Count(&total)
+		if total != 1 {
+			t.Errorf("осталось %d событий, want 1 — события удалённого домена не вычищены", total)
+		}
+		var stays BlockList
+		if err := r.db.Where("url = ?", "stays.example").First(&stays).Error; err != nil {
+			t.Fatalf("lookup stays: %v", err)
+		}
+		var orphans int64
+		r.db.Model(&BlockDomainEvent{}).Where("domain_id <> ?", stays.ID).Count(&orphans)
+		if orphans != 0 {
+			t.Errorf("остались осиротевшие события: %d", orphans)
+		}
+	})
+
+	t.Run("prunes a large vanished set across delete batches", func(t *testing.T) {
+		r := newTestRepo(t)
+		const n = 5000 // > staleDeleteBatch, заставляет удаление идти пакетами
+		seed := make([]string, n)
+		for i := range seed {
+			seed[i] = fmt.Sprintf("d%d.example", i)
+		}
+		if err := r.CreateDNSRecordsByDomains(seed, "src"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		if err := r.BatchCreateBlockDomainEvents(seed); err != nil {
+			t.Fatalf("seed events: %v", err)
+		}
+		if err := r.DeleteDNSRecordsBySourceNotIn("src", []string{"d0.example"}); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+		if got := countBlockList(t, r); got != 1 {
+			t.Errorf("got %d rows after large prune, want 1", got)
+		}
+		var events int64
+		r.db.Model(&BlockDomainEvent{}).Count(&events)
+		if events != 1 {
+			t.Errorf("got %d events after large prune, want 1 (события удалённых не вычищены)", events)
 		}
 	})
 }

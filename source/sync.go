@@ -15,10 +15,13 @@ type Logger interface {
 	Error(err error)
 }
 
-// BlockWriter is the narrow port over the blocklist (used to upsert pulled
-// source domains).
+// BlockWriter is the narrow port over the blocklist. CreateDNSRecordsByDomains
+// and DeleteDNSRecordsBySourceNotIn together apply a freshly pulled source
+// (add new domains, drop the ones gone upstream); ChangeRecordStatusBySource
+// backs the source enable/disable kill-switch.
 type BlockWriter interface {
 	CreateDNSRecordsByDomains(urls []string, source string) error
+	DeleteDNSRecordsBySourceNotIn(source string, keep []string) error
 	ChangeRecordStatusBySource(source string, active bool) error
 }
 
@@ -37,9 +40,9 @@ func (m *Module) Seed() {
 	m.repo.Seed()
 }
 
-// Sync downloads + parses every active source and upserts the parsed domains
-// into the blocklist. Failure aborts main at startup — partial sync would
-// leave the bloom out-of-sync with the DB.
+// Sync downloads + parses every active source and applies it to the blocklist
+// (new domains added, vanished ones dropped). Failure aborts main at startup —
+// partial sync would leave the bloom out-of-sync with the DB.
 func (m *Module) Sync() error {
 	return syncRec.Sync(m.repo, m.blockRepo, m.log)
 }

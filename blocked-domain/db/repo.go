@@ -107,6 +107,76 @@ func (r *Repo) CreateDNSRecordsByDomains(urls []string, source string) error {
 	return db.BatchUpsertOn(r.db, entries, 4000)
 }
 
+// idURL is a lightweight projection of (block_lists.id, block_lists.url) for
+// methods that diff the table in memory.
+type idURL struct {
+	ID  uint
+	Url string
+}
+
+// staleDeleteBatch bounds the `id IN (...)` / `domain_id IN (...)` lists when
+// pruning vanished domains. SQLite caps bound parameters at 32766; 4000 keeps
+// a wide margin and matches the batch size used on the insert side.
+const staleDeleteBatch = 4000
+
+// DeleteDNSRecordsBySourceNotIn hard-deletes block_lists rows of source whose
+// url is absent from keep, together with their block_domain_events children —
+// an event carries only domain_id, so once its block_lists row is gone it is
+// unrecoverable and orphaning it serves nothing. Deletion is scoped strictly
+// to source, so User / AutoBlocked / SuggestedToBlock rows are never touched.
+//
+// keep is the union of every freshly synced source, not just this one: a
+// domain shared by two block lists must survive as long as any list still
+// carries it (see source.Sync). An empty keep is a no-op — pruning against
+// nothing would wipe the source, and an empty fresh set means a failed sync.
+//
+// The stale set is diffed in memory (a `NOT IN` over the full keep set would
+// blow past SQLite's bound-parameter limit) and removed in batches inside one
+// transaction, so a crash cannot leave an event orphaned from its row.
+func (r *Repo) DeleteDNSRecordsBySourceNotIn(source string, keep []string) error {
+	if len(keep) == 0 {
+		return nil
+	}
+	keepSet := make(map[string]struct{}, len(keep))
+	for _, u := range keep {
+		keepSet[u] = struct{}{}
+	}
+
+	var rows []idURL
+	if err := r.db.Model(&BlockList{}).
+		Where("source = ?", source).
+		Select("id", "url").Find(&rows).Error; err != nil {
+		return err
+	}
+
+	staleIDs := make([]uint, 0, len(rows))
+	for _, row := range rows {
+		if _, ok := keepSet[row.Url]; !ok {
+			staleIDs = append(staleIDs, row.ID)
+		}
+	}
+	if len(staleIDs) == 0 {
+		return nil
+	}
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for i := 0; i < len(staleIDs); i += staleDeleteBatch {
+			batch := staleIDs[i:min(i+staleDeleteBatch, len(staleIDs))]
+			if err := tx.Unscoped().
+				Where("domain_id IN ?", batch).
+				Delete(&BlockDomainEvent{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Unscoped().
+				Where("id IN ?", batch).
+				Delete(&BlockList{}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (r *Repo) ChangeRecordStatusBySource(source string, active bool) error {
 	return r.db.Model(&BlockList{}).
 		Where("source = ?", source).
@@ -120,10 +190,6 @@ func (r *Repo) BatchCreateBlockDomainEvents(domains []string) error {
 		return nil
 	}
 	uniq := utils.OnlyUniqString(domains)
-	type idURL struct {
-		ID  uint
-		Url string
-	}
 	var rows []idURL
 	if err := r.db.Model(&BlockList{}).
 		Select("id", "url").

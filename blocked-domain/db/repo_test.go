@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
@@ -21,7 +22,7 @@ func newTestRepo(t *testing.T) *Repo {
 	}
 	// SQLite :memory: is per-connection; pin to one so all queries share state.
 	sqlConn.SetMaxOpenConns(1)
-	if err := conn.AutoMigrate(&BlockList{}, &BlockDomainEvent{}); err != nil {
+	if err := conn.AutoMigrate(&BlockList{}, &BlockListReason{}, &BlockDomainEvent{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return NewRepo(conn)
@@ -660,5 +661,67 @@ func TestRepo_GetEventsByDomain(t *testing.T) {
 	}
 	if got["a.example"] != 3 || got["b.example"] != 1 {
 		t.Errorf("expected a=3,b=1, got %v", got)
+	}
+}
+
+// ----- CreateDomainWithReasons -----
+
+// TestRepo_CreateDomainWithReasons_PersistsReasons — happy-path: домен и его
+// reason-коды ложатся в block_lists / block_list_reasons, связаны FK, и
+// читаются обратно через Preload (#95).
+func TestRepo_CreateDomainWithReasons_PersistsReasons(t *testing.T) {
+	r := newTestRepo(t)
+	reasons := []create_domain.Reason{
+		{Code: "subdomain_of_blocked", Match: "example.com"},
+		{Code: "suspicious_entropy"},
+	}
+	if err := r.CreateDomainWithReasons("ads.example.com", "AutoBlocked", reasons); err != nil {
+		t.Fatalf("CreateDomainWithReasons: %v", err)
+	}
+
+	var got BlockList
+	if err := r.db.Preload("Reasons").Where("url = ?", "ads.example.com").First(&got).Error; err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if got.Source != "AutoBlocked" || !got.Active {
+		t.Errorf("row stored wrong: source=%q active=%v", got.Source, got.Active)
+	}
+	if len(got.Reasons) != 2 {
+		t.Fatalf("expected 2 reasons, got %d (%+v)", len(got.Reasons), got.Reasons)
+	}
+	byCode := map[string]BlockListReason{}
+	for _, rs := range got.Reasons {
+		if rs.BlockListID != got.ID {
+			t.Errorf("reason %q FK=%d, want block_list id %d", rs.Code, rs.BlockListID, got.ID)
+		}
+		byCode[rs.Code] = rs
+	}
+	if byCode["subdomain_of_blocked"].MatchValue != "example.com" {
+		t.Errorf("match value lost, got %q", byCode["subdomain_of_blocked"].MatchValue)
+	}
+	if _, ok := byCode["suspicious_entropy"]; !ok {
+		t.Errorf("reason without match value not stored, got %+v", got.Reasons)
+	}
+}
+
+// TestRepo_CreateDomainWithReasons_RollbackOnReasonFailure — негатив: если
+// запись reasons падает (имитируем дропом block_list_reasons), вся транзакция
+// откатывается и домен в block_lists не остаётся (#95 AC: одна транзакция).
+func TestRepo_CreateDomainWithReasons_RollbackOnReasonFailure(t *testing.T) {
+	r := newTestRepo(t)
+	if err := r.db.Migrator().DropTable(&BlockListReason{}); err != nil {
+		t.Fatalf("drop block_list_reasons: %v", err)
+	}
+
+	err := r.CreateDomainWithReasons("ads.example.com", "AutoBlocked",
+		[]create_domain.Reason{{Code: "subdomain_of_blocked"}})
+	if err == nil {
+		t.Fatal("expected error when reason table is missing, got nil")
+	}
+
+	var count int64
+	r.db.Model(&BlockList{}).Where("url = ?", "ads.example.com").Count(&count)
+	if count != 0 {
+		t.Errorf("block_lists row must be rolled back on reason failure, got %d rows", count)
 	}
 }

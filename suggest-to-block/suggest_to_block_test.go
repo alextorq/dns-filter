@@ -44,6 +44,7 @@ func newHarness(t *testing.T) *harness {
 	sqlConn.SetMaxOpenConns(1)
 	if err := conn.AutoMigrate(
 		&blocked_domain_db.BlockList{},
+		&blocked_domain_db.BlockListReason{},
 		&blocked_domain_db.BlockDomainEvent{},
 		&allow_domain_db.AllowDomainEvent{},
 		&suggest_to_block_db.SuggestBlock{},
@@ -158,6 +159,78 @@ func TestCollect_AutoBlocksSubdomainOfBlocked(t *testing.T) {
 		Where("domain = ?", allowed).Count(&suggestCount)
 	if suggestCount != 0 {
 		t.Errorf("auto-blocked domain must not also land in suggest table, got %d rows", suggestCount)
+	}
+}
+
+// TestCollect_AutoBlockPersistsReasons — happy-path #95: при авто-блокировке
+// reason-коды кандидата (code + match) сохраняются в block_list_reasons в
+// одной транзакции с block_lists и доступны из БД без логов.
+func TestCollect_AutoBlockPersistsReasons(t *testing.T) {
+	h := newHarness(t)
+	h.setSourceActive(source_db.SourceAutoBlocked, true)
+
+	const allowed = "x8z7c4kqjfpw9.example.com"
+	h.seedBlocked("example.com")
+	h.seedAllowed(allowed)
+
+	if err := h.module.Collect(); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	var entry blocked_domain_db.BlockList
+	if err := h.conn.Preload("Reasons").
+		Where("url = ?", utils.CanonicalDomain(allowed)).First(&entry).Error; err != nil {
+		t.Fatalf("lookup auto-blocked domain: %v", err)
+	}
+	if len(entry.Reasons) == 0 {
+		t.Fatal("auto-blocked domain has no reasons stored — #95 not satisfied")
+	}
+
+	var subdomainReason *blocked_domain_db.BlockListReason
+	for i := range entry.Reasons {
+		if entry.Reasons[i].BlockListID != entry.ID {
+			t.Errorf("reason %q FK=%d, want %d", entry.Reasons[i].Code,
+				entry.Reasons[i].BlockListID, entry.ID)
+		}
+		if entry.Reasons[i].Code == collect.CodeSubdomainOfBlocked {
+			subdomainReason = &entry.Reasons[i]
+		}
+	}
+	if subdomainReason == nil {
+		t.Fatalf("expected a %s reason, got %+v", collect.CodeSubdomainOfBlocked, entry.Reasons)
+	}
+	if subdomainReason.MatchValue != "example.com" {
+		t.Errorf("subdomain_of_blocked match=%q, want example.com", subdomainReason.MatchValue)
+	}
+}
+
+// TestCollect_AutoBlockReasonsIdempotent — негатив #95: повторный прогон
+// Collect на тех же данных не плодит дубли строк в block_list_reasons (домен
+// уже в blocklist → CreateDomain возвращает ErrDomainAlreadyExists).
+func TestCollect_AutoBlockReasonsIdempotent(t *testing.T) {
+	h := newHarness(t)
+	h.setSourceActive(source_db.SourceAutoBlocked, true)
+
+	h.seedBlocked("example.com")
+	h.seedAllowed("x8z7c4kqjfpw9.example.com")
+
+	if err := h.module.Collect(); err != nil {
+		t.Fatalf("first Collect: %v", err)
+	}
+	var afterFirst int64
+	h.conn.Model(&blocked_domain_db.BlockListReason{}).Count(&afterFirst)
+	if afterFirst == 0 {
+		t.Fatal("setup invariant: first Collect stored no reasons")
+	}
+
+	if err := h.module.Collect(); err != nil {
+		t.Fatalf("second Collect: %v", err)
+	}
+	var afterSecond int64
+	h.conn.Model(&blocked_domain_db.BlockListReason{}).Count(&afterSecond)
+	if afterSecond != afterFirst {
+		t.Errorf("block_list_reasons grew on second Collect: %d → %d (must be idempotent)",
+			afterFirst, afterSecond)
 	}
 }
 

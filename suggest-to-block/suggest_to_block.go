@@ -21,6 +21,7 @@ type BlockRepo interface {
 	GetAllActiveURLs() ([]string, error)
 	DomainNotExist(domain string) bool
 	CreateDomain(domain, source string) error
+	CreateDomainWithReasons(domain, source string, reasons []create_domain.Reason) error
 }
 
 type AllowRepo interface {
@@ -175,11 +176,21 @@ const (
 // SourceAutoBlocked. Errors are logged but never propagated — auto-block is
 // best-effort and must not break the rest of the Collect batch.
 func (m *Module) autoBlock(s collect.Suggestion) autoBlockOutcome {
+	// Carry the reason codes into block_lists so the verdict survives in the
+	// DB — the application log rotates and is not a durable audit trail (#95).
+	reasons := make([]create_domain.Reason, 0, len(s.Reasons))
+	codes := make([]string, 0, len(s.Reasons))
+	for _, r := range s.Reasons {
+		reasons = append(reasons, create_domain.Reason{Code: r.Code, Match: r.Match})
+		codes = append(codes, r.Code)
+	}
+
 	err := create_domain.CreateDomain(
 		create_domain.Deps{Repo: m.blockRepo, Log: m.log},
 		create_domain.RequestBody{
-			Domain: s.Domain,
-			Source: source_db.SourceAutoBlocked.String(),
+			Domain:  s.Domain,
+			Source:  source_db.SourceAutoBlocked.String(),
+			Reasons: reasons,
 		},
 	)
 	if errors.Is(err, create_domain.ErrDomainAlreadyExists) {
@@ -190,10 +201,6 @@ func (m *Module) autoBlock(s collect.Suggestion) autoBlockOutcome {
 		return autoBlockError
 	}
 
-	codes := make([]string, 0, len(s.Reasons))
-	for _, r := range s.Reasons {
-		codes = append(codes, r.Code)
-	}
 	m.log.Info("Auto-blocked domain from suggest:", s.Domain, "score:", s.Score, "reasons:", codes)
 	return autoBlockInserted
 }

@@ -5,9 +5,14 @@ import (
 	"testing"
 )
 
+type createdRow struct {
+	domain, source string
+	reasons        []Reason
+}
+
 type fakeRepo struct {
 	notExist  bool
-	created   []struct{ domain, source string }
+	created   []createdRow
 	createErr error
 }
 
@@ -19,7 +24,15 @@ func (f *fakeRepo) CreateDomain(domain, source string) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
-	f.created = append(f.created, struct{ domain, source string }{domain, source})
+	f.created = append(f.created, createdRow{domain: domain, source: source})
+	return nil
+}
+
+func (f *fakeRepo) CreateDomainWithReasons(domain, source string, reasons []Reason) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
+	f.created = append(f.created, createdRow{domain: domain, source: source, reasons: reasons})
 	return nil
 }
 
@@ -94,6 +107,50 @@ func TestCreateDomain_RejectsExisting(t *testing.T) {
 	}
 	if len(repo.created) != 0 {
 		t.Errorf("repo must not be called when domain exists, got %v", repo.created)
+	}
+}
+
+// TestCreateDomain_WithReasons_PersistsReasons — авто-блок передаёт reasons,
+// и use-case обязан уйти в CreateDomainWithReasons, донеся их до репозитория
+// в канонической форме домена (#95).
+func TestCreateDomain_WithReasons_PersistsReasons(t *testing.T) {
+	repo := &fakeRepo{notExist: true}
+	reasons := []Reason{
+		{Code: "subdomain_of_blocked", Match: "example.com"},
+		{Code: "suspicious_entropy"},
+	}
+
+	err := CreateDomain(Deps{Repo: repo, Log: &nopLog{}},
+		RequestBody{Domain: "ads.example", Source: "AutoBlocked", Reasons: reasons})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.created) != 1 {
+		t.Fatalf("expected one created row, got %+v", repo.created)
+	}
+	got := repo.created[0]
+	if got.domain != "ads.example." || got.source != "AutoBlocked" {
+		t.Errorf("expected (ads.example., AutoBlocked), got (%s, %s)", got.domain, got.source)
+	}
+	if len(got.reasons) != 2 || got.reasons[0].Code != "subdomain_of_blocked" ||
+		got.reasons[0].Match != "example.com" || got.reasons[1].Code != "suspicious_entropy" {
+		t.Errorf("reasons not forwarded to repo, got %+v", got.reasons)
+	}
+}
+
+// TestCreateDomain_WithReasons_RejectsExisting — негатив: домен уже в
+// blocklist → запись (и его reasons) не происходит, дублей нет (#95 AC:
+// идемпотентность повторного Collect).
+func TestCreateDomain_WithReasons_RejectsExisting(t *testing.T) {
+	repo := &fakeRepo{notExist: false}
+	err := CreateDomain(Deps{Repo: repo, Log: &nopLog{}},
+		RequestBody{Domain: "already.example", Source: "AutoBlocked",
+			Reasons: []Reason{{Code: "subdomain_of_blocked"}}})
+	if !errors.Is(err, ErrDomainAlreadyExists) {
+		t.Fatalf("expected ErrDomainAlreadyExists, got %v", err)
+	}
+	if len(repo.created) != 0 {
+		t.Errorf("repo must not be called when domain exists, got %+v", repo.created)
 	}
 }
 

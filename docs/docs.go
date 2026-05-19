@@ -1054,6 +1054,13 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "reasons": {
+                    "description": "Reasons holds the auto-block signal codes (#95); read paths must\nPreload(\"Reasons\") to populate it. See CreateDomainWithReasons.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/db.BlockListReason"
+                    }
+                },
                 "source": {
                     "type": "string"
                 },
@@ -1061,6 +1068,20 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "db.BlockListReason": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "match": {
                     "type": "string"
                 }
             }

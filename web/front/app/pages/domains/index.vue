@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
 import { api } from "~/api";
-import type { DbBlockList, DbBlockListSource, DbSource } from "~/api/generated/data-contracts";
+import type {
+    CollectSignalDescriptor,
+    DbBlockList,
+    DbBlockListReason,
+    DbBlockListSource,
+    DbSource,
+} from "~/api/generated/data-contracts";
 import AddDomainModal from "~/domain/add-new-domain/components/add-domain-modal.vue";
 import ChangeStatus from "~/domain/change-domain-status/components/change-status.vue";
 import { usePaginatedList } from "~~/composables/use-paginated-list";
@@ -10,6 +16,22 @@ import { isAbortError } from "~~/utils/is-abort-error";
 
 const sources = ref<DbSource[]>([]);
 const source = ref<string | null>(null);
+
+// Reason codes (subdomain_of_blocked, …) attached to auto-blocked rows reuse
+// the same backend catalog as the Suggest page — /api/suggest-to-block/codes
+// owns the human-readable labels (#95).
+const signalCatalog = ref<CollectSignalDescriptor[]>([]);
+const labelByCode = computed(() => {
+    const map: Record<string, string> = {};
+    for (const s of signalCatalog.value) {
+        if (s.code) map[s.code] = s.label ?? s.code;
+    }
+    return map;
+});
+const labelForReason = (r: DbBlockListReason): string => {
+    const base = labelByCode.value[r.code ?? ""] ?? r.code ?? "";
+    return r.match ? `${base}: ${r.match}` : base;
+};
 
 const sourceItems = computed(() => [
     { label: "All", value: null as string | null },
@@ -47,9 +69,20 @@ const fetchSources = async () => {
     }
 };
 
+const fetchSignalCatalog = async () => {
+    try {
+        const response = await api.getSuggestSignalCodes(new AbortController().signal);
+        signalCatalog.value = response.list ?? [];
+    } catch (error) {
+        if (isAbortError(error)) return;
+        console.error("Error fetching signal catalog:", error);
+    }
+};
+
 onMounted(() => {
     refresh();
     fetchSources();
+    fetchSignalCatalog();
 });
 
 const updateActiveStatus = (item: DbBlockList) => {
@@ -81,6 +114,21 @@ const columns: TableColumn<DbBlockList>[] = [
     {
         accessorKey: "source",
         header: "Source",
+    },
+    {
+        accessorKey: "reasons",
+        header: "Reason",
+        cell: ({ row }) => {
+            const reasons = row.original.reasons ?? [];
+            if (reasons.length === 0) {
+                return h("span", { class: "text-muted" }, "—");
+            }
+            return h(
+                "ul",
+                { class: "whitespace-normal break-words text-xs space-y-0.5" },
+                reasons.map((reason) => h("li", labelForReason(reason))),
+            );
+        },
     },
     {
         accessorKey: "active",

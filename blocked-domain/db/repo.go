@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
 	"github.com/alextorq/dns-filter/db"
 	"github.com/alextorq/dns-filter/utils"
 	"gorm.io/gorm"
@@ -62,7 +63,9 @@ func (r *Repo) GetRecordsByFilter(filter GetAllParams) (GetRecordsResult, error)
 		).Order("relevance, LENGTH(url), url")
 	}
 
-	err := query.Limit(filter.Limit).Offset(filter.Offset).Find(&lists).Error
+	// Preload reasons so AutoBlocked rows expose *why* they were promoted (#95).
+	// Source rows have none — the join returns nothing extra for those.
+	err := query.Preload("Reasons").Limit(filter.Limit).Offset(filter.Offset).Find(&lists).Error
 	return GetRecordsResult{Total: total, List: lists}, err
 }
 
@@ -110,6 +113,21 @@ func (r *Repo) IsActivelyBlocked(domain string) (bool, error) {
 
 func (r *Repo) CreateDomain(domain, source string) error {
 	rec := BlockList{Url: domain, Active: true, Source: source}
+	return r.db.Create(&rec).Error
+}
+
+// CreateDomainWithReasons writes the block-list row together with its reason
+// rows. GORM's default Create wraps the row and its associations in a single
+// transaction, so a failed reason insert rolls back the block_lists row too —
+// a domain never lands on the list without the reasons it was promoted for
+// (#95). Callers must have already checked DomainNotExist; this is the
+// auto-block path of create_domain.CreateDomain.
+func (r *Repo) CreateDomainWithReasons(domain, source string, reasons []create_domain.Reason) error {
+	rec := BlockList{Url: domain, Active: true, Source: source}
+	rec.Reasons = make([]BlockListReason, 0, len(reasons))
+	for _, rs := range reasons {
+		rec.Reasons = append(rec.Reasons, BlockListReason{Code: rs.Code, MatchValue: rs.Match})
+	}
 	return r.db.Create(&rec).Error
 }
 

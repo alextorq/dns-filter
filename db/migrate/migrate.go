@@ -36,6 +36,7 @@ func Migrate() {
 		&suggest_db.SuggestBlock{},
 		&suggest_db.SuggestBlockReason{},
 		&blocked_domain_db.BlockList{},
+		&blocked_domain_db.BlockListReason{},
 		&blocked_domain_db.BlockDomainEvent{},
 		&allow_domain_db.AllowDomainEvent{},
 		&clients_db.Client{},

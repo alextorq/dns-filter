@@ -321,9 +321,18 @@ blocklist (инцидент 2026-05-14, 25 авто-блокировок за о
 `POST /api/suggest-to-block/add-to-block`. После авто-промоушенов
 `Collect()` один раз вызывает `m.filter.UpdateFromDb()` (порт
 `Filter`), чтобы обновить in-memory bloom без per-domain rebuild.
-Каждое решение логируется (`Auto-blocked domain from suggest: ...
-score: ... reasons: ...`) — audit trail обязателен, иначе непонятно,
-почему домен оказался в blocklist.
+**Persisted reason codes (#95).** Авто-блок промоутит домен через
+`create_domain.CreateDomain` с заполненным `RequestBody.Reasons`, и
+репозиторий пишет строку `block_lists` вместе с её reason-кодами
+(`block_list_reasons`: `block_list_id`, `code`, `match_value`, FK с
+`OnDelete:CASCADE`) в **одной транзакции** (`Repo.CreateDomainWithReasons`).
+Так причина авто-блокировки доступна из БД и API без логов — лог приложения
+ротируется и не является долговременным audit trail. Таблица заполняется
+только для `AutoBlocked`-записей; ручные добавления и ~426k строк из внешних
+источников reason-кодов не несут. Идемпотентность бесплатна:
+повторный `Collect()` упирается в `DomainNotExist` и не плодит дублей.
+Каждое решение дополнительно логируется (`Auto-blocked domain from suggest:
+... score: ... reasons: ...`).
 
 ---
 

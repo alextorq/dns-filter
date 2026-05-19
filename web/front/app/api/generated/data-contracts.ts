@@ -58,9 +58,20 @@ export interface DbBlockList {
   created_at?: string;
   deletedAt?: GormDeletedAt;
   id?: number;
+  /**
+   * Reasons holds the auto-block signal codes (#95); read paths must
+   * Preload("Reasons") to populate it. See CreateDomainWithReasons.
+   */
+  reasons?: DbBlockListReason[];
   source?: string;
   updated_at?: string;
   url?: string;
+}
+
+export interface DbBlockListReason {
+  code?: string;
+  id?: number;
+  match?: string;
 }
 
 export interface DbClient {

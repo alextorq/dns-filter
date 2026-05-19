@@ -40,11 +40,27 @@ definitions:
         $ref: '#/definitions/gorm.DeletedAt'
       id:
         type: integer
+      reasons:
+        description: |-
+          Reasons holds the auto-block signal codes (#95); read paths must
+          Preload("Reasons") to populate it. See CreateDomainWithReasons.
+        items:
+          $ref: '#/definitions/db.BlockListReason'
+        type: array
       source:
         type: string
       updated_at:
         type: string
       url:
+        type: string
+    type: object
+  db.BlockListReason:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      match:
         type: string
     type: object
   db.BlockListSource:

@@ -46,7 +46,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("sql db: %v", err)
 	}
 	sqlConn.SetMaxOpenConns(1)
-	if err := conn.AutoMigrate(&blocked_domain_db.BlockList{}, &blocked_domain_db.BlockDomainEvent{}); err != nil {
+	if err := conn.AutoMigrate(&blocked_domain_db.BlockList{}, &blocked_domain_db.BlockListReason{}, &blocked_domain_db.BlockDomainEvent{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	repo := blocked_domain_db.NewRepo(conn)

@@ -120,6 +120,11 @@ func (c *CacheWithMetrics) Len() int {
 	return c.inner.Len()
 }
 
+// SetStaleGrace / SetStaleTTL forward runtime SWR-window changes to the
+// underlying cache so the settings module can tune them without a restart.
+func (c *CacheWithMetrics) SetStaleGrace(d time.Duration) { c.inner.SetStaleGrace(d) }
+func (c *CacheWithMetrics) SetStaleTTL(d time.Duration)   { c.inner.SetStaleTTL(d) }
+
 // Lookup is the SWR-aware accessor: Fresh and Stale both carry a Msg; Stale
 // also bumps the dedicated stale-hits counter so we can see when SWR is
 // firing on dashboards. Expired and Miss are reported through the

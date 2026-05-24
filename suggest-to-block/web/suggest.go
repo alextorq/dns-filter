@@ -17,6 +17,7 @@ import (
 type BlockRepo interface {
 	DomainNotExist(domain string) bool
 	CreateDomain(domain, source string) error
+	CreateDomainWithReasons(domain, source string, reasons []create_domain.Reason) error
 }
 
 type SuggestRepo interface {

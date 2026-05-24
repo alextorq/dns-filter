@@ -40,11 +40,27 @@ definitions:
         $ref: '#/definitions/gorm.DeletedAt'
       id:
         type: integer
+      reasons:
+        description: |-
+          Reasons holds the auto-block signal codes (#95); read paths must
+          Preload("Reasons") to populate it. See CreateDomainWithReasons.
+        items:
+          $ref: '#/definitions/db.BlockListReason'
+        type: array
       source:
         type: string
       updated_at:
         type: string
       url:
+        type: string
+    type: object
+  db.BlockListReason:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      match:
         type: string
     type: object
   db.BlockListSource:
@@ -253,6 +269,11 @@ definitions:
       message:
         type: string
     type: object
+  github_com_alextorq_dns-filter_settings_web.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
   github_com_alextorq_dns-filter_source_web.ErrorResponse:
     properties:
       message:
@@ -275,6 +296,23 @@ definitions:
       valid:
         description: Valid is true if Time is not NULL
         type: boolean
+    type: object
+  settings.Effective:
+    properties:
+      default:
+        type: string
+      enum:
+        items:
+          type: string
+        type: array
+      key:
+        type: string
+      overridden:
+        type: boolean
+      type:
+        type: string
+      value:
+        type: string
     type: object
   update_dns_record.UpdateBlockList:
     properties:
@@ -508,6 +546,11 @@ definitions:
         type: string
       record:
         $ref: '#/definitions/db.BlockList'
+    type: object
+  web.UpdateSettingRequest:
+    properties:
+      value:
+        type: string
     type: object
   web.UserResponse:
     properties:
@@ -778,6 +821,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_alextorq_dns-filter_logger_web.MessageResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_logger_web.MessageResponse'
       summary: Change log level
       tags:
       - config
@@ -1007,6 +1054,87 @@ paths:
       summary: Get filter status
       tags:
       - filter
+  /api/settings:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/settings.Effective'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse'
+      summary: List runtime settings
+      tags:
+      - settings
+  /api/settings/{key}:
+    delete:
+      parameters:
+      - description: setting key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse'
+      summary: Reset a runtime setting to its default
+      tags:
+      - settings
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: setting key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: new value
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/web.UpdateSettingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse'
+      summary: Update a runtime setting
+      tags:
+      - settings
   /api/sources:
     post:
       produces:

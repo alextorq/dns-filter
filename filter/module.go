@@ -52,10 +52,30 @@ type Module struct {
 	cache Cache
 	conf  *config.Config
 	log   Logger
+	// persist, when set, is invoked after every successful toggle with the new
+	// (enabled, pausedUntil) state so it survives a restart. nil disables
+	// persistence (the default — tests and the hot path don't need it).
+	persist func(enabled bool, pausedUntil int64)
 }
 
 func NewModule(repo BlockChecker, bloom Bloom, cache Cache, conf *config.Config, log Logger) *Module {
 	return &Module{repo: repo, bloom: bloom, cache: cache, conf: conf, log: log}
+}
+
+// SetStateSink installs the persistence hook. Wire it at the composition root
+// to filter.PersistHook so on/off and pause survive restarts; leave unset in
+// tests.
+func (m *Module) SetStateSink(persist func(enabled bool, pausedUntil int64)) {
+	m.persist = persist
+}
+
+// persistState snapshots the current toggle state through the sink, if one is
+// installed. Called after a mutation; reads the atomics so it always reflects
+// what the use-case just stored.
+func (m *Module) persistState() {
+	if m.persist != nil {
+		m.persist(m.conf.Enabled.Load(), m.conf.PausedUntilUnix.Load())
+	}
 }
 
 // CheckExist is the hot-path entry — see check-exist/check-block.go.
@@ -90,17 +110,25 @@ func (m *Module) UpdateFromDb() error {
 
 // ChangeStatus toggles the global filter on/off, returning the new value.
 func (m *Module) ChangeStatus() bool {
-	return changefilter.ChangeFilterDnsRecords(m.conf, m.log)
+	v := changefilter.ChangeFilterDnsRecords(m.conf, m.log)
+	m.persistState()
+	return v
 }
 
 // Pause pauses filtering for the given number of minutes.
 func (m *Module) Pause(minutes int) (int64, error) {
-	return pausefilter.PauseFilter(m.conf, m.log, minutes)
+	until, err := pausefilter.PauseFilter(m.conf, m.log, minutes)
+	if err != nil {
+		return until, err
+	}
+	m.persistState()
+	return until, nil
 }
 
 // Resume clears any active pause.
 func (m *Module) Resume() {
 	pausefilter.ResumeFilter(m.conf, m.log)
+	m.persistState()
 }
 
 // PausedUntil returns the active pause deadline (unix seconds), or 0.

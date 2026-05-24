@@ -17,10 +17,26 @@ type BlockList struct {
 	Source    string         `gorm:"type:varchar(255)" json:"source"`
 	// One-to-Many
 	BlockedEvents []BlockDomainEvent `gorm:"foreignKey:DomainId" json:"blocked-events"`
+	// Reasons holds the auto-block signal codes (#95); read paths must
+	// Preload("Reasons") to populate it. See CreateDomainWithReasons.
+	Reasons []BlockListReason `gorm:"foreignKey:BlockListID;constraint:OnDelete:CASCADE" json:"reasons,omitempty"`
 }
 
 func (r *BlockList) String() string {
 	return fmt.Sprintf("BlockDomain[ID=%d, Domain=%s]", r.ID, r.Url)
+}
+
+// BlockListReason is one signal that caused a domain to land on the blocklist.
+// Mirrors suggest-to-block's SuggestBlockReason but hangs off block_lists, so
+// the reason an AutoBlocked domain was promoted survives in the DB without
+// depending on application logs (#95). Code is a stable signal code from
+// collect (subdomain_of_blocked, similar_to_blocked, …); MatchValue optionally
+// carries the related blocked domain for comparison signals.
+type BlockListReason struct {
+	ID          uint   `gorm:"primarykey" json:"id"`
+	BlockListID uint   `gorm:"index;not null" json:"-"`
+	Code        string `gorm:"index;not null" json:"code"`
+	MatchValue  string `json:"match,omitempty"`
 }
 
 // BlockDomainEvent tracks when a domain was blocked

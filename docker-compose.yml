@@ -57,39 +57,39 @@ services:
     restart: unless-stopped
     depends_on:
       - dns-filter
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus-data:/prometheus
-    ports:
-      - "9090:9090"
-    # Same reason as frontend: dns-filter is on host networking, so the
-    # prometheus.yml scrape target points at host.docker.internal:2112 and we
-    # need this rewrite for it to resolve from inside the prometheus container.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    ports:
-      - "3000:3000"
-    restart: unless-stopped
-    volumes:
-      - grafana-data:/var/lib/grafana
-      # File-based provisioning: datasource + dashboards are source-of-truth in
-      # ./grafana/. UI edits are reverted on the next sync (allowUiUpdates=false).
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-    depends_on:
-      - prometheus
+#  prometheus:
+#    image: prom/prometheus:latest
+#    container_name: prometheus
+#    volumes:
+#      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+#      - prometheus-data:/prometheus
+#    ports:
+#      - "9090:9090"
+#    # Same reason as frontend: dns-filter is on host networking, so the
+#    # prometheus.yml scrape target points at host.docker.internal:2112 and we
+#    # need this rewrite for it to resolve from inside the prometheus container.
+#    extra_hosts:
+#      - "host.docker.internal:host-gateway"
+#    restart: unless-stopped
+#  grafana:
+#    image: grafana/grafana:latest
+#    container_name: grafana
+#    environment:
+#      - GF_SECURITY_ADMIN_USER=admin
+#      - GF_SECURITY_ADMIN_PASSWORD=admin
+#    ports:
+#      - "3000:3000"
+#    restart: unless-stopped
+#    volumes:
+#      - grafana-data:/var/lib/grafana
+#      # File-based provisioning: datasource + dashboards are source-of-truth in
+#      # ./grafana/. UI edits are reverted on the next sync (allowUiUpdates=false).
+#      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+#      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+#    depends_on:
+#      - prometheus
 
 volumes:
-  prometheus-data:
+#  prometheus-data:
+#  grafana-data:
   dns-filter-data:
-  grafana-data:

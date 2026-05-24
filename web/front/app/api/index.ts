@@ -103,11 +103,14 @@ class Api {
 
     getBlockDomainsAmount = () => this.client.eventsBlockAmountCreate();
 
-    changeLogLevel = async (level: string) => {
-        await this.client.configLoggerChangeLevelCreate({ logLevel: level });
-    };
+    // Runtime settings persisted in the DB (log level, DoH upstream, cache
+    // params). listSettings returns each setting's effective value plus the
+    // metadata the UI needs to render a typed editor.
+    listSettings = () => this.client.settingsList();
 
-    getLogLevel = () => this.client.configLoggerGetLevelCreate();
+    updateSetting = (key: string, value: string) => this.client.settingsUpdate(key, { value });
+
+    resetSetting = (key: string) => this.client.settingsDelete(key);
 
     getAllSyncRecords = (abortSignal: AbortSignal) =>
         this.client.sourcesCreate({ signal: abortSignal });

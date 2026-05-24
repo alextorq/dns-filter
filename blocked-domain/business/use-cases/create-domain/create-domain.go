@@ -14,9 +14,22 @@ var ErrDomainAlreadyExists = errors.New("domain already exists")
 // it to 400 rather than 500.
 var ErrEmptyDomain = errors.New("domain is empty")
 
+// Reason is one signal that caused a domain to be added to the blocklist —
+// the same {code, match} pair collect produces. Carried optionally on
+// RequestBody so the auto-block path can persist *why* a domain was promoted
+// (#95); manual additions leave it empty.
+type Reason struct {
+	Code  string
+	Match string
+}
+
 type RequestBody struct {
 	Domain string `json:"domain"`
 	Source string `json:"source"`
+	// Reasons is optional: when non-empty the domain and its reasons are
+	// written in one transaction via Repo.CreateDomainWithReasons. Empty for
+	// manual UI additions, which keep the plain CreateDomain path.
+	Reasons []Reason `json:"-"`
 }
 
 // Repo is the output port: the narrow slice of blocklist storage this use-case
@@ -24,6 +37,9 @@ type RequestBody struct {
 type Repo interface {
 	DomainNotExist(domain string) bool
 	CreateDomain(domain, source string) error
+	// CreateDomainWithReasons persists the domain together with its reason
+	// rows atomically — a failed reason write must roll back the domain.
+	CreateDomainWithReasons(domain, source string, reasons []Reason) error
 }
 
 type Logger interface {
@@ -52,8 +68,14 @@ func CreateDomain(d Deps, req RequestBody) error {
 		return fmt.Errorf("%w: %s", ErrDomainAlreadyExists, req.Domain)
 	}
 
-	if err := d.Repo.CreateDomain(req.Domain, req.Source); err != nil {
-		wrap := fmt.Errorf("error create domain: %w", err)
+	var createErr error
+	if len(req.Reasons) > 0 {
+		createErr = d.Repo.CreateDomainWithReasons(req.Domain, req.Source, req.Reasons)
+	} else {
+		createErr = d.Repo.CreateDomain(req.Domain, req.Source)
+	}
+	if createErr != nil {
+		wrap := fmt.Errorf("error create domain: %w", createErr)
 		d.Log.Error(wrap)
 		return wrap
 	}

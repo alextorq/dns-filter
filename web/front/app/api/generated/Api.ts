@@ -20,9 +20,11 @@ import type {
   GithubComAlextorqDnsFilterClientsWebStatusResponse,
   GithubComAlextorqDnsFilterDomainInspectWebErrorResponse,
   GithubComAlextorqDnsFilterLoggerWebMessageResponse,
+  GithubComAlextorqDnsFilterSettingsWebMessageResponse,
   GithubComAlextorqDnsFilterSourceWebErrorResponse,
   GithubComAlextorqDnsFilterSuggestToBlockWebErrorResponse,
   GithubComAlextorqDnsFilterSuggestToBlockWebMessageResponse,
+  SettingsEffective,
   UpdateDnsRecordUpdateBlockList,
   WebAddToBlockRequest,
   WebBadRequestResponse,
@@ -51,6 +53,7 @@ import type {
   WebUpdateClientRequest,
   WebUpdateConfigData,
   WebUpdateDnsRecordResponse,
+  WebUpdateSettingRequest,
   WebUserResponse,
 } from "./data-contracts";
 import type { RequestParams } from "./http-client";
@@ -496,6 +499,66 @@ export class Api<
     this.request<WebFilterStatusResponse, any>({
       path: `/api/filter/status`,
       method: "GET",
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags settings
+   * @name SettingsList
+   * @summary List runtime settings
+   * @request GET:/api/settings
+   */
+  settingsList = (params: RequestParams = {}) =>
+    this.request<
+      SettingsEffective[],
+      GithubComAlextorqDnsFilterSettingsWebMessageResponse
+    >({
+      path: `/api/settings`,
+      method: "GET",
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags settings
+   * @name SettingsUpdate
+   * @summary Update a runtime setting
+   * @request PUT:/api/settings/{key}
+   */
+  settingsUpdate = (
+    key: string,
+    body: WebUpdateSettingRequest,
+    params: RequestParams = {},
+  ) =>
+    this.request<
+      GithubComAlextorqDnsFilterSettingsWebMessageResponse,
+      GithubComAlextorqDnsFilterSettingsWebMessageResponse
+    >({
+      path: `/api/settings/${key}`,
+      method: "PUT",
+      body: body,
+      type: ContentType.Json,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags settings
+   * @name SettingsDelete
+   * @summary Reset a runtime setting to its default
+   * @request DELETE:/api/settings/{key}
+   */
+  settingsDelete = (key: string, params: RequestParams = {}) =>
+    this.request<
+      GithubComAlextorqDnsFilterSettingsWebMessageResponse,
+      GithubComAlextorqDnsFilterSettingsWebMessageResponse
+    >({
+      path: `/api/settings/${key}`,
+      method: "DELETE",
       format: "json",
       ...params,
     });

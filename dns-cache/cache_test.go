@@ -33,13 +33,14 @@ func newCacheWithClock(c *clock, capacity int) *Cache {
 // newCacheWithSWR builds a Cache with a non-zero stale grace window so the
 // SWR-specific tests can exercise the Stale return state.
 func newCacheWithSWR(c *clock, capacity int, grace, staleTTL time.Duration) *Cache {
-	return &Cache{
+	cache := &Cache{
 		inner:          lru_cache.CreateCache[cachedEntry](capacity),
 		negativeTTLCap: DefaultNegativeTTLCap,
-		staleGrace:     grace,
-		staleTTL:       staleTTL,
 		now:            c.now,
 	}
+	cache.staleGrace.Store(int64(grace))
+	cache.staleTTL.Store(int64(staleTTL))
+	return cache
 }
 
 func answerMsg(name string, ttl uint32) *dns.Msg {
@@ -529,5 +530,37 @@ func TestCache_ZeroGraceDisablesStale(t *testing.T) {
 	}
 	if !got.Expired {
 		t.Fatalf("expected Expired with staleGrace=0, got %+v", got)
+	}
+}
+
+// SetStaleGrace must take effect for entries cached after the change: a cache
+// that started with no stale-window begins serving Stale once grace is raised
+// at runtime (the settings-driven path).
+func TestCache_SetStaleGrace_EnablesStaleForNewEntries(t *testing.T) {
+	c := newClock()
+	cache := newCacheWithClock(c, 10) // grace 0 by default
+	cache.SetStaleTTL(30 * time.Second)
+
+	cache.SetStaleGrace(time.Hour)
+	cache.Add("k", answerMsg("example.com", 5))
+	c.advance(6 * time.Second) // past the 5s TTL, inside the 1h grace
+
+	if got := cache.Get("k"); !got.Stale {
+		t.Fatalf("expected Stale after raising grace at runtime, got %+v", got)
+	}
+}
+
+// Conversely, lowering grace back to 0 stops new entries from being served
+// stale — the runtime toggle is reversible.
+func TestCache_SetStaleGrace_ZeroDisablesStaleForNewEntries(t *testing.T) {
+	c := newClock()
+	cache := newCacheWithSWR(c, 10, time.Hour, 30*time.Second)
+
+	cache.SetStaleGrace(0)
+	cache.Add("k", answerMsg("example.com", 5))
+	c.advance(6 * time.Second)
+
+	if got := cache.Get("k"); got.Stale {
+		t.Fatalf("expected no Stale after lowering grace to 0, got %+v", got)
 	}
 }

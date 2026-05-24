@@ -58,9 +58,20 @@ export interface DbBlockList {
   created_at?: string;
   deletedAt?: GormDeletedAt;
   id?: number;
+  /**
+   * Reasons holds the auto-block signal codes (#95); read paths must
+   * Preload("Reasons") to populate it. See CreateDomainWithReasons.
+   */
+  reasons?: DbBlockListReason[];
   source?: string;
   updated_at?: string;
   url?: string;
+}
+
+export interface DbBlockListReason {
+  code?: string;
+  id?: number;
+  match?: string;
 }
 
 export interface DbClient {
@@ -167,6 +178,10 @@ export interface GithubComAlextorqDnsFilterLoggerWebMessageResponse {
   message?: string;
 }
 
+export interface GithubComAlextorqDnsFilterSettingsWebMessageResponse {
+  message?: string;
+}
+
 export interface GithubComAlextorqDnsFilterSourceWebErrorResponse {
   message?: string;
 }
@@ -183,6 +198,15 @@ export interface GormDeletedAt {
   time?: string;
   /** Valid is true if Time is not NULL */
   valid?: boolean;
+}
+
+export interface SettingsEffective {
+  default?: string;
+  enum?: string[];
+  key?: string;
+  overridden?: boolean;
+  type?: string;
+  value?: string;
 }
 
 export interface UpdateDnsRecordUpdateBlockList {
@@ -336,6 +360,10 @@ export interface WebUpdateConfigData {
 export interface WebUpdateDnsRecordResponse {
   message?: string;
   record?: DbBlockList;
+}
+
+export interface WebUpdateSettingRequest {
+  value?: string;
 }
 
 export interface WebUserResponse {

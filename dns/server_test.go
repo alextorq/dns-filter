@@ -476,11 +476,11 @@ func TestGetFromCacheOrCreateRequest_SWRStaleHitTriggersAsyncRefresh(t *testing.
 	cache.addStale("example.com.:A", newAnswerMsg("example.com", 60))
 
 	server := &DnsServer{
-		Logger:     noopLogger{},
-		Cache:      cache,
-		Upstream:   resolver,
-		SWREnabled: true,
+		Logger:   noopLogger{},
+		Cache:    cache,
+		Upstream: resolver,
 	}
+	server.SetSWR(true)
 	server.Refresh = newRefreshWorker(cache, resolver, &server.upstream, noopLogger{}, 4)
 
 	question := dnsLib.Question{Name: "example.com.", Qtype: dnsLib.TypeA, Qclass: dnsLib.ClassINET}
@@ -515,11 +515,11 @@ func TestGetFromCacheOrCreateRequest_SWRDisabledStaleFallsThroughToUpstream(t *t
 	cache.addStale("example.com.:A", newAnswerMsg("example.com", 60))
 
 	server := &DnsServer{
-		Logger:     noopLogger{},
-		Cache:      cache,
-		Upstream:   resolver,
-		SWREnabled: false, // disabled
+		Logger:   noopLogger{},
+		Cache:    cache,
+		Upstream: resolver,
 	}
+	server.SetSWR(false) // disabled
 
 	question := dnsLib.Question{Name: "example.com.", Qtype: dnsLib.TypeA, Qclass: dnsLib.ClassINET}
 
@@ -549,11 +549,11 @@ func TestGetFromCacheOrCreateRequest_ServeStaleOnError(t *testing.T) {
 	cache.addStale("example.com.:A", newAnswerMsg("example.com", 60))
 
 	server := &DnsServer{
-		Logger:     noopLogger{},
-		Cache:      cache,
-		Upstream:   resolver,
-		SWREnabled: false, // off so we exercise the synchronous-error → stale-fallback path
+		Logger:   noopLogger{},
+		Cache:    cache,
+		Upstream: resolver,
 	}
+	server.SetSWR(false) // off so we exercise the synchronous-error → stale-fallback path
 
 	question := dnsLib.Question{Name: "example.com.", Qtype: dnsLib.TypeA, Qclass: dnsLib.ClassINET}
 
@@ -585,11 +585,11 @@ func TestGetFromCacheOrCreateRequest_RefreshDroppedWhenSemaphoreFull(t *testing.
 	cache.addStale("b.example.com.:A", newAnswerMsg("b.example.com", 60))
 
 	server := &DnsServer{
-		Logger:     noopLogger{},
-		Cache:      cache,
-		Upstream:   resolver,
-		SWREnabled: true,
+		Logger:   noopLogger{},
+		Cache:    cache,
+		Upstream: resolver,
 	}
+	server.SetSWR(true)
 	// concurrency=1 so a second refresh has nowhere to land.
 	server.Refresh = newRefreshWorker(cache, resolver, &server.upstream, noopLogger{}, 1)
 

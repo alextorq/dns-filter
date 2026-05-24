@@ -8,8 +8,23 @@ export default withNuxt(
         files: ["**/*.ts", "**/*.tsx", "**/*.vue"],
         languageOptions: {
             parserOptions: {
+                // composables/, utils/, test/setup.ts and vitest.config.ts live
+                // at the project root, outside the Nuxt srcDir (app/), so no
+                // generated tsconfig includes them — typed linting falls back to
+                // the "default project". Its default cap is 8 files and we have
+                // more, hence the explicit higher limit (the slowdown is
+                // negligible at this scale). The config/setup files are listed so
+                // they aren't flagged as "not found by the project service".
+                // test/*.ts is scoped to the top level so it never overlaps with
+                // test/nuxt/** (which a generated tsconfig already includes).
                 projectService: {
-                    allowDefaultProject: ["composables/*.ts", "utils/*.ts"],
+                    allowDefaultProject: [
+                        "composables/*.ts",
+                        "utils/*.ts",
+                        "test/*.ts",
+                        "vitest.config.ts",
+                    ],
+                    maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 50,
                 },
                 tsconfigRootDir: import.meta.dirname,
             },

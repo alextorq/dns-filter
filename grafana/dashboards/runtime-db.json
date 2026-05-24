@@ -1,0 +1,2372 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "type": "row",
+      "title": "Overview & Health",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Uptime",
+      "description": "Время работы процесса с момента старта.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "time()-process_start_time_seconds",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Goroutines",
+      "description": "Текущее число горутин. Резкий рост — утечка или всплеск нагрузки.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 4,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "go_goroutines",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "OS Threads",
+      "description": "Потоки ОС, созданные рантаймом Go.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 7,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "go_threads",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "CPU (cores)",
+      "description": "Потребление CPU в ядрах (rate 5m).",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 10,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total[5m])",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "RSS Memory",
+      "description": "Резидентная память процесса (RSS).",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 13,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Open FDs",
+      "description": "Открытые файловые дескрипторы из лимита.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 17,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "process_open_fds",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "SQLite size",
+      "description": "Размер файла БД на диске.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sqlite_file_size_bytes",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "type": "row",
+      "title": "Memory",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 9
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Heap memory",
+      "description": "Куча Go: in-use и idle складываются в выделенную ОС кучу; пунктир next_gc — порог следующей сборки.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "expr": "go_memstats_heap_inuse_bytes",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "heap in-use"
+        },
+        {
+          "expr": "go_memstats_heap_idle_bytes",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "heap idle"
+        },
+        {
+          "expr": "go_memstats_heap_alloc_bytes",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "heap alloc (live)"
+        },
+        {
+          "expr": "go_memstats_next_gc_bytes",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "next GC target"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 18,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "heap alloc (live)"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "next GC target"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Process & off-heap memory",
+      "description": "RSS процесса против суммарной памяти рантайма и стека горутин.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "RSS"
+        },
+        {
+          "expr": "go_memstats_sys_bytes",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "Go sys total"
+        },
+        {
+          "expr": "go_memstats_stack_inuse_bytes",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "stack in-use"
+        },
+        {
+          "expr": "go_memstats_heap_sys_bytes",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "heap reserved"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "type": "row",
+      "title": "Goroutines, Allocation & GC",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 12
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Goroutines & threads",
+      "description": "Динамика горутин и потоков ОС.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 15
+      },
+      "targets": [
+        {
+          "expr": "go_goroutines",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "goroutines"
+        },
+        {
+          "expr": "go_threads",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "os threads"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Allocation rate",
+      "description": "Скорость аллокаций/освобождений объектов (rate 5m) — давление на GC.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 15
+      },
+      "targets": [
+        {
+          "expr": "rate(go_memstats_mallocs_total[5m])",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "mallocs/s"
+        },
+        {
+          "expr": "rate(go_memstats_frees_total[5m])",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "frees/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 6,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "GC pause & frequency",
+      "description": "Квантильные паузы STOP-the-world и частота сборок (правая ось — GC/с).",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
+      "targets": [
+        {
+          "expr": "go_gc_duration_seconds{quantile=\"0.5\"}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "pause p50"
+        },
+        {
+          "expr": "go_gc_duration_seconds{quantile=\"1\"}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "pause max"
+        },
+        {
+          "expr": "rate(go_gc_duration_seconds_count[5m])",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "GC/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 4,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GC/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 40
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "type": "row",
+      "title": "CPU & File Descriptors",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "id": 16
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "CPU usage (cores)",
+      "description": "Потребление CPU в ядрах (rate 5m).",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total[5m])",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "cores"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 3,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "File descriptors",
+      "description": "Открытые FD против лимита процесса.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "process_open_fds",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "open"
+        },
+        {
+          "expr": "process_max_fds",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "max"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 6,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "max"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    8
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "type": "row",
+      "title": "Database — Query Latency",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 19
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Query latency (overall)",
+      "description": "Латентность всех DB-операций: p50/p95/p99. Главный индикатор «тупит ли БД».",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(db_query_duration_seconds_bucket[$__rate_interval])))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(db_query_duration_seconds_bucket[$__rate_interval])))",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(db_query_duration_seconds_bucket[$__rate_interval])))",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "p95 latency by operation",
+      "description": "p95 по типу GORM-операции (create/query/update/delete/row/raw).",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(db_query_duration_seconds_bucket[$__rate_interval])))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "{{operation}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 6,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Query rate by operation",
+      "description": "Частота DB-операций в секунду по типу.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation) (rate(db_query_duration_seconds_count[$__rate_interval]))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "{{operation}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 30,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Query errors by operation",
+      "description": "Ошибки DB-операций в секунду (record-not-found исключён).",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation) (rate(db_query_errors_total[$__rate_interval]))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "{{operation}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.001
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 24,
+      "type": "heatmap",
+      "title": "Query latency distribution (heatmap)",
+      "description": "Распределение латентности DB-запросов во времени — тёплые зоны вверху = медленные запросы.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "targets": [
+        {
+          "expr": "sum by (le) (increase(db_query_duration_seconds_bucket[$__rate_interval]))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          }
+        }
+      ],
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "cellValues": {
+          "unit": "short"
+        },
+        "color": {
+          "mode": "scheme",
+          "scheme": "Turbo",
+          "steps": 64,
+          "reverse": false,
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "scale": "exponential"
+        },
+        "yAxis": {
+          "unit": "s",
+          "axisPlacement": "left",
+          "decimals": 0
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "mode": "single",
+          "yHistogram": true,
+          "showColorScale": true
+        },
+        "legend": {
+          "show": true
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-09
+        },
+        "yBucketBound": "auto",
+        "calculation": {}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": []
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "type": "row",
+      "title": "Database — Connection Pool & Health",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
+      "id": 25
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Connection pool",
+      "description": "Соединения database/sql: open/in-use/idle против лимита (пунктир).",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 59
+      },
+      "targets": [
+        {
+          "expr": "go_sql_open_connections{db_name=\"main\"}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "open"
+        },
+        {
+          "expr": "go_sql_in_use_connections{db_name=\"main\"}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "in use"
+        },
+        {
+          "expr": "go_sql_idle_connections{db_name=\"main\"}",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "idle"
+        },
+        {
+          "expr": "go_sql_max_open_connections{db_name=\"main\"}",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "max open"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "max open"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    8
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Connection wait",
+      "description": "Ожидание свободного соединения: частота (waits/s) и средняя длительность (правая ось). Растёт → пул — узкое место.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 59
+      },
+      "targets": [
+        {
+          "expr": "rate(go_sql_wait_count_total{db_name=\"main\"}[$__rate_interval])",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "waits/s"
+        },
+        {
+          "expr": "rate(go_sql_wait_duration_seconds_total{db_name=\"main\"}[$__rate_interval]) / clamp_min(rate(go_sql_wait_count_total{db_name=\"main\"}[$__rate_interval]), 1e-9)",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "avg wait"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg wait"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Closed connections",
+      "description": "Соединения, закрытые пулом по лимитам idle / lifetime (rate 5m).",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 59
+      },
+      "targets": [
+        {
+          "expr": "rate(go_sql_max_idle_closed_total{db_name=\"main\"}[5m])",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "idle-closed/s"
+        },
+        {
+          "expr": "rate(go_sql_max_lifetime_closed_total{db_name=\"main\"}[5m])",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "lifetime-closed/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "SQLite file size",
+      "description": "Рост файла БД во времени.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 67
+      },
+      "targets": [
+        {
+          "expr": "sqlite_file_size_bytes",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "size"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Dropped log records",
+      "description": "Логи, потерянные из-за переполнения канала логгера. Должно быть 0.",
+      "datasource": {
+        "type": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 67
+      },
+      "targets": [
+        {
+          "expr": "logger_dropped_logs_total",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "dropped total"
+        },
+        {
+          "expr": "rate(logger_dropped_logs_total[5m])",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "legendFormat": "dropped/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "spanNulls": false,
+            "showPoints": "never",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "barAlignment": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "dropped/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.3.1"
+    }
+  ],
+  "preload": false,
+  "refresh": "10s",
+  "schemaVersion": 42,
+  "tags": [
+    "dns",
+    "go",
+    "runtime",
+    "database"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DNS Filter — Runtime & Database",
+  "uid": "dnsf-runtime-db",
+  "version": 1,
+  "weekStart": ""
+}

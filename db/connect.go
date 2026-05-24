@@ -63,6 +63,11 @@ func GetConnection() *gorm.DB {
 				log.Fatal(err)
 			}
 		}
+
+		// Attach Prometheus instrumentation (per-operation latency/error
+		// callbacks + connection-pool stats) once, on the single shared
+		// connection. Non-fatal: failures here only cost observability.
+		instrumentConnection(db)
 	})
 	return db
 }

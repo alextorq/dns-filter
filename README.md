@@ -161,9 +161,14 @@ git-ignored, so secrets don't end up in the repo.
    ```
 
 ## Monitoring & Logging
-- Prometheus metrics endpoint
+- Prometheus metrics endpoint (`:2112/metrics`, toggled by `DNS_FILTER_METRIC_ENABLE`):
+  DNS/cache counters, Go runtime + process metrics (goroutines, heap, GC, CPU, FDs),
+  and database metrics — per-operation query latency (`db_query_duration_seconds`),
+  query errors (`db_query_errors_total`), connection-pool stats (`go_sql_*`) and
+  SQLite file size.
 - Loki logging integration
-- Grafana dashboards in `docs/`
+- Grafana dashboards in `grafana/dashboards/` (provisioned via `grafana/provisioning/`):
+  `dns-filter.json` (DNS & cache) and `runtime-db.json` (container runtime & database health).
 
 
 ## License

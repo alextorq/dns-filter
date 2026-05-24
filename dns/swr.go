@@ -2,6 +2,7 @@ package dns
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/alextorq/dns-filter/metric"
@@ -49,9 +50,22 @@ type refreshCache interface {
 // and, if the slot is taken, drops the refresh (the next stale hit will try
 // again). singleflight collapses concurrent refreshes for the same key into
 // a single upstream call, so the semaphore only needs to bound *distinct*
-// in-flight refreshes — 32 is plenty for a home resolver.
+// in-flight refreshes. The capacity is runtime-tunable via SetConcurrency
+// (settings key cache_refresh_concurrency); the default of 32 suits a home
+// resolver.
+// semaphore bounds the number of in-flight refreshes. It is swapped wholesale
+// on a concurrency change (SetConcurrency) rather than resized in place: each
+// refresh captures the semaphore it acquired a token from and releases back to
+// that same one, so an in-flight refresh started under the old size still
+// balances correctly after a resize.
+type semaphore struct {
+	tokens chan struct{}
+}
+
 type refreshWorker struct {
-	sem      chan struct{}
+	// limiter is swapped atomically by SetConcurrency. Refresh loads it once
+	// per call and both acquires and releases against that snapshot.
+	limiter  atomic.Pointer[semaphore]
 	cache    refreshCache
 	upstream UpstreamResolver
 	coord    *upstreamCoordinator
@@ -59,31 +73,40 @@ type refreshWorker struct {
 }
 
 func newRefreshWorker(cache refreshCache, upstream UpstreamResolver, coord *upstreamCoordinator, logger Logger, concurrency int) *refreshWorker {
-	if concurrency <= 0 {
-		concurrency = 1
-	}
-	return &refreshWorker{
-		sem:      make(chan struct{}, concurrency),
+	w := &refreshWorker{
 		cache:    cache,
 		upstream: upstream,
 		coord:    coord,
 		logger:   logger,
 	}
+	w.SetConcurrency(concurrency)
+	return w
+}
+
+// SetConcurrency resizes the refresh pool at runtime by swapping in a fresh
+// semaphore of capacity n (clamped to >= 1). Subsequent refreshes are bounded
+// by the new size; refreshes already in flight keep their captured token.
+func (w *refreshWorker) SetConcurrency(n int) {
+	if n <= 0 {
+		n = 1
+	}
+	w.limiter.Store(&semaphore{tokens: make(chan struct{}, n)})
 }
 
 // Refresh fires an async refresh for (key, question) unless the semaphore
 // is saturated, in which case it returns immediately (counted as dropped).
 // Safe to call from the hot path — does not block.
 func (w *refreshWorker) Refresh(key string, question dns.Question) {
+	sem := w.limiter.Load()
 	select {
-	case w.sem <- struct{}{}:
+	case sem.tokens <- struct{}{}:
 	default:
 		refreshTotal.WithLabelValues("dropped").Inc()
 		return
 	}
 
 	go func() {
-		defer func() { <-w.sem }()
+		defer func() { <-sem.tokens }()
 
 		ctx, cancel := context.WithTimeout(context.Background(), swrRefreshTimeout)
 		defer cancel()

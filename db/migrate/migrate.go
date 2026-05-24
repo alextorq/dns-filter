@@ -6,6 +6,7 @@ import (
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	clients_db "github.com/alextorq/dns-filter/clients/db"
 	"github.com/alextorq/dns-filter/db"
+	settings_db "github.com/alextorq/dns-filter/settings/db"
 	syncDb "github.com/alextorq/dns-filter/source/db"
 	suggest_db "github.com/alextorq/dns-filter/suggest-to-block/db"
 	"gorm.io/gorm"
@@ -43,6 +44,7 @@ func Migrate() {
 		&syncDb.Source{},
 		&auth_db.User{},
 		&auth_db.Session{},
+		&settings_db.Setting{},
 	)
 	if err != nil {
 		panic(err)

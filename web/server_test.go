@@ -10,6 +10,8 @@ import (
 
 	blockedWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
+	loggerWeb "github.com/alextorq/dns-filter/logger/web"
+	settingsWeb "github.com/alextorq/dns-filter/settings/web"
 	sourceWeb "github.com/alextorq/dns-filter/source/web"
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
 	"github.com/gin-gonic/gin"
@@ -25,8 +27,11 @@ var expectedRoutes = []string{
 	"GET /api/config/db/download",
 	"GET /api/domain/inspect",
 	"GET /api/filter/status",
+	"GET /api/settings",
 	"GET /api/suggest-to-block/codes",
 	"GET /swagger/*any",
+	"PUT /api/settings/:key",
+	"DELETE /api/settings/:key",
 	"POST /api/auth/login",
 	"POST /api/auth/logout",
 	"POST /api/clients",
@@ -73,10 +78,12 @@ func TestBuildRouter_RegistersAllExpectedRoutes(t *testing.T) {
 
 func testHandlers() Handlers {
 	return Handlers{
-		Blocked: &blockedWeb.Handlers{},
-		Filter:  &filterWeb.Handlers{},
-		Suggest: &suggestWeb.Handlers{},
-		Source:  &sourceWeb.Handlers{},
+		Blocked:  &blockedWeb.Handlers{},
+		Filter:   &filterWeb.Handlers{},
+		Suggest:  &suggestWeb.Handlers{},
+		Source:   &sourceWeb.Handlers{},
+		Logger:   &loggerWeb.Handlers{},
+		Settings: &settingsWeb.Handlers{},
 	}
 }
 

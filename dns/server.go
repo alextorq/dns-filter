@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/alextorq/dns-filter/clients/identifier"
@@ -52,13 +53,15 @@ type DnsServer struct {
 	// upstream collapses concurrent identical queries into a single in-flight
 	// upstream call. Zero value is ready to use.
 	upstream upstreamCoordinator
-	// SWREnabled gates proactive stale-while-revalidate: on Stale-state cache
+	// swrEnabled gates proactive stale-while-revalidate: on Stale-state cache
 	// lookups, serve immediately and refresh in the background. When false a
 	// stale entry falls through to a synchronous upstream call (the cache may
 	// still hold stale data — it's used as fallback in serve-stale-on-error).
-	SWREnabled bool
+	// Atomic because it is read on the hot path and toggled at runtime via the
+	// settings module (SetSWR).
+	swrEnabled atomic.Bool
 	// Refresh is the async refresh worker invoked on Stale hits. Optional —
-	// nil disables proactive refresh even if SWREnabled is true.
+	// nil disables proactive refresh even if swrEnabled is true.
 	Refresh *refreshWorker
 	// NotifyStartedFunc is invoked once for each underlying listener (UDP
 	// and TCP) right after it becomes ready to accept queries. Optional;
@@ -116,7 +119,7 @@ func (s *DnsServer) GetFromCacheOrCreateRequest(ctx context.Context, question dn
 		// through to a synchronous upstream call — but the stale entry is
 		// still in the cache and will be used by serve-stale-on-error below
 		// if the upstream call fails.
-		if s.SWREnabled && s.Refresh != nil {
+		if s.swrEnabled.Load() && s.Refresh != nil {
 			s.Refresh.Refresh(cacheKey, question)
 			s.Logger.Debug("Stale из кэша + рефреш:", name, "Тип:", qtype)
 			lookup.Msg.Id = id
@@ -287,11 +290,10 @@ func (s *DnsServer) Shutdown() error {
 	return err
 }
 
-func CreateServer(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers, ident identifier.Identifier) *DnsServer {
-	conf := config.GetConfig()
-	return CreateServerWithResolver(logger, cache, filter, metric, handlers, ident, NewDoHResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...))
-}
-
+// CreateServerWithResolver builds the DNS server with an explicit upstream
+// resolver. main passes a *ReloadableResolver so the upstream can be swapped at
+// runtime via the settings module; the same instance backs both the hot path
+// and the refresh worker.
 func CreateServerWithResolver(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers, ident identifier.Identifier, upstream UpstreamResolver) *DnsServer {
 	conf := config.GetConfig()
 	s := &DnsServer{
@@ -303,11 +305,25 @@ func CreateServerWithResolver(logger Logger, cache Cache, filter func(string2 st
 		Handlers:   handlers,
 		Identifier: ident,
 		Clients:    store.Get(),
-		SWREnabled: conf.CacheSWR,
 	}
+	s.swrEnabled.Store(conf.CacheSWR)
 	// Refresh worker shares the singleflight group with the synchronous hot
 	// path, so a refresh that fires while a client miss is in flight (or vice
 	// versa) collapses to a single upstream call.
 	s.Refresh = newRefreshWorker(cache, upstream, &s.upstream, logger, conf.CacheRefreshConcurrency)
 	return s
+}
+
+// SetSWR toggles proactive stale-while-revalidate at runtime. Wired to the
+// settings module so an operator can turn SWR on/off without a restart.
+func (s *DnsServer) SetSWR(enabled bool) {
+	s.swrEnabled.Store(enabled)
+}
+
+// SetRefreshConcurrency resizes the background-refresh worker pool at runtime.
+// No-op if the refresh worker is not configured.
+func (s *DnsServer) SetRefreshConcurrency(n int) {
+	if s.Refresh != nil {
+		s.Refresh.SetConcurrency(n)
+	}
 }

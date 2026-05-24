@@ -346,6 +346,26 @@ blocklist (инцидент 2026-05-14, 25 авто-блокировок за о
 
 ---
 
+### 12. Настройки (`settings/`)
+
+Типизированное KV-хранилище рантайм-конфигурации с персистентностью в БД. Решает задачу «часть настроек должна переживать рестарт и меняться без редактирования env».
+
+**Слои:**
+- `settings/db` — таблица `settings(key PK, value, updated_at)` + `Repo` (`Get/Set(upsert)/GetAll/Delete`). Таблица намеренно generic (KV): добавление новой настройки не требует миграции.
+- `settings/` (Module) — реестр **дескрипторов** `Setting{Key, Type, Enum, Default, Validate, Apply}` + оркестрация под мьютексом на запись:
+  - `Set(key, raw)` → `Validate → repo.Set (персист первым, БД = источник правды) → Apply`. Невалидное значение не персистится и не применяется; ошибка персиста не доходит до `Apply`.
+  - `Reset(key)` → `repo.Delete → Apply(Default)` (возврат под управление env).
+  - `HydrateAll()` — на старте для каждого ключа применяет эффективное значение (`БД override → env default`). И гидрация, и рантайм-изменение идут **через один путь** `Apply`. Битое значение в БД (например, enum сузился между версиями) не валит старт: подставляется default, проблема возвращается в агрегированной ошибке.
+- `settings/web` — `GET /api/settings` (эффективные значения + метаданные типа для UI), `PUT /api/settings/:key`, `DELETE /api/settings/:key` (сброс). Sentinel-ошибки модуля маппятся: неизвестный ключ → 404, невалидное значение → 400.
+
+**Apply-hooks (inversion of control).** Модуль ничего не знает про logger/dns/cache. В `main.go` (composition root, файл `settings_wiring.go`) дескрипторы связываются с runtime-sink'ами: `log_level`→`ChanLogger.UpdateLogLevel`; `doh_upstream`/`doh_bootstrap_ips`→`dns.ReloadableResolver.SetEndpoint/SetBootstrapIPs` (+ флаш dns-кеша); `cache_swr`→`DnsServer.SetSWR`; `cache_stale_grace`/`cache_stale_ttl`→`CacheWithMetrics.SetStaleGrace/SetStaleTTL`; `cache_refresh_concurrency`→`DnsServer.SetRefreshConcurrency`.
+
+**Горячий путь без БД.** Все динамические настройки читаются на hot-path из памяти (атомики), БД — только персистентность. Конкретно: `ChanLogger.level` (`atomic.Int32`, заодно убрана гонка с горутиной логгера), `DnsServer.swrEnabled` (`atomic.Bool`), `Cache.staleGrace/staleTTL` (`atomic.Int64`), апстрим — через `dns.ReloadableResolver` (`atomic.Pointer[DoHResolver]`, своп без рестарта; один и тот же инстанс виден и серверу, и refresh-воркеру), пул рефрешей — пересобираемый семафор за `atomic.Pointer` (in-flight рефреш отпускает токен в тот семафор, из которого взял).
+
+**Добавить новую динамическую настройку** = одна запись `settings.Setting{...}` в `registerDynamicSettings` + сеттер на соответствующем sink'е. Миграция и правка `web/server.go` не нужны.
+
+---
+
 ## Диаграмма взаимодействия компонентов
 
 ```mermaid
@@ -508,6 +528,16 @@ sequenceDiagram
 | `DNS_FILTER_CACHE_STALE_TTL` | TTL на RR в stale-ответе клиенту (RFC 8767 §6 рекомендует ≤ 30s). | `30s` |
 | `DNS_FILTER_CACHE_REFRESH_CONCURRENCY` | Максимум одновременных фоновых рефрешей; при переполнении новые рефреши дропаются, stale продолжает отдаваться. | `32` |
 
+### Три тира настроек
+
+Конфигурация делится на три класса — это явное архитектурное решение, а не случайность:
+
+1. **Boot-time статика (только env).** `DNS_FILTER_DBPATH`, `DNS_FILTER_MODE`, порты (`:53`/`:8080`/метрики). По природе требуют рестарта (chicken-and-egg с БД, связывание сокетов, ветвление wiring на старте) — в БД не выносятся.
+2. **Секреты (только env).** `DNS_FILTER_ADMIN_PASSWORD`, `DNS_FILTER_VT_KEY`, `DNS_FILTER_URLSCAN_KEY`, `DNS_FILTER_SAFE_BROWSING_KEY`. Хранить их plaintext в SQLite — понижение безопасности, поэтому остаются в окружении.
+3. **Динамические (env → БД).** `DNS_FILTER_LOG_LEVEL`, `DNS_FILTER_DOH_UPSTREAM`, `DNS_FILTER_DOH_BOOTSTRAP_IPS`, все `DNS_FILTER_CACHE_*`. Их можно менять в рантайме через `/api/settings`; значение **персистится в БД и переживает рестарт**. Приоритет: `БД (если есть override) → env → compiled default`. env-переменная служит первичным дефолтом; как только настройку меняют через UI, источником правды становится БД, пока override не удалят (`DELETE /api/settings/:key` → возврат к env). См. компонент **`settings/`** ниже.
+
+Состояние фильтра (`Enabled`, `PausedUntil`) тоже персистится в той же KV-таблице (ключи `filter_enabled`/`filter_paused_until`), но не через generic-реестр, а write-through из use-cases фильтра — у него свои эндпоинты (`change-status`/`pause`/`resume`) и валидация длительности паузы.
+
 ---
 
 ## Зависимости (go.mod)
@@ -597,6 +627,8 @@ func main() {
 - `filterModule.UpdateFromDb()` (стартовый, синхронный) поднимает bloom из того, что **уже** лежит в БД, ДО старта DNS — рестарт сразу отдаёт прошлый блок-лист. На честном первом запуске БД пуста и до конца фонового синка ничего не блокируется (осознанный компромисс ради неблокирующего старта).
 - `sourceModule.Sync()` ушёл из синхронного пути в фоновую горутину `backgroundSync` — DNS-сервер стартует не дожидаясь сети. По завершении синка `backgroundSync` повторно вызывает `filterModule.UpdateFromDb()` (пересборка bloom + чистка verdict-кеша). Горутина **не паникует**: `panic` убил бы уже обслуживающий запросы DNS-сервер. Упавший синк (обычно — нет сети на первом старте) повторяется с экспоненциальным backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`), пока не пройдёт успешно.
 - `clients.Sync()` — после Migrate, до DNS Serve (чтение локальной БД, без сети).
+- Апстрим строится как `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` и передаётся в `dns.CreateServerWithResolver` — один инстанс на hot-path и refresh-воркер, чтобы рантайм-своп репойнтил оба.
+- **`settings` поднимается после всех sink'ов и строго до `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (нужны уже построенные `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (восстановить on/off и паузу) → `settingsModule.HydrateAll()` (применить эффективные значения). `RestoreState` и `HydrateAll` **не фатальны** — ошибка оставляет значения на compiled-default, а не валит уже здоровый старт.
 - HTTP запускается в горутине внутри `web.CreateServer`, блокирующий `dnsServer.Serve()` держит main живым.
 
 ---

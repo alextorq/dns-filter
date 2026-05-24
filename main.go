@@ -30,6 +30,10 @@ import (
 	filter_bloom "github.com/alextorq/dns-filter/filter/filter"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	"github.com/alextorq/dns-filter/logger"
+	loggerWeb "github.com/alextorq/dns-filter/logger/web"
+	"github.com/alextorq/dns-filter/settings"
+	settings_db "github.com/alextorq/dns-filter/settings/db"
+	settingsWeb "github.com/alextorq/dns-filter/settings/web"
 	"github.com/alextorq/dns-filter/source"
 	source_db "github.com/alextorq/dns-filter/source/db"
 	sourceWeb "github.com/alextorq/dns-filter/source/web"
@@ -147,6 +151,7 @@ func main() {
 	allowRepo := allow_domain_db.NewRepo(conn)
 	sourceRepo := source_db.NewRepo(conn)
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
+	settingsRepo := settings_db.NewRepo(conn)
 
 	bloom := filter_bloom.GetFilter()
 	cache := filter_cache.GetCache()
@@ -190,11 +195,41 @@ func main() {
 	allowWorker := allow_domain_use_cases.CreateAllowDomainEventStore(allowRepo, chanLogger, 100)
 	blockWorker := block_domain_uc.NewBlockDomainEventStore(blockRepo, chanLogger, 100)
 
+	// Reloadable upstream: constructed from env defaults, then re-pointed by the
+	// settings hydrate below if a DB override exists. The same instance backs
+	// both the hot path and the SWR refresh worker, so a runtime swap repoints
+	// both at once.
+	resolver := dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)
+
 	ident := buildIdentifier(conf.Mode)
-	dnsServer := dns.CreateServer(chanLogger, cacheWithMetric, filterModule.CheckExist, metricInstance, Handlers{
+	dnsServer := dns.CreateServerWithResolver(chanLogger, cacheWithMetric, filterModule.CheckExist, metricInstance, Handlers{
 		allowHandler: allowWorker.SendAllowDomainEvent,
 		blockHandler: blockWorker.SendBlockDomainEvent,
-	}, ident)
+	}, ident, resolver)
+
+	// Runtime settings store. Every sink (logger, resolver, cache, server) now
+	// exists, so we declare the DB-backed settings, restore the persisted filter
+	// toggle, and hydrate effective values into the running process — all before
+	// dnsServer.Serve() starts accepting queries.
+	settingsModule := settings.NewModule(settingsRepo)
+	registerDynamicSettings(settingsModule, dynamicSettingsDeps{
+		conf:      conf,
+		logr:      chanLogger,
+		resolver:  resolver,
+		cache:     cacheWithMetric,
+		dnsServer: dnsServer,
+	})
+	filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
+	if err := filter.RestoreState(settingsRepo, conf); err != nil {
+		// Non-fatal: a failed restore leaves the filter at its compiled default
+		// (enabled) rather than aborting an otherwise-healthy boot.
+		chanLogger.Error(fmt.Errorf("restore filter state: %w", err))
+	}
+	if err := settingsModule.HydrateAll(); err != nil {
+		// Non-fatal: HydrateAll already substituted defaults for any bad rows;
+		// this just reports what it skipped.
+		chanLogger.Error(fmt.Errorf("settings hydrate: %w", err))
+	}
 
 	web.CreateServer(web.Handlers{
 		Blocked: &blockedWeb.Handlers{
@@ -215,6 +250,11 @@ func main() {
 			Filter:    filterModule,
 			Log:       chanLogger,
 		},
+		Logger: &loggerWeb.Handlers{
+			SetLogLevel: func(level string) error { return settingsModule.Set("log_level", level) },
+			GetLogLevel: chanLogger.GetLogLevel,
+		},
+		Settings: &settingsWeb.Handlers{Service: settingsModule},
 	})
 
 	if err := dnsServer.Serve(); err != nil {

@@ -1,6 +1,7 @@
 package dns_cache
 
 import (
+	"sync/atomic"
 	"time"
 
 	lru_cache "github.com/alextorq/dns-filter/lru-cache"
@@ -42,9 +43,12 @@ type cachedEntry struct {
 type Cache struct {
 	inner          *lru_cache.LRUCache[cachedEntry]
 	negativeTTLCap time.Duration
-	staleGrace     time.Duration
-	staleTTL       time.Duration
-	now            func() time.Time
+	// staleGrace and staleTTL are runtime-tunable (via the settings module) and
+	// read on the hot path (Add/Get) while being written from an HTTP handler,
+	// so they are atomic. Stored as nanoseconds (the underlying time.Duration).
+	staleGrace atomic.Int64
+	staleTTL   atomic.Int64
+	now        func() time.Time
 }
 
 func NewCache(capacity int) *Cache {
@@ -59,14 +63,24 @@ func NewCache(capacity int) *Cache {
 // to staleGrace, returning them with RR.Ttl clamped to staleTTL. Pass
 // staleGrace=0 to disable SWR (equivalent to NewCache).
 func NewCacheWithSWR(capacity int, staleGrace, staleTTL time.Duration) *Cache {
-	return &Cache{
+	c := &Cache{
 		inner:          lru_cache.CreateCache[cachedEntry](capacity),
 		negativeTTLCap: DefaultNegativeTTLCap,
-		staleGrace:     staleGrace,
-		staleTTL:       staleTTL,
 		now:            time.Now,
 	}
+	c.staleGrace.Store(int64(staleGrace))
+	c.staleTTL.Store(int64(staleTTL))
+	return c
 }
+
+// SetStaleGrace updates the SWR grace window at runtime. 0 disables the
+// stale-window (Get stops returning Stale). It affects entries cached after
+// the change; already-cached entries keep the staleUntil computed when they
+// were stored.
+func (c *Cache) SetStaleGrace(d time.Duration) { c.staleGrace.Store(int64(d)) }
+
+// SetStaleTTL updates the TTL clamp written to stale responses at runtime.
+func (c *Cache) SetStaleTTL(d time.Duration) { c.staleTTL.Store(int64(d)) }
 
 type AddResult struct {
 	Cached  bool
@@ -121,8 +135,8 @@ func (c *Cache) Add(key string, msg *dns.Msg) AddResult {
 	now := c.now()
 	expiresAt := now.Add(ttl)
 	staleUntil := expiresAt
-	if c.staleGrace > 0 && isPositiveAnswer(msg) {
-		staleUntil = expiresAt.Add(c.staleGrace)
+	if grace := time.Duration(c.staleGrace.Load()); grace > 0 && isPositiveAnswer(msg) {
+		staleUntil = expiresAt.Add(grace)
 	}
 	res := c.inner.Add(key, cachedEntry{
 		msg:        msg.Copy(),
@@ -167,7 +181,7 @@ func (c *Cache) Get(key string) GetResult {
 	}
 	if now.Before(entry.staleUntil) {
 		msg := entry.msg.Copy()
-		clampTTL(msg, c.staleTTL)
+		clampTTL(msg, time.Duration(c.staleTTL.Load()))
 		return GetResult{Msg: msg, Stale: true}
 	}
 	return GetResult{Expired: true}

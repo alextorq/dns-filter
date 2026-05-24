@@ -31,8 +31,11 @@ type ChanLogger struct {
 	logChan  chan log.LogStruct
 	Handlers []Handler
 	quit     chan struct{}
-	level    LogLevel
-	dropped  atomic.Uint64
+	// level is read by the logger goroutine on every record and written by the
+	// settings module on a runtime change, so it must be atomic — without this
+	// the two race. Stored as int32 (the underlying LogLevel type).
+	level   atomic.Int32
+	dropped atomic.Uint64
 }
 
 // Handler — интерфейс для обработчиков
@@ -46,8 +49,8 @@ func NewChanLogger(bufferSize int, level string) *ChanLogger {
 		logChan:  make(chan log.LogStruct, bufferSize),
 		quit:     make(chan struct{}),
 		Handlers: []Handler{},
-		level:    LogLevelFromString(level),
 	}
+	logger.level.Store(int32(LogLevelFromString(level)))
 
 	go logger.loop()
 	return logger
@@ -58,7 +61,7 @@ func (l *ChanLogger) loop() {
 	for {
 		select {
 		case logStruct := <-l.logChan:
-			if shouldLog(logStruct.Level, l.level) {
+			if shouldLog(logStruct.Level, LogLevel(l.level.Load())) {
 				for _, h := range l.Handlers {
 					h.Handle(logStruct)
 				}
@@ -160,9 +163,9 @@ func (l *ChanLogger) Close() {
 }
 
 func (l *ChanLogger) UpdateLogLevel(level string) {
-	l.level = LogLevelFromString(level)
+	l.level.Store(int32(LogLevelFromString(level)))
 }
 
 func (l *ChanLogger) GetLogLevel() string {
-	return l.level.String()
+	return LogLevel(l.level.Load()).String()
 }

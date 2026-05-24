@@ -96,7 +96,16 @@ flowchart TD
   to `suggest_blocks` instead. See [ARCHITECTURE.md §11](ARCHITECTURE.md) for
   the scoring rules.
 - Event metrics (Prometheus)
-- Configurable logging levels
+- Persistent runtime settings from the Settings page (`GET/PUT/DELETE
+  /api/settings`) — log level, DoH upstream + bootstrap IPs, and the cache
+  tuning knobs (SWR on/off, stale grace/TTL, refresh concurrency) can be
+  changed without a restart and **survive one**. The value is stored in the
+  DB and overrides the env default once set; `DELETE /api/settings/{key}`
+  reverts a setting to env control. Env vars remain the seed/default. The
+  filter on/off + pause state also persists, so a deliberately disabled or
+  paused filter stays that way across a restart. See
+  [ARCHITECTURE.md §12](ARCHITECTURE.md) for the design and the
+  static/dynamic/secret classification of every setting.
 - Manual DNS-cache flush from the Settings page (`POST /api/dns-cache/clear`) —
   drops every entry in the in-memory response cache, useful after rotating
   upstream records with a long TTL

@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -15,8 +16,8 @@ func TestChanLogger_SendDoesNotBlockWhenBufferFull(t *testing.T) {
 	l := &ChanLogger{
 		logChan: make(chan log.LogStruct, buf),
 		quit:    make(chan struct{}),
-		level:   DEBUG,
 	}
+	l.level.Store(int32(DEBUG)) // zero value is DEBUG anyway; explicit for clarity
 	// No goroutine drains logChan. Saturate it first.
 	for range buf {
 		l.logChan <- log.LogStruct{Level: "INFO", Message: "filler", Time: time.Now()}
@@ -40,5 +41,37 @@ func TestChanLogger_SendDoesNotBlockWhenBufferFull(t *testing.T) {
 
 	if got := l.DroppedCount(); got != extras {
 		t.Fatalf("DroppedCount() = %d, want %d", got, extras)
+	}
+}
+
+// The logger goroutine reads the level on every record while the settings
+// module writes it on a runtime change. This must be race-free — run under
+// `go test -race`. Before level became atomic this test failed the race
+// detector.
+func TestChanLogger_ConcurrentUpdateAndLogIsRaceFree(t *testing.T) {
+	l := NewChanLogger(100, "INFO")
+	defer l.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for range 2000 {
+			l.Info("hot path message")
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		levels := []string{"DEBUG", "INFO", "WARN", "ERROR"}
+		for i := range 2000 {
+			l.UpdateLogLevel(levels[i%len(levels)])
+		}
+	}()
+	wg.Wait()
+
+	// Final write must be observable through the public getter.
+	l.UpdateLogLevel("WARN")
+	if got := l.GetLogLevel(); got != "WARN" {
+		t.Errorf("GetLogLevel() = %q, want WARN", got)
 	}
 }

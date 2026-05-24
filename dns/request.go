@@ -86,6 +86,20 @@ func normalizeBootstrapIPs(endpointHost string, bootstrapIPs []string) []string 
 	return nil
 }
 
+// EffectiveBootstrapIPs reports the bootstrap IPs NewDoHResolver would actually
+// use for the given endpoint and configured IPs: the configured ones if any are
+// valid, otherwise the built-in defaults when the endpoint host is Cloudflare,
+// otherwise none. Exposed so the settings layer can show the real default for
+// doh_bootstrap_ips (e.g. "1.1.1.1,1.0.0.1" on a default deploy) instead of an
+// empty string, without duplicating the host-specific fallback rule.
+func EffectiveBootstrapIPs(endpoint string, configured []string) []string {
+	if endpoint == "" {
+		endpoint = DefaultDoHEndpoint
+	}
+	endpointURL, _ := url.Parse(endpoint)
+	return normalizeBootstrapIPs(endpointURL.Hostname(), configured)
+}
+
 type dialContextFunc func(context.Context, string, string) (net.Conn, error)
 
 func newBootstrapDialContext(endpointHost string, bootstrapIPs []string, dial dialContextFunc) dialContextFunc {

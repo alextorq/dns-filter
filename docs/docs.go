@@ -412,6 +412,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_alextorq_dns-filter_logger_web.MessageResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_logger_web.MessageResponse"
+                        }
                     }
                 }
             }
@@ -762,6 +768,130 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/web.FilterStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "settings"
+                ],
+                "summary": "List runtime settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/settings.Effective"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings/{key}": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "settings"
+                ],
+                "summary": "Update a runtime setting",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "setting key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "new value",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/web.UpdateSettingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "settings"
+                ],
+                "summary": "Reset a runtime setting to its default",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "setting key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_settings_web.MessageResponse"
                         }
                     }
                 }
@@ -1390,6 +1520,14 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_alextorq_dns-filter_settings_web.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_alextorq_dns-filter_source_web.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -1423,6 +1561,32 @@ const docTemplate = `{
                 "valid": {
                     "description": "Valid is true if Time is not NULL",
                     "type": "boolean"
+                }
+            }
+        },
+        "settings.Effective": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "type": "string"
+                },
+                "enum": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "key": {
+                    "type": "string"
+                },
+                "overridden": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
                 }
             }
         },
@@ -1776,6 +1940,14 @@ const docTemplate = `{
                 },
                 "record": {
                     "$ref": "#/definitions/db.BlockList"
+                }
+            }
+        },
+        "web.UpdateSettingRequest": {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "string"
                 }
             }
         },

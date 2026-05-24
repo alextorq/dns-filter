@@ -178,6 +178,10 @@ export interface GithubComAlextorqDnsFilterLoggerWebMessageResponse {
   message?: string;
 }
 
+export interface GithubComAlextorqDnsFilterSettingsWebMessageResponse {
+  message?: string;
+}
+
 export interface GithubComAlextorqDnsFilterSourceWebErrorResponse {
   message?: string;
 }
@@ -194,6 +198,15 @@ export interface GormDeletedAt {
   time?: string;
   /** Valid is true if Time is not NULL */
   valid?: boolean;
+}
+
+export interface SettingsEffective {
+  default?: string;
+  enum?: string[];
+  key?: string;
+  overridden?: boolean;
+  type?: string;
+  value?: string;
 }
 
 export interface UpdateDnsRecordUpdateBlockList {
@@ -347,6 +360,10 @@ export interface WebUpdateConfigData {
 export interface WebUpdateDnsRecordResponse {
   message?: string;
   record?: DbBlockList;
+}
+
+export interface WebUpdateSettingRequest {
+  value?: string;
 }
 
 export interface WebUserResponse {

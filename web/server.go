@@ -10,6 +10,7 @@ import (
 	inspectWeb "github.com/alextorq/dns-filter/domain-inspect/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
+	settingsWeb "github.com/alextorq/dns-filter/settings/web"
 	syncWeb "github.com/alextorq/dns-filter/source/web"
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
 	"github.com/gin-contrib/cors"
@@ -23,10 +24,12 @@ import (
 // composition-root step for the HTTP API. Feature packages without DI
 // register themselves via package-level Register(rg) functions instead.
 type Handlers struct {
-	Blocked *eventsWeb.Handlers
-	Filter  *filterWeb.Handlers
-	Suggest *suggestWeb.Handlers
-	Source  *syncWeb.Handlers
+	Blocked  *eventsWeb.Handlers
+	Filter   *filterWeb.Handlers
+	Suggest  *suggestWeb.Handlers
+	Source   *syncWeb.Handlers
+	Logger   *loggerWeb.Handlers
+	Settings *settingsWeb.Handlers
 }
 
 // CreateServer wires HTTP routes onto a fresh gin.Engine and starts it on
@@ -72,7 +75,8 @@ func buildRouter(h Handlers) *gin.Engine {
 	dbWeb.Register(api)
 	dnsCacheWeb.Register(api)
 	inspectWeb.Register(api)
-	loggerWeb.Register(api)
+	h.Logger.RegisterRoutes(api)
+	h.Settings.RegisterRoutes(api)
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 

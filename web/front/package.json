@@ -36,6 +36,6 @@
         "happy-dom": "^15.11.7",
         "prettier": "^3.8.3",
         "swagger-typescript-api": "^13.10.0",
-        "vitest": "^2.1.9"
+        "vitest": "^4.1.7"
     }
 }

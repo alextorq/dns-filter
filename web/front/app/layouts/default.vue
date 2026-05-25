@@ -33,6 +33,11 @@ const items = ref([
         to: "/clients",
     },
     {
+        label: "Traffic",
+        icon: "i-lucide-activity",
+        to: "/traffic",
+    },
+    {
         label: "Settings",
         icon: "i-lucide-settings",
         to: "/settings",

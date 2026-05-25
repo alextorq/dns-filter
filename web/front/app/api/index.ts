@@ -139,6 +139,32 @@ class Api {
         this.client.domainInspectList({ domain }, { signal: abortSignal });
 
     clearDnsCache = () => this.client.dnsCacheClearCreate();
+
+    // Per-device traffic dashboard (read-only). `from`/`to` are YYYY-MM-DD day
+    // bounds; counts are aggregated server-side. Empty results come back as
+    // `[]`, never null.
+    getTrafficDevices = (
+        query: { from?: string; to?: string },
+        abortSignal: AbortSignal,
+    ) => this.client.trafficDevicesList(query, { signal: abortSignal });
+
+    getTrafficDeviceDomains = (
+        query: {
+            kind: string;
+            value: string;
+            blocked?: boolean;
+            from?: string;
+            to?: string;
+            limit?: number;
+            offset?: number;
+        },
+        abortSignal: AbortSignal,
+    ) => this.client.trafficDevicesDomainsList(query, { signal: abortSignal });
+
+    getTrafficTopDomains = (
+        query: { blocked?: boolean; limit?: number },
+        abortSignal: AbortSignal,
+    ) => this.client.trafficTopDomainsList(query, { signal: abortSignal });
 }
 
 export const api = new Api();

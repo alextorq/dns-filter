@@ -27,6 +27,16 @@ func BatchUpsertOn[T any](conn *gorm.DB, items []T, batchSize int, conflictColum
 	return batchOn(conn, items, batchSize, &clause.OnConflict{Columns: cols, DoNothing: true})
 }
 
+// BatchUpsertWith inserts items on the given connection applying a
+// caller-supplied ON CONFLICT clause, one transaction per batch (see batchOn).
+// Unlike BatchUpsertOn (which only does INSERT-OR-IGNORE / DoNothing), this lets
+// the caller pass an additive upsert — e.g. clause.OnConflict{Columns: ...,
+// DoUpdates: clause.Assignments(...)} with gorm.Expr("count + excluded.count").
+// Returns nil if items is empty. batchSize <= 0 falls back to DefaultBatchSize.
+func BatchUpsertWith[T any](conn *gorm.DB, items []T, batchSize int, onConflict clause.OnConflict) error {
+	return batchOn(conn, items, batchSize, &onConflict)
+}
+
 func batchOn[T any](conn *gorm.DB, items []T, batchSize int, onConflict *clause.OnConflict) error {
 	if len(items) == 0 {
 		return nil

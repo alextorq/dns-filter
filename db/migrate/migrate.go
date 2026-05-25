@@ -9,6 +9,7 @@ import (
 	settings_db "github.com/alextorq/dns-filter/settings/db"
 	syncDb "github.com/alextorq/dns-filter/source/db"
 	suggest_db "github.com/alextorq/dns-filter/suggest-to-block/db"
+	traffic_db "github.com/alextorq/dns-filter/traffic/db"
 	"gorm.io/gorm"
 )
 
@@ -45,6 +46,7 @@ func Migrate() {
 		&auth_db.User{},
 		&auth_db.Session{},
 		&settings_db.Setting{},
+		&traffic_db.DomainTraffic{},
 	)
 	if err != nil {
 		panic(err)

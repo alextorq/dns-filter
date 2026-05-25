@@ -14,6 +14,7 @@ import (
 	settingsWeb "github.com/alextorq/dns-filter/settings/web"
 	sourceWeb "github.com/alextorq/dns-filter/source/web"
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
+	trafficWeb "github.com/alextorq/dns-filter/traffic/web"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,6 +30,9 @@ var expectedRoutes = []string{
 	"GET /api/filter/status",
 	"GET /api/settings",
 	"GET /api/suggest-to-block/codes",
+	"GET /api/traffic/devices",
+	"GET /api/traffic/devices/domains",
+	"GET /api/traffic/top-domains",
 	"GET /swagger/*any",
 	"PUT /api/settings/:key",
 	"DELETE /api/settings/:key",
@@ -84,6 +88,7 @@ func testHandlers() Handlers {
 		Source:   &sourceWeb.Handlers{},
 		Logger:   &loggerWeb.Handlers{},
 		Settings: &settingsWeb.Handlers{},
+		Traffic:  &trafficWeb.Handlers{},
 	}
 }
 
@@ -158,6 +163,9 @@ func TestBuildRouter_ProtectedRoutesRequireAuth(t *testing.T) {
 		{http.MethodPost, "/api/config/logger/get-level"},
 		{http.MethodPost, "/api/dns-cache/clear"},
 		{http.MethodGet, "/api/domain/inspect"},
+		{http.MethodGet, "/api/traffic/devices"},
+		{http.MethodGet, "/api/traffic/devices/domains"},
+		{http.MethodGet, "/api/traffic/top-domains"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {

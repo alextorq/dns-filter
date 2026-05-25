@@ -89,11 +89,6 @@ export interface DbClient {
   vendor?: string;
 }
 
-export interface DbDomainCount {
-  count?: number;
-  domain?: string;
-}
-
 export interface DbSource {
   active?: boolean;
   created_at?: string;
@@ -154,6 +149,11 @@ export interface GithubComAlextorqDnsFilterAuthWebStatusResponse {
   status?: string;
 }
 
+export interface GithubComAlextorqDnsFilterBlockedDomainDbDomainCount {
+  count?: number;
+  domain?: string;
+}
+
 export interface GithubComAlextorqDnsFilterBlockedDomainWebErrorResponse {
   message?: string;
 }
@@ -191,6 +191,10 @@ export interface GithubComAlextorqDnsFilterSuggestToBlockWebErrorResponse {
 }
 
 export interface GithubComAlextorqDnsFilterSuggestToBlockWebMessageResponse {
+  message?: string;
+}
+
+export interface GithubComAlextorqDnsFilterTrafficWebErrorResponse {
   message?: string;
 }
 
@@ -270,10 +274,34 @@ export interface WebDeleteClientRequest {
   id?: number;
 }
 
+export interface WebDeviceDTO {
+  allowed_count?: number;
+  blocked_count?: number;
+  client_kind?: string;
+  client_value?: string;
+  current_ip?: string;
+  last_seen?: string;
+  vendor?: string;
+}
+
+export interface WebDeviceDomainsResponse {
+  list?: WebDomainCountDTO[];
+  total?: number;
+}
+
+export interface WebDevicesResponse {
+  devices?: WebDeviceDTO[];
+}
+
 export interface WebDiscoverResponse {
   devices?: DiscoveryDevice[];
   errors?: string[];
   total?: number;
+}
+
+export interface WebDomainCountDTO {
+  count?: number;
+  domain?: string;
 }
 
 export interface WebFilterStatusResponse {
@@ -317,7 +345,7 @@ export interface WebGetAllSuggestBlocksResponse {
 }
 
 export interface WebGetAmountByDomainResponse {
-  groups?: DbDomainCount[];
+  groups?: GithubComAlextorqDnsFilterBlockedDomainDbDomainCount[];
 }
 
 export interface WebGetAmountResponse {
@@ -344,6 +372,10 @@ export interface WebLoginRequest {
 
 export interface WebPauseFilterRequest {
   minutes?: number;
+}
+
+export interface WebTopDomainsResponse {
+  list?: WebDomainCountDTO[];
 }
 
 export interface WebUpdateClientRequest {

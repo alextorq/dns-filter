@@ -19,6 +19,7 @@ import (
 	blockedWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	"github.com/alextorq/dns-filter/clients"
 	"github.com/alextorq/dns-filter/clients/arpwatcher"
+	"github.com/alextorq/dns-filter/clients/discovery"
 	"github.com/alextorq/dns-filter/clients/identifier"
 	"github.com/alextorq/dns-filter/config"
 	app_db "github.com/alextorq/dns-filter/db"
@@ -43,6 +44,7 @@ import (
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
 	traffic_record_uc "github.com/alextorq/dns-filter/traffic/business/use-cases/record"
 	traffic_db "github.com/alextorq/dns-filter/traffic/db"
+	trafficWeb "github.com/alextorq/dns-filter/traffic/web"
 	"github.com/alextorq/dns-filter/web"
 	dnsLib "github.com/miekg/dns"
 )
@@ -258,6 +260,9 @@ func main() {
 			Repo:          blockRepo,
 			Log:           chanLogger,
 			RefreshFilter: filterModule.UpdateFromDb,
+			// Step 4: legacy block-stats endpoints now read SUM(count) WHERE
+			// blocked from domain_traffic instead of block_domain_events.
+			BlockStats: traffic_db.NewBlockStatsAdapter(trafficRepo),
 		},
 		Filter: &filterWeb.Handlers{Module: filterModule},
 		Suggest: &suggestWeb.Handlers{
@@ -277,6 +282,9 @@ func main() {
 			GetLogLevel: chanLogger.GetLogLevel,
 		},
 		Settings: &settingsWeb.Handlers{Service: settingsModule},
+		// Per-device traffic dashboard (read-only). Vendor enrichment uses the
+		// pure, local OUI lookup — no DB/network on the read path.
+		Traffic: trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, chanLogger),
 	})
 
 	if err := dnsServer.Serve(); err != nil {

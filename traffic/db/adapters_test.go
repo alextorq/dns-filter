@@ -54,3 +54,76 @@ func TestAllowFilterAdapter_EmptyPool(t *testing.T) {
 		t.Errorf("expected empty pool, got %v", got)
 	}
 }
+
+// ----- BlockStatsAdapter -----
+
+// happy: the adapter projects the traffic repo's blocked totals onto the
+// blocked-domain DomainCount type expected by the legacy stats endpoint.
+func TestBlockStatsAdapter_BlockedTotalsAndGroups(t *testing.T) {
+	r := newTestRepo(t)
+	d := day(t, "2026-05-25")
+	now := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
+	if err := r.UpsertBatch([]DomainTraffic{
+		{ClientKind: "mac", ClientValue: "aa", ClientIP: "1.1.1.1", Domain: "ads.example", Blocked: true, Day: d, Count: 7, LastSeen: now},
+		{ClientKind: "mac", ClientValue: "aa", ClientIP: "1.1.1.1", Domain: "track.example", Blocked: true, Day: d, Count: 3, LastSeen: now},
+		{ClientKind: "mac", ClientValue: "aa", ClientIP: "1.1.1.1", Domain: "good.example", Blocked: false, Day: d, Count: 99, LastSeen: now},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	adapter := NewBlockStatsAdapter(r)
+	total, err := adapter.BlockedTotalCount()
+	if err != nil {
+		t.Fatalf("BlockedTotalCount: %v", err)
+	}
+	if total != 10 {
+		t.Errorf("expected blocked total 10 (allowed excluded), got %d", total)
+	}
+
+	groups, err := adapter.BlockedCountByDomain()
+	if err != nil {
+		t.Fatalf("BlockedCountByDomain: %v", err)
+	}
+	got := map[string]int64{}
+	for _, g := range groups {
+		got[g.Domain] = g.Count
+	}
+	if len(got) != 2 || got["ads.example"] != 7 || got["track.example"] != 3 {
+		t.Errorf("expected {ads:7, track:3}, got %v", got)
+	}
+	if _, ok := got["good.example"]; ok {
+		t.Error("allowed-only domain must not appear in blocked stats")
+	}
+}
+
+// negative: a repo error (table missing) propagates through both methods.
+func TestBlockStatsAdapter_PropagatesError(t *testing.T) {
+	r := newTestRepo(t)
+	if err := r.db.Migrator().DropTable(&DomainTraffic{}); err != nil {
+		t.Fatalf("drop table: %v", err)
+	}
+	adapter := NewBlockStatsAdapter(r)
+	if _, err := adapter.BlockedTotalCount(); err == nil {
+		t.Error("expected error from BlockedTotalCount when table missing")
+	}
+	if _, err := adapter.BlockedCountByDomain(); err == nil {
+		t.Error("expected error from BlockedCountByDomain when table missing")
+	}
+}
+
+// empty: empty table → 0 total and empty (non-nil) groups.
+func TestBlockStatsAdapter_EmptyTable(t *testing.T) {
+	r := newTestRepo(t)
+	adapter := NewBlockStatsAdapter(r)
+	total, err := adapter.BlockedTotalCount()
+	if err != nil || total != 0 {
+		t.Errorf("expected 0,nil on empty table, got %d,%v", total, err)
+	}
+	groups, err := adapter.BlockedCountByDomain()
+	if err != nil {
+		t.Fatalf("BlockedCountByDomain empty: %v", err)
+	}
+	if len(groups) != 0 {
+		t.Errorf("expected empty groups, got %v", groups)
+	}
+}

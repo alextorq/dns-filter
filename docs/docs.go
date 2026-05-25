@@ -645,6 +645,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/web.GetAmountResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -1120,6 +1126,173 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/traffic/devices": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "traffic"
+                ],
+                "summary": "Per-device traffic summaries",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start day, inclusive (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End day, inclusive (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.DevicesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/traffic/devices/domains": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "traffic"
+                ],
+                "summary": "Domains for a single device",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Device kind: mac | ip",
+                        "name": "kind",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Device key: the MAC or IP",
+                        "name": "value",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by verdict (true=blocked, false=allowed); omit for both",
+                        "name": "blocked",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start day, inclusive (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End day, inclusive (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max rows (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.DeviceDomainsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/traffic/top-domains": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "traffic"
+                ],
+                "summary": "Top domains by traffic",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Filter by verdict (true=blocked, false=allowed); omit for both",
+                        "name": "blocked",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max rows (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.TopDomainsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1276,17 +1449,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "vendor": {
-                    "type": "string"
-                }
-            }
-        },
-        "db.DomainCount": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "domain": {
                     "type": "string"
                 }
             }
@@ -1472,6 +1634,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_alextorq_dns-filter_blocked-domain_db.DomainCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "domain": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -1545,6 +1718,14 @@ const docTemplate = `{
             }
         },
         "github_com_alextorq_dns-filter_suggest-to-block_web.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_alextorq_dns-filter_traffic_web.ErrorResponse": {
             "type": "object",
             "properties": {
                 "message": {
@@ -1718,6 +1899,57 @@ const docTemplate = `{
                 }
             }
         },
+        "web.DeviceDTO": {
+            "type": "object",
+            "properties": {
+                "allowed_count": {
+                    "type": "integer"
+                },
+                "blocked_count": {
+                    "type": "integer"
+                },
+                "client_kind": {
+                    "type": "string"
+                },
+                "client_value": {
+                    "type": "string"
+                },
+                "current_ip": {
+                    "type": "string"
+                },
+                "last_seen": {
+                    "type": "string"
+                },
+                "vendor": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.DeviceDomainsResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/web.DomainCountDTO"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "web.DevicesResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/web.DeviceDTO"
+                    }
+                }
+            }
+        },
         "web.DiscoverResponse": {
             "type": "object",
             "properties": {
@@ -1735,6 +1967,17 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "web.DomainCountDTO": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "domain": {
+                    "type": "string"
                 }
             }
         },
@@ -1838,7 +2081,7 @@ const docTemplate = `{
                 "groups": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/db.DomainCount"
+                        "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_db.DomainCount"
                     }
                 }
             }
@@ -1904,6 +2147,17 @@ const docTemplate = `{
             "properties": {
                 "minutes": {
                     "type": "integer"
+                }
+            }
+        },
+        "web.TopDomainsResponse": {
+            "type": "object",
+            "properties": {
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/web.DomainCountDTO"
+                    }
                 }
             }
         },

@@ -110,13 +110,6 @@ definitions:
       vendor:
         type: string
     type: object
-  db.DomainCount:
-    properties:
-      count:
-        type: integer
-      domain:
-        type: string
-    type: object
   db.Source:
     properties:
       active:
@@ -239,6 +232,13 @@ definitions:
       status:
         type: string
     type: object
+  github_com_alextorq_dns-filter_blocked-domain_db.DomainCount:
+    properties:
+      count:
+        type: integer
+      domain:
+        type: string
+    type: object
   github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse:
     properties:
       message:
@@ -285,6 +285,11 @@ definitions:
         type: string
     type: object
   github_com_alextorq_dns-filter_suggest-to-block_web.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  github_com_alextorq_dns-filter_traffic_web.ErrorResponse:
     properties:
       message:
         type: string
@@ -399,6 +404,39 @@ definitions:
       id:
         type: integer
     type: object
+  web.DeviceDTO:
+    properties:
+      allowed_count:
+        type: integer
+      blocked_count:
+        type: integer
+      client_kind:
+        type: string
+      client_value:
+        type: string
+      current_ip:
+        type: string
+      last_seen:
+        type: string
+      vendor:
+        type: string
+    type: object
+  web.DeviceDomainsResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/web.DomainCountDTO'
+        type: array
+      total:
+        type: integer
+    type: object
+  web.DevicesResponse:
+    properties:
+      devices:
+        items:
+          $ref: '#/definitions/web.DeviceDTO'
+        type: array
+    type: object
   web.DiscoverResponse:
     properties:
       devices:
@@ -411,6 +449,13 @@ definitions:
         type: array
       total:
         type: integer
+    type: object
+  web.DomainCountDTO:
+    properties:
+      count:
+        type: integer
+      domain:
+        type: string
     type: object
   web.FilterStatusResponse:
     properties:
@@ -480,7 +525,7 @@ definitions:
     properties:
       groups:
         items:
-          $ref: '#/definitions/db.DomainCount'
+          $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_db.DomainCount'
         type: array
     type: object
   web.GetAmountResponse:
@@ -523,6 +568,13 @@ definitions:
     properties:
       minutes:
         type: integer
+    type: object
+  web.TopDomainsResponse:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/web.DomainCountDTO'
+        type: array
     type: object
   web.UpdateClientRequest:
     properties:
@@ -972,6 +1024,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/web.GetAmountResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse'
       summary: Total block events
       tags:
       - events
@@ -1279,4 +1335,113 @@ paths:
       summary: List reason codes
       tags:
       - suggest-to-block
+  /api/traffic/devices:
+    get:
+      parameters:
+      - description: Start day, inclusive (YYYY-MM-DD)
+        in: query
+        name: from
+        type: string
+      - description: End day, inclusive (YYYY-MM-DD)
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.DevicesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse'
+      summary: Per-device traffic summaries
+      tags:
+      - traffic
+  /api/traffic/devices/domains:
+    get:
+      parameters:
+      - description: 'Device kind: mac | ip'
+        in: query
+        name: kind
+        required: true
+        type: string
+      - description: 'Device key: the MAC or IP'
+        in: query
+        name: value
+        required: true
+        type: string
+      - description: Filter by verdict (true=blocked, false=allowed); omit for both
+        in: query
+        name: blocked
+        type: boolean
+      - description: Start day, inclusive (YYYY-MM-DD)
+        in: query
+        name: from
+        type: string
+      - description: End day, inclusive (YYYY-MM-DD)
+        in: query
+        name: to
+        type: string
+      - description: Max rows (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.DeviceDomainsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse'
+      summary: Domains for a single device
+      tags:
+      - traffic
+  /api/traffic/top-domains:
+    get:
+      parameters:
+      - description: Filter by verdict (true=blocked, false=allowed); omit for both
+        in: query
+        name: blocked
+        type: boolean
+      - description: Max rows (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.TopDomainsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_alextorq_dns-filter_traffic_web.ErrorResponse'
+      summary: Top domains by traffic
+      tags:
+      - traffic
 swagger: "2.0"

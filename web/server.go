@@ -13,6 +13,7 @@ import (
 	settingsWeb "github.com/alextorq/dns-filter/settings/web"
 	syncWeb "github.com/alextorq/dns-filter/source/web"
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
+	trafficWeb "github.com/alextorq/dns-filter/traffic/web"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -30,6 +31,7 @@ type Handlers struct {
 	Source   *syncWeb.Handlers
 	Logger   *loggerWeb.Handlers
 	Settings *settingsWeb.Handlers
+	Traffic  *trafficWeb.Handlers
 }
 
 // CreateServer wires HTTP routes onto a fresh gin.Engine and starts it on
@@ -77,6 +79,7 @@ func buildRouter(h Handlers) *gin.Engine {
 	inspectWeb.Register(api)
 	h.Logger.RegisterRoutes(api)
 	h.Settings.RegisterRoutes(api)
+	h.Traffic.RegisterRoutes(api)
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 

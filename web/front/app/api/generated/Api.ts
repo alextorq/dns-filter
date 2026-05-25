@@ -24,6 +24,7 @@ import type {
   GithubComAlextorqDnsFilterSourceWebErrorResponse,
   GithubComAlextorqDnsFilterSuggestToBlockWebErrorResponse,
   GithubComAlextorqDnsFilterSuggestToBlockWebMessageResponse,
+  GithubComAlextorqDnsFilterTrafficWebErrorResponse,
   SettingsEffective,
   UpdateDnsRecordUpdateBlockList,
   WebAddToBlockRequest,
@@ -36,6 +37,8 @@ import type {
   WebClientResponse,
   WebCreateClientRequest,
   WebDeleteClientRequest,
+  WebDeviceDomainsResponse,
+  WebDevicesResponse,
   WebDiscoverResponse,
   WebFilterStatusResponse,
   WebGetAllDnsRecordsRequest,
@@ -50,6 +53,7 @@ import type {
   WebLogLevelResponse,
   WebLoginRequest,
   WebPauseFilterRequest,
+  WebTopDomainsResponse,
   WebUpdateClientRequest,
   WebUpdateConfigData,
   WebUpdateDnsRecordResponse,
@@ -413,7 +417,10 @@ export class Api<
    * @request POST:/api/events/block/amount
    */
   eventsBlockAmountCreate = (params: RequestParams = {}) =>
-    this.request<WebGetAmountResponse, any>({
+    this.request<
+      WebGetAmountResponse,
+      GithubComAlextorqDnsFilterBlockedDomainWebErrorResponse
+    >({
       path: `/api/events/block/amount`,
       method: "POST",
       format: "json",
@@ -684,6 +691,97 @@ export class Api<
     this.request<WebGetSignalCodesResponse, any>({
       path: `/api/suggest-to-block/codes`,
       method: "GET",
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags traffic
+   * @name TrafficDevicesList
+   * @summary Per-device traffic summaries
+   * @request GET:/api/traffic/devices
+   */
+  trafficDevicesList = (
+    query?: {
+      /** Start day, inclusive (YYYY-MM-DD) */
+      from?: string;
+      /** End day, inclusive (YYYY-MM-DD) */
+      to?: string;
+    },
+    params: RequestParams = {},
+  ) =>
+    this.request<
+      WebDevicesResponse,
+      GithubComAlextorqDnsFilterTrafficWebErrorResponse
+    >({
+      path: `/api/traffic/devices`,
+      method: "GET",
+      query: query,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags traffic
+   * @name TrafficDevicesDomainsList
+   * @summary Domains for a single device
+   * @request GET:/api/traffic/devices/domains
+   */
+  trafficDevicesDomainsList = (
+    query: {
+      /** Device kind: mac | ip */
+      kind: string;
+      /** Device key: the MAC or IP */
+      value: string;
+      /** Filter by verdict (true=blocked, false=allowed); omit for both */
+      blocked?: boolean;
+      /** Start day, inclusive (YYYY-MM-DD) */
+      from?: string;
+      /** End day, inclusive (YYYY-MM-DD) */
+      to?: string;
+      /** Max rows (default 50, max 1000) */
+      limit?: number;
+      /** Pagination offset (default 0) */
+      offset?: number;
+    },
+    params: RequestParams = {},
+  ) =>
+    this.request<
+      WebDeviceDomainsResponse,
+      GithubComAlextorqDnsFilterTrafficWebErrorResponse
+    >({
+      path: `/api/traffic/devices/domains`,
+      method: "GET",
+      query: query,
+      format: "json",
+      ...params,
+    });
+  /**
+   * No description
+   *
+   * @tags traffic
+   * @name TrafficTopDomainsList
+   * @summary Top domains by traffic
+   * @request GET:/api/traffic/top-domains
+   */
+  trafficTopDomainsList = (
+    query?: {
+      /** Filter by verdict (true=blocked, false=allowed); omit for both */
+      blocked?: boolean;
+      /** Max rows (default 50, max 1000) */
+      limit?: number;
+    },
+    params: RequestParams = {},
+  ) =>
+    this.request<
+      WebTopDomainsResponse,
+      GithubComAlextorqDnsFilterTrafficWebErrorResponse
+    >({
+      path: `/api/traffic/top-domains`,
+      method: "GET",
+      query: query,
       format: "json",
       ...params,
     });

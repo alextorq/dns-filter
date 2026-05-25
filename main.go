@@ -42,6 +42,7 @@ import (
 	suggest_to_block "github.com/alextorq/dns-filter/suggest-to-block"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
+	traffic_prune_uc "github.com/alextorq/dns-filter/traffic/business/use-cases/prune"
 	traffic_record_uc "github.com/alextorq/dns-filter/traffic/business/use-cases/record"
 	traffic_db "github.com/alextorq/dns-filter/traffic/db"
 	trafficWeb "github.com/alextorq/dns-filter/traffic/web"
@@ -188,6 +189,12 @@ func main() {
 
 	go clear_events_uc.ClearEvent(blockRepo)
 	go allow_clear_events_uc.ClearEvent(allowRepo)
+	// Daily retention prune over the unified domain_traffic table. Additive
+	// alongside the two legacy clear-events tasks above (they still prune the
+	// dual-written block/allow event tables until Step 7 removes them). The
+	// retention window is the traffic_retention_days dynamic setting; the loop
+	// reads its atomic fresh each tick, so a UI change applies on the next prune.
+	go traffic_prune_uc.Run(trafficRepo)
 	go suggestModule.Start(context.Background())
 	go authBusiness.ClearExpiredSessions()
 

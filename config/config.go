@@ -74,6 +74,13 @@ type Config struct {
 	// dropped (counted in metrics) and stale is still served — the next stale
 	// hit will try again.
 	CacheRefreshConcurrency int
+
+	// TrafficRetentionDays is how many days of per-device traffic counters
+	// (domain_traffic) are kept. It is the env/compiled default for the
+	// traffic_retention_days dynamic setting; a DB override (set from the UI)
+	// takes precedence at runtime. The daily prune deletes day-buckets older
+	// than this window.
+	TrafficRetentionDays int
 }
 
 func (c *Config) UpdateLogLevel(l string) {
@@ -221,6 +228,7 @@ func GetConfig() *Config {
 			CacheStaleGrace:         getDuration("DNS_FILTER_CACHE_STALE_GRACE", 24*time.Hour),
 			CacheStaleTTL:           getDuration("DNS_FILTER_CACHE_STALE_TTL", 30*time.Second),
 			CacheRefreshConcurrency: getInt("DNS_FILTER_CACHE_REFRESH_CONCURRENCY", 32),
+			TrafficRetentionDays:    getInt("DNS_FILTER_TRAFFIC_RETENTION_DAYS", 30),
 		}
 		instance.Enabled.Store(true)
 	})

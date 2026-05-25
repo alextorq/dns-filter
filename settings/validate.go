@@ -82,6 +82,22 @@ func ValidatePositiveInt(raw string) error {
 	return nil
 }
 
+// ValidateIntRange returns a validator that accepts an integer in the inclusive
+// range [min, max]. Use it for bounded numeric settings (e.g. a retention window
+// in days) where both a non-positive value and an absurdly large one are bugs.
+func ValidateIntRange(min, max int) func(string) error {
+	return func(raw string) error {
+		n, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil {
+			return fmt.Errorf("not an integer: %w", err)
+		}
+		if n < min || n > max {
+			return fmt.Errorf("must be between %d and %d, got %d", min, max, n)
+		}
+		return nil
+	}
+}
+
 // ValidateEnum returns a validator that accepts only the given values
 // (case-insensitive).
 func ValidateEnum(allowed ...string) func(string) error {

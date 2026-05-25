@@ -9,6 +9,7 @@ import (
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/settings"
+	traffic_prune "github.com/alextorq/dns-filter/traffic/business/use-cases/prune"
 )
 
 // dynamicSettingsDeps bundles the runtime sinks that the DB-backed settings
@@ -98,5 +99,31 @@ func registerDynamicSettings(m *settings.Module, d dynamicSettingsDeps) {
 			Validate: settings.ValidatePositiveInt,
 			Apply:    func(raw string) error { d.dnsServer.SetRefreshConcurrency(settings.ParseInt(raw)); return nil },
 		},
+		trafficRetentionSetting(c),
 	)
+}
+
+// trafficRetentionDaysMin / Max bound the retention window: 0 would prune
+// everything, and an absurdly large value would pin data forever, so both ends
+// are rejected. 3650 days ≈ 10 years.
+const (
+	trafficRetentionDaysMin = 1
+	trafficRetentionDaysMax = 3650
+)
+
+// trafficRetentionSetting is the descriptor for the daily-prune retention
+// window. Split out so a wiring test can exercise the real Validate bounds and
+// the Apply→atomic round-trip without constructing the heavyweight DNS/cache
+// sinks the other descriptors need.
+func trafficRetentionSetting(c *config.Config) settings.Setting {
+	return settings.Setting{
+		Key:  "traffic_retention_days",
+		Type: "int",
+		// Env/compiled default; a DB override set from the UI wins at runtime.
+		Default:  strconv.Itoa(c.TrafficRetentionDays),
+		Validate: settings.ValidateIntRange(trafficRetentionDaysMin, trafficRetentionDaysMax),
+		// Apply writes the atomic the daily prune loop reads fresh each tick, so
+		// a UI change takes effect on the next prune without a restart.
+		Apply: func(raw string) error { traffic_prune.SetRetentionDays(settings.ParseInt(raw)); return nil },
+	}
 }

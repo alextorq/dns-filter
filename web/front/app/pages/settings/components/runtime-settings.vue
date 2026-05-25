@@ -43,6 +43,10 @@ const META: Record<string, { label: string; help?: string }> = {
         label: "Refresh concurrency",
         help: "Maximum number of background refreshes allowed in flight.",
     },
+    traffic_retention_days: {
+        label: "Traffic retention",
+        help: "How many days of per-device traffic counters are kept before the daily prune deletes them (1–3650).",
+    },
 };
 
 const labelFor = (s: SettingsEffective) => META[s.key ?? ""]?.label ?? s.key ?? "";
@@ -186,6 +190,28 @@ onMounted(load);
                         class="w-56"
                         @update:model-value="(v: string) => save(s, v)"
                     />
+
+                    <!-- int → number input + explicit Save -->
+                    <template v-else-if="s.type === 'int'">
+                        <UInput
+                            v-if="s.key"
+                            v-model="drafts[s.key]"
+                            type="number"
+                            :min="1"
+                            :disabled="savingKey === s.key"
+                            class="w-56"
+                            @keyup.enter="save(s, drafts[s.key] ?? '')"
+                        />
+                        <UButton
+                            color="primary"
+                            variant="solid"
+                            :loading="savingKey === s.key"
+                            :disabled="!isDirty(s)"
+                            @click="save(s, s.key ? (drafts[s.key] ?? '') : '')"
+                        >
+                            Save
+                        </UButton>
+                    </template>
 
                     <!-- everything else → text input + explicit Save -->
                     <template v-else>

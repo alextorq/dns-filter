@@ -725,3 +725,19 @@ func TestRepo_CreateDomainWithReasons_RollbackOnReasonFailure(t *testing.T) {
 		t.Errorf("block_lists row must be rolled back on reason failure, got %d rows", count)
 	}
 }
+
+func TestBlockDomainEvent_DomainIdIsIndexed(t *testing.T) {
+	r := newTestRepo(t)
+	m := r.db.Migrator()
+	// Positive: the high-volume events table must be indexed on the column its
+	// join (GetEventsByDomain) and prune (DeleteDNSRecordsBySourceNotIn) filter
+	// on, or both degrade to full scans as the table grows.
+	if !m.HasIndex(&BlockDomainEvent{}, "DomainId") {
+		t.Error("expected an index on BlockDomainEvent.DomainId")
+	}
+	// Negative guard: the migration indexes DomainId specifically, not every
+	// column — CreatedAt is deliberately left unindexed.
+	if m.HasIndex(&BlockDomainEvent{}, "CreatedAt") {
+		t.Error("CreatedAt should not be indexed; only DomainId is")
+	}
+}

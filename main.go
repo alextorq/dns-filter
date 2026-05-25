@@ -25,6 +25,7 @@ import (
 	"github.com/alextorq/dns-filter/db/migrate"
 	"github.com/alextorq/dns-filter/dns"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
+	domain_inspect_checks "github.com/alextorq/dns-filter/domain-inspect/checks"
 	"github.com/alextorq/dns-filter/filter"
 	filter_cache "github.com/alextorq/dns-filter/filter/cache"
 	filter_bloom "github.com/alextorq/dns-filter/filter/filter"
@@ -174,7 +175,14 @@ func main() {
 		panic(err)
 	}
 
-	suggestModule := suggest_to_block.NewModule(blockRepo, allowRepo, sourceRepo, filterModule, suggestRepo, chanLogger)
+	// Step 3 of the traffic-dashboard migration: suggest-to-block and
+	// domain-inspect now READ allowed-domain data from the unified
+	// domain_traffic counter instead of allow_domain_events. The ports are
+	// unchanged — only who they read from. Dual-write into allow_domain_events
+	// continues (allowWorker below) until Step 7 removes the legacy table.
+	trafficAllowAdapter := traffic_db.NewAllowFilterAdapter(trafficRepo)
+	suggestModule := suggest_to_block.NewModule(blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger)
+	domain_inspect_checks.SetAllowLookup(trafficRepo.IsAllowed)
 
 	go clear_events_uc.ClearEvent(blockRepo)
 	go allow_clear_events_uc.ClearEvent(allowRepo)

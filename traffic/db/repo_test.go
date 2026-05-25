@@ -297,6 +297,132 @@ func TestRepo_DeleteOlderThan_EmptyTableIsNoOp(t *testing.T) {
 	}
 }
 
+// ----- GetAllowedDomains: DISTINCT allowed domains -----
+
+// happy: returns the DISTINCT set of domains seen with blocked=false, deduped
+// across days and devices.
+func TestRepo_GetAllowedDomains_DistinctAcrossDaysAndDevices(t *testing.T) {
+	r := newTestRepo(t)
+	d1 := day(t, "2026-05-24")
+	d2 := day(t, "2026-05-25")
+	now := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
+
+	rows := []DomainTraffic{
+		// same allowed domain across two devices and two days → still one entry
+		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "good.example", Blocked: false, Day: d1, Count: 1, LastSeen: now},
+		{ClientKind: "mac", ClientValue: "cc:dd", ClientIP: "2.2.2.2", Domain: "good.example", Blocked: false, Day: d2, Count: 1, LastSeen: now},
+		// a second distinct allowed domain
+		{ClientKind: "ip", ClientValue: "10.0.0.5", ClientIP: "10.0.0.5", Domain: "other.example", Blocked: false, Day: d2, Count: 1, LastSeen: now},
+	}
+	if err := r.UpsertBatch(rows); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := r.GetAllowedDomains()
+	if err != nil {
+		t.Fatalf("GetAllowedDomains: %v", err)
+	}
+	want := map[string]bool{"good.example": true, "other.example": true}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d distinct domains, got %d (%v)", len(want), len(got), got)
+	}
+	for _, d := range got {
+		if !want[d] {
+			t.Errorf("unexpected domain %q in result", d)
+		}
+	}
+}
+
+// negative scope: a domain that was ONLY ever blocked must NOT appear in the
+// allowed set. A domain seen both allowed and blocked appears once (allowed).
+func TestRepo_GetAllowedDomains_ExcludesBlockedOnly(t *testing.T) {
+	r := newTestRepo(t)
+	d := day(t, "2026-05-25")
+	now := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
+
+	rows := []DomainTraffic{
+		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "ads.example", Blocked: true, Day: d, Count: 7, LastSeen: now},   // blocked only
+		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "mixed.example", Blocked: true, Day: d, Count: 1, LastSeen: now},  // mixed
+		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "mixed.example", Blocked: false, Day: d, Count: 3, LastSeen: now}, // mixed
+	}
+	if err := r.UpsertBatch(rows); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := r.GetAllowedDomains()
+	if err != nil {
+		t.Fatalf("GetAllowedDomains: %v", err)
+	}
+	if len(got) != 1 || got[0] != "mixed.example" {
+		t.Fatalf("expected only [mixed.example], got %v", got)
+	}
+}
+
+// negative edge: empty table returns an empty (non-nil-panic) slice.
+func TestRepo_GetAllowedDomains_EmptyTable(t *testing.T) {
+	r := newTestRepo(t)
+	got, err := r.GetAllowedDomains()
+	if err != nil {
+		t.Fatalf("GetAllowedDomains on empty table: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty slice, got %v", got)
+	}
+}
+
+// ----- IsAllowed: verdict-scoped membership -----
+
+func TestRepo_IsAllowed(t *testing.T) {
+	r := newTestRepo(t)
+	d := day(t, "2026-05-25")
+	now := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
+	rows := []DomainTraffic{
+		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "allowed.example", Blocked: false, Day: d, Count: 1, LastSeen: now},
+		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "blockedonly.example", Blocked: true, Day: d, Count: 1, LastSeen: now},
+	}
+	if err := r.UpsertBatch(rows); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// happy: present as allowed → true
+	if ok, err := r.IsAllowed("allowed.example"); err != nil || !ok {
+		t.Errorf("IsAllowed(allowed.example) = %v, %v; want true, nil", ok, err)
+	}
+	// negative scope: present only as blocked → not allowed
+	if ok, err := r.IsAllowed("blockedonly.example"); err != nil || ok {
+		t.Errorf("IsAllowed(blockedonly.example) = %v, %v; want false, nil", ok, err)
+	}
+	// negative: absent → false
+	if ok, err := r.IsAllowed("never.example"); err != nil || ok {
+		t.Errorf("IsAllowed(never.example) = %v, %v; want false, nil", ok, err)
+	}
+}
+
+// ----- IsBlockedSeen: verdict-scoped membership over block events -----
+
+func TestRepo_IsBlockedSeen(t *testing.T) {
+	r := newTestRepo(t)
+	d := day(t, "2026-05-25")
+	now := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
+	rows := []DomainTraffic{
+		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "blocked.example", Blocked: true, Day: d, Count: 1, LastSeen: now},
+		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "allowedonly.example", Blocked: false, Day: d, Count: 1, LastSeen: now},
+	}
+	if err := r.UpsertBatch(rows); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if ok, err := r.IsBlockedSeen("blocked.example"); err != nil || !ok {
+		t.Errorf("IsBlockedSeen(blocked.example) = %v, %v; want true, nil", ok, err)
+	}
+	if ok, err := r.IsBlockedSeen("allowedonly.example"); err != nil || ok {
+		t.Errorf("IsBlockedSeen(allowedonly.example) = %v, %v; want false, nil", ok, err)
+	}
+	if ok, err := r.IsBlockedSeen("never.example"); err != nil || ok {
+		t.Errorf("IsBlockedSeen(never.example) = %v, %v; want false, nil", ok, err)
+	}
+}
+
 // itoa avoids pulling strconv into the hot test loop's import churn; keeps the
 // large-batch test self-contained.
 func itoa(i int) string {

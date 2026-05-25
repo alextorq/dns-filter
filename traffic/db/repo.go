@@ -57,6 +57,56 @@ func (r *Repo) UpsertBatch(rows []DomainTraffic) error {
 	return db.BatchUpsertWith(r.db, rows, upsertBatchSize, onConflict)
 }
 
+// GetAllowedDomains returns the DISTINCT set of domains ever seen with a
+// blocked=false verdict (i.e. forwarded upstream). It is the suggest-to-block
+// candidate pool, replacing the allow-domain repo's GetAllActiveFilters: a
+// domain that real clients keep resolving is the input to the heuristic
+// scorer. A domain that was only ever blocked is excluded — it is not a
+// candidate to block again. Deduped across days and devices by SELECT DISTINCT.
+// An empty table returns an empty (non-nil) slice.
+func (r *Repo) GetAllowedDomains() ([]string, error) {
+	domains := []string{}
+	err := r.db.Model(&DomainTraffic{}).
+		Where("blocked = ?", false).
+		Distinct().
+		Pluck("domain", &domains).Error
+	if err != nil {
+		return nil, err
+	}
+	return domains, nil
+}
+
+// IsAllowed reports whether the domain has ever been forwarded upstream
+// (a row with blocked=false). It is verdict-scoped: a domain seen only as
+// blocked is NOT "allowed". Backs domain-inspect's allow-membership signal,
+// replacing the allow_domain_events lookup.
+func (r *Repo) IsAllowed(domain string) (bool, error) {
+	return r.exists(domain, false)
+}
+
+// IsBlockedSeen reports whether the domain has ever been NXDOMAIN'd (a row with
+// blocked=true). Verdict-scoped, mirror of IsAllowed. Provided for symmetry /
+// future use — domain-inspect's block-membership signal still reads the
+// block_lists table directly, so this is not wired into a consumer in Step 3.
+func (r *Repo) IsBlockedSeen(domain string) (bool, error) {
+	return r.exists(domain, true)
+}
+
+// exists is the shared membership check for the verdict-scoped helpers; n>0 is
+// the EXISTS answer. The (domain, blocked) predicate is not a left-prefix of the
+// composite unique index, so this is a scan — negligible since domain-inspect
+// calls it once per inspect. Add a (domain, blocked) index if profiling warrants.
+func (r *Repo) exists(domain string, blocked bool) (bool, error) {
+	var n int64
+	err := r.db.Model(&DomainTraffic{}).
+		Where("domain = ? AND blocked = ?", domain, blocked).
+		Count(&n).Error
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // DeleteOlderThan hard-deletes every row whose Day is strictly before cutoff.
 // Unscoped because DomainTraffic has no soft-delete column; a row on the cutoff
 // day itself is kept (strict <). It is the daily retention prune that replaces

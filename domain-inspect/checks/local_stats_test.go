@@ -2,6 +2,7 @@ package checks
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -107,5 +108,54 @@ func TestLocalStats_AllowedDomain(t *testing.T) {
 	}
 	if got, _ := res.Details["allow_list_active"].(bool); !got {
 		t.Error("expected allow_list_active=true")
+	}
+}
+
+// TestLocalStats_AllowLookupRepointed proves Step 3's repoint: when SetAllowLookup
+// is wired to a traffic-backed function, the allow signal reflects traffic data,
+// independently of the legacy allow_domain_events table.
+func TestLocalStats_AllowLookupRepointed(t *testing.T) {
+	resetTables(t)
+
+	const seen = "fromtraffic.example"
+	traffic := map[string]bool{seen: true}
+	SetAllowLookup(func(domain string) (bool, error) {
+		return traffic[domain], nil
+	})
+	t.Cleanup(func() { SetAllowLookup(legacyAllowLookup) })
+
+	// happy: a domain the traffic counter has forwarded shows as allowed even
+	// though no allow_domain_events row exists for it.
+	res := LocalStats(context.Background(), seen)
+	if got, _ := res.Details["in_allow_list"].(bool); !got {
+		t.Error("expected in_allow_list=true from traffic-backed lookup")
+	}
+	if got, _ := res.Details["allow_list_active"].(bool); !got {
+		t.Error("expected allow_list_active=true from traffic-backed lookup")
+	}
+
+	// negative: a domain absent from traffic is not allowed.
+	res = LocalStats(context.Background(), "absent.example")
+	if got, _ := res.Details["in_allow_list"].(bool); got {
+		t.Error("expected in_allow_list=false for a domain absent from traffic")
+	}
+}
+
+// TestLocalStats_AllowLookupError treats a lookup error as "not in allow list"
+// rather than crashing the check or emitting a misleading allowed verdict.
+func TestLocalStats_AllowLookupError(t *testing.T) {
+	resetTables(t)
+
+	SetAllowLookup(func(_ string) (bool, error) {
+		return false, errors.New("db down")
+	})
+	t.Cleanup(func() { SetAllowLookup(legacyAllowLookup) })
+
+	res := LocalStats(context.Background(), "whatever.example")
+	if res.Status != domain_inspect.StatusOK {
+		t.Fatalf("LocalStats must stay OK on allow-lookup error, got %s", res.Status)
+	}
+	if got, _ := res.Details["in_allow_list"].(bool); got {
+		t.Error("expected in_allow_list=false when the allow lookup errors")
 	}
 }

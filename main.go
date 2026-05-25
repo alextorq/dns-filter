@@ -178,10 +178,6 @@ func main() {
 	go suggestModule.Start(context.Background())
 	go authBusiness.ClearExpiredSessions()
 
-	// Pull the block lists in the background and refresh the filter once done.
-	// The DNS server (started below via dnsServer.Serve) does not wait on this.
-	go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
-
 	// Start the ARP watcher only in LAN mode. Public mode has no LAN to
 	// observe; the watcher would just spam ErrUnsupported (or, in a hosted
 	// environment with /proc/net/arp present, learn meaningless cloud-VLAN
@@ -230,6 +226,15 @@ func main() {
 		// this just reports what it skipped.
 		chanLogger.Error(fmt.Errorf("settings hydrate: %w", err))
 	}
+
+	// Pull the block lists in the background and refresh the filter once done.
+	// The DNS server (started below via dnsServer.Serve) does not wait on this.
+	// Launched after HydrateAll so the persisted log level is already applied
+	// when backgroundSync emits its "started" line — otherwise that INFO line
+	// races ahead of hydrate and prints even when the level was raised to WARN,
+	// while the matching "finished" line (logged later, post-hydrate) is
+	// suppressed, making a healthy sync look stuck.
+	go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
 	web.CreateServer(web.Handlers{
 		Blocked: &blockedWeb.Handlers{

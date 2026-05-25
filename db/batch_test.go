@@ -75,6 +75,28 @@ func TestBatchOn_InsertsAllItems(t *testing.T) {
 	}
 }
 
+func TestBatchOn_PartialCommitOnMidBatchError(t *testing.T) {
+	conn := newTestDB(t)
+	// Seed a row that a later batch collides with (no OnConflict → hard error).
+	if err := batchOn(conn, []testItem{{Name: "dup"}}, 100, nil); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// batchSize=1 → batches ["a"], ["dup"], ["c"]: the first commits, the second
+	// violates the unique index and aborts the call before "c" is reached.
+	items := []testItem{{Name: "a"}, {Name: "dup"}, {Name: "c"}}
+	if err := batchOn(conn, items, 1, nil); err == nil {
+		t.Fatal("expected a unique-violation error, got nil")
+	}
+	// The batch before the failure must have persisted — per-batch commits
+	// release the write lock between batches instead of holding it (and a single
+	// rollback-everything transaction) for the whole set.
+	var a int64
+	conn.Model(&testItem{}).Where("name = ?", "a").Count(&a)
+	if a != 1 {
+		t.Errorf("expected the pre-failure batch to be committed, got %d rows for 'a'", a)
+	}
+}
+
 func TestBatchOn_RespectsSmallBatchSize(t *testing.T) {
 	conn := newTestDB(t)
 	items := make([]testItem, 0, 10)

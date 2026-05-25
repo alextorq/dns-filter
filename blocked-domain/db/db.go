@@ -39,11 +39,15 @@ type BlockListReason struct {
 	MatchValue  string `json:"match,omitempty"`
 }
 
-// BlockDomainEvent tracks when a domain was blocked
+// BlockDomainEvent tracks when a domain was blocked. DomainId is indexed: it is
+// the column the high-volume events table is filtered/joined on — the stats
+// aggregation (GetEventsByDomain joins block_lists on domain_id) and the stale
+// prune (DeleteDNSRecordsBySourceNotIn deletes WHERE domain_id IN (...)). Without
+// the index both degrade to full table scans as the events table grows.
 type BlockDomainEvent struct {
 	ID        uint      `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time `json:"created_at"`
-	DomainId  uint
+	DomainId  uint      `gorm:"index"`
 }
 
 type GetAllParams struct {

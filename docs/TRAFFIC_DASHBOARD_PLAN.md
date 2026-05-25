@@ -127,8 +127,8 @@ key `TRAFFIC_RETENTION_DAYS`, default **30**, editable in the UI. A single daily
   Mirror the existing BlockDomainEventStore structure.
 - Inject a narrow `TrafficRecorder` port into `DnsServer` and record inside `handleDNS` using the
   already-resolved `lookup` + `clientIP` + `qname` + the verdict (blocked branch → true, allowed →
-  false). Keep the old block/allow stores writing too (dual-write). Skip recording when `!identified`
-  edge or empty domain; drop loopback/`::1`/the server's own queries.
+  false). Keep the old block/allow stores writing too (dual-write). Fall back to IP identity when
+  `!identified`; skip empty domain and loopback/`::1`/the server's own queries.
 - Tests: aggregation collapses duplicates into Count; flush by ticker and by capacity; drop-on-full;
   day rollover → new key; Kind/Value taken from lookup (MAC preferred); IP stamped informationally.
   Negative: empty domain ignored, full channel drops without blocking, unidentified client.

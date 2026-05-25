@@ -40,6 +40,8 @@ import (
 	suggest_to_block "github.com/alextorq/dns-filter/suggest-to-block"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
+	traffic_record_uc "github.com/alextorq/dns-filter/traffic/business/use-cases/record"
+	traffic_db "github.com/alextorq/dns-filter/traffic/db"
 	"github.com/alextorq/dns-filter/web"
 	dnsLib "github.com/miekg/dns"
 )
@@ -152,6 +154,7 @@ func main() {
 	sourceRepo := source_db.NewRepo(conn)
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
 	settingsRepo := settings_db.NewRepo(conn)
+	trafficRepo := traffic_db.NewRepo(conn)
 
 	bloom := filter_bloom.GetFilter()
 	cache := filter_cache.GetCache()
@@ -190,6 +193,11 @@ func main() {
 	metricInstance := dns.CreateMetric()
 	allowWorker := allow_domain_use_cases.CreateAllowDomainEventStore(allowRepo, chanLogger, 100)
 	blockWorker := block_domain_uc.NewBlockDomainEventStore(blockRepo, chanLogger, 100)
+	// Per-device traffic counter (new, unified table). Dual-write alongside the
+	// block/allow stores during the staged migration — see TRAFFIC_DASHBOARD_PLAN.md.
+	// Capacity bounds DISTINCT aggregation keys held in RAM between flushes, not
+	// raw events, so it can be larger than the event stores' batch size.
+	trafficWorker := traffic_record_uc.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
 
 	// Reloadable upstream: constructed from env defaults, then re-pointed by the
 	// settings hydrate below if a DB override exists. The same instance backs
@@ -202,6 +210,7 @@ func main() {
 		allowHandler: allowWorker.SendAllowDomainEvent,
 		blockHandler: blockWorker.SendBlockDomainEvent,
 	}, ident, resolver)
+	dnsServer.Traffic = trafficWorker
 
 	// Runtime settings store. Every sink (logger, resolver, cache, server) now
 	// exists, so we declare the DB-backed settings, restore the persisted filter

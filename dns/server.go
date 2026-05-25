@@ -50,6 +50,9 @@ type DnsServer struct {
 	Handlers   DnsRequestHandlers
 	Identifier identifier.Identifier
 	Clients    ClientStore
+	// Traffic records per-device query counters off the hot path. Optional —
+	// nil disables recording (existing tests run without it). Wired in main.
+	Traffic TrafficRecorder
 	// upstream collapses concurrent identical queries into a single in-flight
 	// upstream call. Zero value is ready to use.
 	upstream upstreamCoordinator
@@ -96,6 +99,15 @@ type Metric interface {
 type DnsRequestHandlers interface {
 	Allowed(w dns.ResponseWriter, r *dns.Msg)
 	Blocked(w dns.ResponseWriter, r *dns.Msg)
+}
+
+// TrafficRecorder is the narrow port the hot path uses to record per-device
+// query counters. Implementations MUST be non-blocking (drop on backpressure)
+// and stamp the query time themselves — the DNS reply can never wait on a DB
+// write. The concrete implementation lives in
+// traffic/business/use-cases/record (TrafficEventStore).
+type TrafficRecorder interface {
+	Record(kind, value, ip, domain string, blocked bool)
 }
 
 type Filter interface {
@@ -193,6 +205,8 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			s.Logger.Debug("Клиент: ", lookup.Kind, ":", lookup.Value, "исключён из фильтрации")
 		}
 
+		s.recordTraffic(lookup, identified, clientIP, qname, useFilter)
+
 		if useFilter {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
@@ -224,6 +238,25 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if err := w.WriteMsg(m); err != nil {
 		s.Logger.Error(fmt.Errorf("ошибка отправки ответа клиенту: %w", err))
 	}
+}
+
+// recordTraffic feeds the async per-device counter. It reuses the already
+// resolved lookup (MAC-preferred) instead of re-resolving on the hot path; when
+// the client could not be identified it falls back to IP identity. The box's
+// own/local queries (empty or loopback source IP) are dropped as noise. Nil
+// recorder is a no-op so the server runs without traffic accounting wired.
+func (s *DnsServer) recordTraffic(lookup identifier.Lookup, identified bool, clientIP, domain string, blocked bool) {
+	if s.Traffic == nil {
+		return
+	}
+	if domain == "" || clientIP == "" || clientIP == "127.0.0.1" || clientIP == "::1" {
+		return
+	}
+	kind, value := lookup.Kind, lookup.Value
+	if !identified {
+		kind, value = identifier.KindIP, clientIP
+	}
+	s.Traffic.Record(kind, value, clientIP, domain, blocked)
 }
 
 // Serve binds UDP and TCP listeners on s.Address (default ":53") and runs

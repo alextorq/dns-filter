@@ -17,8 +17,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Скопируем исходники
 COPY . .
 
-# Сгенерируем swagger-документацию (./docs импортируется в web/server.go)
-RUN swag init -g main.go -o ./docs --parseDependency
+# Сгенерируем swagger-документацию (./docs импортируется в web/server.go).
+# CGO_ENABLED=0: проект pure-Go и в образе нет gcc; без этого --parseDependency
+# тайп-чекает cgo-вариант net (net/cgo_unix.go) и сыплет безвредный, но шумный
+# "cgo: gcc not found". С выключенным cgo build-тег //go:build cgo исключает эти
+# файлы — лог чистый, спека генерится так же.
+RUN CGO_ENABLED=0 swag init -g main.go -o ./docs --parseDependency
 
 # Соберем бинарник
 RUN --mount=type=cache,target=/go/pkg/mod \

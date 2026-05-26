@@ -158,11 +158,11 @@ func TestRepo_UpsertBatch_DistinctKeysSeparateRows(t *testing.T) {
 	base := DomainTraffic{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "d.example", Blocked: true, Day: d1, Count: 1, LastSeen: now}
 	rows := []DomainTraffic{
 		base,
-		func() DomainTraffic { x := base; x.ClientKind = "ip"; return x }(),       // differ kind
+		func() DomainTraffic { x := base; x.ClientKind = "ip"; return x }(),        // differ kind
 		func() DomainTraffic { x := base; x.ClientValue = "cc:dd"; return x }(),    // differ value
-		func() DomainTraffic { x := base; x.Blocked = false; return x }(),         // differ blocked
+		func() DomainTraffic { x := base; x.Blocked = false; return x }(),          // differ blocked
 		func() DomainTraffic { x := base; x.Domain = "other.example"; return x }(), // differ domain
-		func() DomainTraffic { x := base; x.Day = d2; return x }(),                // differ day
+		func() DomainTraffic { x := base; x.Day = d2; return x }(),                 // differ day
 	}
 	if err := r.UpsertBatch(rows); err != nil {
 		t.Fatalf("UpsertBatch: %v", err)
@@ -341,7 +341,7 @@ func TestRepo_GetAllowedDomains_ExcludesBlockedOnly(t *testing.T) {
 	now := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
 
 	rows := []DomainTraffic{
-		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "ads.example", Blocked: true, Day: d, Count: 7, LastSeen: now},   // blocked only
+		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "ads.example", Blocked: true, Day: d, Count: 7, LastSeen: now},    // blocked only
 		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "mixed.example", Blocked: true, Day: d, Count: 1, LastSeen: now},  // mixed
 		{ClientKind: "mac", ClientValue: "aa:bb", ClientIP: "1.1.1.1", Domain: "mixed.example", Blocked: false, Day: d, Count: 3, LastSeen: now}, // mixed
 	}

@@ -17,8 +17,7 @@ const verdictToBlocked = (v: VerdictFilter): boolean | undefined => {
     return undefined;
 };
 
-const deviceKey = (d: WebDeviceDTO): string =>
-    `${d.client_kind ?? ""}:${d.client_value ?? ""}`;
+const deviceKey = (d: WebDeviceDTO): string => `${d.client_kind ?? ""}:${d.client_value ?? ""}`;
 
 /**
  * Data layer for the per-device traffic dashboard. Each independent fetch

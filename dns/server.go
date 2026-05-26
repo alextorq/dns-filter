@@ -72,10 +72,10 @@ type DnsServer struct {
 }
 
 type Logger interface {
-	Info(args ...interface{})
+	Info(args ...any)
 	Error(err error)
-	Debug(args ...interface{})
-	Warn(args ...interface{})
+	Debug(args ...any)
+	Warn(args ...any)
 }
 
 type Cache interface {

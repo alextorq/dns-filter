@@ -52,9 +52,9 @@ func Migrate() {
 	// Drop the two legacy event tables. They were dual-written until the
 	// per-device traffic counter (domain_traffic) fully replaced them; the
 	// unified table now serves block stats, the suggest candidate pool, and
-	// domain-inspect allow membership. No backfill — old per-day rows are
-	// simply discarded (see TRAFFIC_DASHBOARD_PLAN.md Step 7). DropTable is a
-	// no-op once the tables are gone, so this is idempotent across boots.
+	// domain-inspect allow membership (see ARCHITECTURE.md §4 "Трафик"). No
+	// backfill — old per-day rows are simply discarded. DropTable is a no-op
+	// once the tables are gone, so this is idempotent across boots.
 	for _, table := range []string{"block_domain_events", "allow_domain_events"} {
 		if m.HasTable(table) {
 			if err := m.DropTable(table); err != nil {

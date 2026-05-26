@@ -48,7 +48,7 @@ func (r *Repo) UpsertBatch(rows []DomainTraffic) error {
 			{Name: "domain"},
 			{Name: "day"},
 		},
-		DoUpdates: clause.Assignments(map[string]interface{}{
+		DoUpdates: clause.Assignments(map[string]any{
 			"count":     gorm.Expr("count + excluded.count"),
 			"last_seen": gorm.Expr("MAX(last_seen, excluded.last_seen)"),
 			"client_ip": gorm.Expr("excluded.client_ip"),

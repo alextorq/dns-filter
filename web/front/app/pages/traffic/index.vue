@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
 import { api } from "~/api";
-import type { DiscoveryDevice, WebDeviceDTO, WebDomainCountDTO } from "~/api/generated/data-contracts";
+import type {
+    DiscoveryDevice,
+    WebDeviceDTO,
+    WebDomainCountDTO,
+} from "~/api/generated/data-contracts";
 import { useTrafficDashboard, type VerdictFilter } from "~~/composables/use-traffic-dashboard";
 import { getErrorMessage } from "~~/utils/get-error-message";
 import { isAbortError } from "~~/utils/is-abort-error";
@@ -39,22 +43,18 @@ const deviceColumns: TableColumn<WebDeviceDTO>[] = [
             const subtitleParts = [d.client_value ?? "—"];
             if (isMac && ip) subtitleParts.push(ip);
             return h("div", { class: "flex flex-col gap-0.5" }, [
-                h(
-                    "div",
-                    { class: "flex items-center gap-2" },
-                    [
-                        h(
-                            resolveComponent("UBadge"),
-                            {
-                                size: "sm",
-                                variant: "subtle",
-                                color: isMac ? "primary" : "neutral",
-                            },
-                            () => (isMac ? "MAC" : "IP"),
-                        ),
-                        h("span", { class: "font-medium truncate" }, title || "—"),
-                    ],
-                ),
+                h("div", { class: "flex items-center gap-2" }, [
+                    h(
+                        resolveComponent("UBadge"),
+                        {
+                            size: "sm",
+                            variant: "subtle",
+                            color: isMac ? "primary" : "neutral",
+                        },
+                        () => (isMac ? "MAC" : "IP"),
+                    ),
+                    h("span", { class: "font-medium truncate" }, title || "—"),
+                ]),
                 h(
                     "span",
                     { class: "font-mono text-xs text-muted truncate" },
@@ -105,7 +105,9 @@ const deviceColumns: TableColumn<WebDeviceDTO>[] = [
                         variant: "ghost",
                         icon: "i-lucide-chevron-right",
                         color:
-                            t.selectedKey.value === t.deviceKey(row.original) ? "primary" : "neutral",
+                            t.selectedKey.value === t.deviceKey(row.original)
+                                ? "primary"
+                                : "neutral",
                         onClick: () => onSelectDevice(row.original),
                     },
                     () => "Domains",
@@ -119,7 +121,11 @@ const domainColumns: TableColumn<WebDomainCountDTO>[] = [
         accessorKey: "domain",
         header: "Domain",
         cell: ({ row }) =>
-            h("span", { class: "font-mono text-sm truncate", title: row.original.domain ?? "" }, row.original.domain ?? "—"),
+            h(
+                "span",
+                { class: "font-mono text-sm truncate", title: row.original.domain ?? "" },
+                row.original.domain ?? "—",
+            ),
     },
     {
         accessorKey: "count",
@@ -133,14 +139,17 @@ const topColumns: TableColumn<WebDomainCountDTO>[] = [
     {
         id: "rank",
         header: "#",
-        cell: ({ row }) =>
-            h("span", { class: "tabular-nums text-muted" }, String(row.index + 1)),
+        cell: ({ row }) => h("span", { class: "tabular-nums text-muted" }, String(row.index + 1)),
     },
     {
         accessorKey: "domain",
         header: "Domain",
         cell: ({ row }) =>
-            h("span", { class: "font-mono text-sm truncate", title: row.original.domain ?? "" }, row.original.domain ?? "—"),
+            h(
+                "span",
+                { class: "font-mono text-sm truncate", title: row.original.domain ?? "" },
+                row.original.domain ?? "—",
+            ),
     },
     {
         accessorKey: "count",
@@ -236,11 +245,7 @@ onMounted(() => {
                 >
                     <div class="flex flex-wrap items-end gap-3">
                         <UFormField label="From" size="xs">
-                            <UInput
-                                v-model="t.from.value"
-                                type="date"
-                                placeholder="YYYY-MM-DD"
-                            />
+                            <UInput v-model="t.from.value" type="date" placeholder="YYYY-MM-DD" />
                         </UFormField>
                         <UFormField label="To" size="xs">
                             <UInput v-model="t.to.value" type="date" placeholder="YYYY-MM-DD" />

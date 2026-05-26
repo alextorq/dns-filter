@@ -54,7 +54,7 @@ participant Ad as Ad Server
 
 ## Architecture
 
-The DNS path uses a three-tier check designed to keep the hot path off the database — most queries are answered without ever touching SQLite. Block/allow events are emitted asynchronously so DB writes never block the DNS reply.
+The DNS path uses a three-tier check designed to keep the hot path off the database — most queries are answered without ever touching SQLite. Every verdict (blocked or allowed) is recorded asynchronously into the unified per-device `domain_traffic` counter — one row per device + domain + verdict + day — so DB writes never block the DNS reply.
 
 ```mermaid
 flowchart TD
@@ -71,8 +71,8 @@ flowchart TD
     DC -->|hit| RESP[DNS response]
     DC -->|miss| DOH[DoH upstream<br/>Cloudflare]
     DOH --> RESP
-    NX -. async .-> EV[(events log)]
-    RESP -. async .-> EV
+    NX -. async .-> TR[(domain_traffic<br/>per-device counter)]
+    RESP -. async .-> TR
 ```
 
 ## Features
@@ -95,15 +95,35 @@ flowchart TD
   `AutoBlocked` source on the Sources page — disabled candidates fall through
   to `suggest_blocks` instead. See [ARCHITECTURE.md §11](ARCHITECTURE.md) for
   the scoring rules.
-- Event metrics (Prometheus)
+- Per-device traffic dashboard (`/traffic` page) — for each device on the LAN,
+  how many DNS queries it made, to which domains, split by **blocked vs
+  allowed** and bucketed by **day** (local-midnight). Devices are keyed by their
+  **MAC** (with the OUI vendor shown), falling back to IP, so a device stays the
+  same row across DHCP IP churn. Read-only, backed by the unified
+  `domain_traffic` counter (counts only, no per-query rows) via:
+  - `GET /api/traffic/devices` — per-device allowed/blocked totals, current IP,
+    vendor and last-seen (optional `from`/`to` day range, `YYYY-MM-DD`);
+  - `GET /api/traffic/devices/domains` — the domains a single device queried,
+    with summed counts (device picked by `kind`+`value` query params; optional
+    `blocked` verdict, `from`/`to`, `limit`/`offset`);
+  - `GET /api/traffic/top-domains` — highest-traffic domains across all devices
+    (optional `blocked`, `limit`).
+
+  How long counters are retained is the `traffic_retention_days` runtime setting
+  (env seed `DNS_FILTER_TRAFFIC_RETENTION_DAYS`, default **30**, range 1..3650),
+  editable in the UI without a restart; a single daily prune drops rows older
+  than the window.
+- Block-stats metrics (Prometheus) — the `/api/events/block/*` endpoints now
+  aggregate `SUM(count)` from `domain_traffic` (blocked scope); the legacy
+  `block_domain_events`/`allow_domain_events` tables were removed.
 - Persistent runtime settings from the Settings page (`GET/PUT/DELETE
-  /api/settings`) — log level, DoH upstream + bootstrap IPs, and the cache
-  tuning knobs (SWR on/off, stale grace/TTL, refresh concurrency) can be
-  changed without a restart and **survive one**. The value is stored in the
-  DB and overrides the env default once set; `DELETE /api/settings/{key}`
-  reverts a setting to env control. Env vars remain the seed/default. The
-  filter on/off + pause state also persists, so a deliberately disabled or
-  paused filter stays that way across a restart. See
+  /api/settings`) — log level, DoH upstream + bootstrap IPs, the cache
+  tuning knobs (SWR on/off, stale grace/TTL, refresh concurrency) and the
+  traffic retention window can be changed without a restart and **survive
+  one**. The value is stored in the DB and overrides the env default once set;
+  `DELETE /api/settings/{key}` reverts a setting to env control. Env vars
+  remain the seed/default. The filter on/off + pause state also persists, so a
+  deliberately disabled or paused filter stays that way across a restart. See
   [ARCHITECTURE.md §12](ARCHITECTURE.md) for the design and the
   static/dynamic/secret classification of every setting.
 - Manual DNS-cache flush from the Settings page (`POST /api/dns-cache/clear`) —

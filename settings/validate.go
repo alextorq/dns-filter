@@ -35,7 +35,7 @@ func ValidateHTTPURL(raw string) error {
 // string is allowed (means "no bootstrap IPs"); any non-empty element must
 // parse as an IP.
 func ValidateIPList(raw string) error {
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		ip := strings.TrimSpace(part)
 		if ip == "" {
 			continue
@@ -83,16 +83,18 @@ func ValidatePositiveInt(raw string) error {
 }
 
 // ValidateIntRange returns a validator that accepts an integer in the inclusive
-// range [min, max]. Use it for bounded numeric settings (e.g. a retention window
+// range [lo, hi]. Use it for bounded numeric settings (e.g. a retention window
 // in days) where both a non-positive value and an absurdly large one are bugs.
-func ValidateIntRange(min, max int) func(string) error {
+// The bounds are named lo/hi rather than min/max so they don't shadow the
+// builtin min/max functions.
+func ValidateIntRange(lo, hi int) func(string) error {
 	return func(raw string) error {
 		n, err := strconv.Atoi(strings.TrimSpace(raw))
 		if err != nil {
 			return fmt.Errorf("not an integer: %w", err)
 		}
-		if n < min || n > max {
-			return fmt.Errorf("must be between %d and %d, got %d", min, max, n)
+		if n < lo || n > hi {
+			return fmt.Errorf("must be between %d and %d, got %d", lo, hi, n)
 		}
 		return nil
 	}
@@ -132,7 +134,7 @@ func ParseInt(raw string) int {
 // elements (nil when the input is empty).
 func ParseIPList(raw string) []string {
 	var ips []string
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		ip := strings.TrimSpace(part)
 		if ip != "" {
 			ips = append(ips, ip)

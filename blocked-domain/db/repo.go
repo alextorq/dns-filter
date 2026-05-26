@@ -156,9 +156,9 @@ type idURL struct {
 	Url string
 }
 
-// staleDeleteBatch bounds the `id IN (...)` / `domain_id IN (...)` lists when
-// pruning vanished domains. SQLite caps bound parameters at 32766; 4000 keeps
-// a wide margin and matches the batch size used on the insert side.
+// staleDeleteBatch bounds the `id IN (...)` list when pruning vanished domains.
+// SQLite caps bound parameters at 32766; 4000 keeps a wide margin and matches
+// the batch size used on the insert side.
 const staleDeleteBatch = 4000
 
 // DeleteDNSRecordsBySourceNotIn hard-deletes block_lists rows of source whose

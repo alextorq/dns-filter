@@ -96,8 +96,8 @@ func TestDistinctKeysSeparateRows(t *testing.T) {
 
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: at})
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: false, At: at}) // verdict differs
-	store.record(Event{Kind: "mac", Value: "cc:dd", IP: "10.0.0.6", Domain: "ads.example.", Blocked: true, At: at})   // device differs
-	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "cdn.example.", Blocked: true, At: at})   // domain differs
+	store.record(Event{Kind: "mac", Value: "cc:dd", IP: "10.0.0.6", Domain: "ads.example.", Blocked: true, At: at})  // device differs
+	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "cdn.example.", Blocked: true, At: at})  // domain differs
 
 	store.flushNow()
 	waitFor(t, time.Second, "flush", func() bool { return len(repo.snapshot()) >= 1 })

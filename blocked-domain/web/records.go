@@ -20,7 +20,7 @@ type Logger interface {
 
 // BlockStatsRepo is the narrow read port behind the legacy block-stats
 // endpoints (/api/events/block/*). Step 4 of the traffic-dashboard migration
-// repoints these reads off the soon-to-be-removed block_domain_events table
+// repoints these reads off the (now removed) block_domain_events table
 // onto the unified domain_traffic counter: BlockedTotalCount is SUM(count)
 // WHERE blocked, BlockedCountByDomain the same grouped by domain. The response
 // JSON shape is unchanged, so the existing frontend is unaffected.

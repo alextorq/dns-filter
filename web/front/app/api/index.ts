@@ -143,10 +143,8 @@ class Api {
     // Per-device traffic dashboard (read-only). `from`/`to` are YYYY-MM-DD day
     // bounds; counts are aggregated server-side. Empty results come back as
     // `[]`, never null.
-    getTrafficDevices = (
-        query: { from?: string; to?: string },
-        abortSignal: AbortSignal,
-    ) => this.client.trafficDevicesList(query, { signal: abortSignal });
+    getTrafficDevices = (query: { from?: string; to?: string }, abortSignal: AbortSignal) =>
+        this.client.trafficDevicesList(query, { signal: abortSignal });
 
     getTrafficDeviceDomains = (
         query: {

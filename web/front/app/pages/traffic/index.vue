@@ -417,7 +417,7 @@ onMounted(() => {
             </template>
 
             <template #body>
-                <div class="ops-drawer">
+                <div class="ops-drawer" :data-verdict="t.blockedFilter.value">
                     <div
                         class="ops__seg ops__seg--drawer"
                         role="radiogroup"
@@ -454,11 +454,11 @@ onMounted(() => {
                             },
                         ]"
                     />
-                    <div v-else-if="t.domainsLoading.value" class="ops__skeleton mt-4">
-                        <span v-for="n in 6" :key="n"></span>
-                    </div>
                     <template v-else-if="t.domains.value.length">
-                        <ol class="ops__list ops__list--drawer">
+                        <ol
+                            class="ops__list ops__list--drawer"
+                            :class="{ 'ops__list--loading': t.domainsLoading.value }"
+                        >
                             <li
                                 v-for="(g, i) in t.domains.value"
                                 :key="g.domain ?? i"
@@ -475,19 +475,29 @@ onMounted(() => {
                                 <span class="ops__count">{{ formatNumber(g.count ?? 0) }}</span>
                             </li>
                         </ol>
-                        <div
-                            v-if="t.domainsTotal.value > t.domainsPageSize"
-                            class="flex justify-center pt-4 mt-2 border-t border-default"
-                        >
-                            <UPagination
-                                :page="t.domainsPageIndex.value + 1"
-                                :items-per-page="t.domainsPageSize"
-                                :total="t.domainsTotal.value"
-                                @update:page="(p: number) => t.changeDomainsPage(p)"
-                            />
-                        </div>
                     </template>
+                    <div v-else-if="t.domainsLoading.value" class="ops__skeleton mt-4">
+                        <span v-for="n in 6" :key="n"></span>
+                    </div>
                     <p v-else class="ops__empty">no domains for this device</p>
+                </div>
+            </template>
+
+            <!-- Pagination lives in the footer so it pins to the bottom edge of the
+                 panel: the flex-1 body absorbs the height difference between a full
+                 page and a partial one, so the control never shifts as the row count
+                 changes. -->
+            <template
+                v-if="t.domains.value.length > 0 && t.domainsTotal.value > t.domainsPageSize"
+                #footer
+            >
+                <div class="flex justify-center">
+                    <UPagination
+                        :page="t.domainsPageIndex.value + 1"
+                        :items-per-page="t.domainsPageSize"
+                        :total="t.domainsTotal.value"
+                        @update:page="(p: number) => t.changeDomainsPage(p)"
+                    />
                 </div>
             </template>
         </UDrawer>
@@ -1077,10 +1087,54 @@ onMounted(() => {
 }
 
 /* DRAWER BODY */
+/* The drawer renders through DrawerPortal (teleported to <body>), so it lives
+   outside `.ops` and does NOT inherit the token aliases / `--verdict` defined
+   there — leaving color-mix() rules with an undefined `--verdict` invalid (e.g.
+   the active-filter highlight silently dropped). Re-declare them here and tint
+   `--verdict` by the drawer's own verdict filter via [data-verdict]. */
 .ops-drawer {
-    width: 100%;
-    max-width: 32rem;
+    --bg: var(--ui-bg);
+    --line: var(--ui-border);
+    --line-soft: var(--ui-border-muted);
+    --text: var(--ui-text-highlighted);
+    --muted: var(--ui-text-muted);
+    --dim: var(--ui-text-dimmed);
+    --accent: var(--ui-color-error-500);
+    --good: var(--ui-color-primary-500);
+    --verdict: var(--accent);
+
+    /* For direction="right" the Nuxt UI drawer content is `w-auto`, so it sizes
+       to its content. A fixed width keeps the panel from resizing as the body
+       swaps between list and skeleton. */
+    width: min(32rem, calc(100vw - 4rem));
     font-family: "Instrument Serif", serif;
+}
+
+.ops-drawer[data-verdict="allowed"] {
+    --verdict: var(--good);
+}
+.ops-drawer[data-verdict="all"] {
+    --verdict: color-mix(in srgb, var(--accent), var(--good));
+}
+
+/* Re-fetch (pagination / filter change) keeps the current rows mounted and just
+   dims them instead of collapsing to the skeleton — no height jump. */
+.ops__list--loading {
+    opacity: 0.45;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+/* The drawer list reloads on every page / filter change; replaying the per-row
+   entry animations each time reads as flicker, so disable them here. The
+   top-targets list (loads once) keeps them. */
+.ops__list--drawer .ops__row {
+    animation: none;
+    opacity: 1;
+}
+.ops__list--drawer .ops__bar-fill {
+    animation: none;
+    transform: scaleX(1);
 }
 
 @media (max-width: 860px) {

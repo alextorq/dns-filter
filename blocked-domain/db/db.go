@@ -14,7 +14,7 @@ type BlockList struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 	Url       string         `gorm:"type:varchar(255);not null;uniqueIndex:idx_theme_host" json:"url"`
 	Active    bool           `gorm:"default:true" json:"active"`
-	Source    string         `gorm:"type:varchar(255)" json:"source"`
+	Source    string         `gorm:"type:varchar(255);index:idx_block_lists_source" json:"source"`
 	// Reasons holds the auto-block signal codes (#95); read paths must
 	// Preload("Reasons") to populate it. See CreateDomainWithReasons.
 	Reasons []BlockListReason `gorm:"foreignKey:BlockListID;constraint:OnDelete:CASCADE" json:"reasons,omitempty"`

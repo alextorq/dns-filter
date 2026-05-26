@@ -28,6 +28,19 @@ func newTestRepo(t *testing.T) *Repo {
 	return NewRepo(conn)
 }
 
+// ----- schema -----
+
+// The source column carries the WHERE clause for GetRecordsByFilter,
+// DeleteDNSRecordsBySourceNotIn and ChangeRecordStatusBySource — all hit on
+// every sync over hundreds of thousands of rows. Guard that the index tag on
+// BlockList.Source survives; AutoMigrate creates it from the tag.
+func TestRepo_SourceIndexExists(t *testing.T) {
+	r := newTestRepo(t)
+	if !r.db.Migrator().HasIndex(&BlockList{}, "idx_block_lists_source") {
+		t.Fatal("expected index idx_block_lists_source on block_lists.source")
+	}
+}
+
 // ----- GetByID -----
 
 func TestRepo_GetByID_Found(t *testing.T) {

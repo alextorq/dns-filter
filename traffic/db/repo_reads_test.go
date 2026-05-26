@@ -16,71 +16,7 @@ func seed(t *testing.T, r *Repo, rows ...DomainTraffic) {
 func tp(v time.Time) *time.Time { return &v }
 func bp(v bool) *bool           { return &v }
 
-// ----- CountByDomain / TotalCount -----
-
-// happy: CountByDomain(true) sums Count per domain across days and devices,
-// scoped to blocked rows only.
-func TestRepo_CountByDomain_BlockedScopedAndSummed(t *testing.T) {
-	r := newTestRepo(t)
-	d1 := day(t, "2026-05-24")
-	d2 := day(t, "2026-05-25")
-	now := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
-
-	seed(t, r,
-		// ads.example: blocked across two days + two devices → 3+4+5 = 12
-		DomainTraffic{ClientKind: "mac", ClientValue: "aa", ClientIP: "1.1.1.1", Domain: "ads.example", Blocked: true, Day: d1, Count: 3, LastSeen: now},
-		DomainTraffic{ClientKind: "mac", ClientValue: "aa", ClientIP: "1.1.1.1", Domain: "ads.example", Blocked: true, Day: d2, Count: 4, LastSeen: now},
-		DomainTraffic{ClientKind: "ip", ClientValue: "10.0.0.5", ClientIP: "10.0.0.5", Domain: "ads.example", Blocked: true, Day: d2, Count: 5, LastSeen: now},
-		// track.example: blocked → 2
-		DomainTraffic{ClientKind: "mac", ClientValue: "aa", ClientIP: "1.1.1.1", Domain: "track.example", Blocked: true, Day: d2, Count: 2, LastSeen: now},
-		// good.example: allowed only → must NOT appear in blocked scope
-		DomainTraffic{ClientKind: "mac", ClientValue: "aa", ClientIP: "1.1.1.1", Domain: "good.example", Blocked: false, Day: d2, Count: 9, LastSeen: now},
-	)
-
-	got, err := r.CountByDomain(true)
-	if err != nil {
-		t.Fatalf("CountByDomain(true): %v", err)
-	}
-	want := map[string]int64{"ads.example": 12, "track.example": 2}
-	if len(got) != len(want) {
-		t.Fatalf("expected %d groups, got %d (%v)", len(want), len(got), got)
-	}
-	for _, g := range got {
-		if want[g.Domain] != g.Count {
-			t.Errorf("domain %q: expected count %d, got %d", g.Domain, want[g.Domain], g.Count)
-		}
-	}
-}
-
-// allowed scope is the mirror: only blocked=false rows counted.
-func TestRepo_CountByDomain_AllowedScope(t *testing.T) {
-	r := newTestRepo(t)
-	d := day(t, "2026-05-25")
-	now := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
-	seed(t, r,
-		DomainTraffic{ClientKind: "mac", ClientValue: "aa", ClientIP: "1.1.1.1", Domain: "good.example", Blocked: false, Day: d, Count: 7, LastSeen: now},
-		DomainTraffic{ClientKind: "mac", ClientValue: "aa", ClientIP: "1.1.1.1", Domain: "ads.example", Blocked: true, Day: d, Count: 3, LastSeen: now},
-	)
-	got, err := r.CountByDomain(false)
-	if err != nil {
-		t.Fatalf("CountByDomain(false): %v", err)
-	}
-	if len(got) != 1 || got[0].Domain != "good.example" || got[0].Count != 7 {
-		t.Fatalf("expected [{good.example 7}], got %v", got)
-	}
-}
-
-// negative: empty table → empty (non-nil) slice, no error.
-func TestRepo_CountByDomain_EmptyTable(t *testing.T) {
-	r := newTestRepo(t)
-	got, err := r.CountByDomain(true)
-	if err != nil {
-		t.Fatalf("CountByDomain on empty table: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("expected empty slice, got %v", got)
-	}
-}
+// ----- TotalCount -----
 
 // happy: TotalCount sums Count over the verdict scope.
 func TestRepo_TotalCount_VerdictScoped(t *testing.T) {

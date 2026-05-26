@@ -18,16 +18,13 @@ type Logger interface {
 	Error(err error)
 }
 
-// BlockStatsRepo is the narrow read port behind the legacy block-stats
-// endpoints (/api/events/block/*). Step 4 of the traffic-dashboard migration
-// repoints these reads off the (now removed) block_domain_events table
-// onto the unified domain_traffic counter: BlockedTotalCount is SUM(count)
-// WHERE blocked, BlockedCountByDomain the same grouped by domain. The response
-// JSON shape is unchanged, so the existing frontend is unaffected.
-// *traffic/db.Repo is adapted to this port at the composition root.
+// BlockStatsRepo is the narrow read port behind the block-stats total endpoint
+// (POST /api/events/block/amount), which the home dashboard uses for its
+// "blocked total" counter. It reads off the unified domain_traffic counter:
+// BlockedTotalCount is SUM(count) WHERE blocked. *traffic/db.Repo is adapted to
+// this port at the composition root.
 type BlockStatsRepo interface {
 	BlockedTotalCount() (int64, error)
-	BlockedCountByDomain() ([]blocked_domain_db.DomainCount, error)
 }
 
 // Handlers groups the blocked-domain HTTP endpoints with their dependencies.

@@ -13,11 +13,6 @@ const items = ref([
         to: "/sources",
     },
     {
-        label: "Statistic",
-        icon: "i-lucide-pie-chart",
-        to: "/statistic",
-    },
-    {
         label: "Suggest",
         icon: "i-lucide-lightbulb",
         to: "/suggest",

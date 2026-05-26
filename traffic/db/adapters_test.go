@@ -57,9 +57,9 @@ func TestAllowFilterAdapter_EmptyPool(t *testing.T) {
 
 // ----- BlockStatsAdapter -----
 
-// happy: the adapter projects the traffic repo's blocked totals onto the
-// blocked-domain DomainCount type expected by the legacy stats endpoint.
-func TestBlockStatsAdapter_BlockedTotalsAndGroups(t *testing.T) {
+// happy: the adapter sums the traffic repo's blocked counts (allowed excluded)
+// for the home dashboard's blocked-total counter.
+func TestBlockStatsAdapter_BlockedTotal(t *testing.T) {
 	r := newTestRepo(t)
 	d := day(t, "2026-05-25")
 	now := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
@@ -79,24 +79,9 @@ func TestBlockStatsAdapter_BlockedTotalsAndGroups(t *testing.T) {
 	if total != 10 {
 		t.Errorf("expected blocked total 10 (allowed excluded), got %d", total)
 	}
-
-	groups, err := adapter.BlockedCountByDomain()
-	if err != nil {
-		t.Fatalf("BlockedCountByDomain: %v", err)
-	}
-	got := map[string]int64{}
-	for _, g := range groups {
-		got[g.Domain] = g.Count
-	}
-	if len(got) != 2 || got["ads.example"] != 7 || got["track.example"] != 3 {
-		t.Errorf("expected {ads:7, track:3}, got %v", got)
-	}
-	if _, ok := got["good.example"]; ok {
-		t.Error("allowed-only domain must not appear in blocked stats")
-	}
 }
 
-// negative: a repo error (table missing) propagates through both methods.
+// negative: a repo error (table missing) propagates.
 func TestBlockStatsAdapter_PropagatesError(t *testing.T) {
 	r := newTestRepo(t)
 	if err := r.db.Migrator().DropTable(&DomainTraffic{}); err != nil {
@@ -106,24 +91,14 @@ func TestBlockStatsAdapter_PropagatesError(t *testing.T) {
 	if _, err := adapter.BlockedTotalCount(); err == nil {
 		t.Error("expected error from BlockedTotalCount when table missing")
 	}
-	if _, err := adapter.BlockedCountByDomain(); err == nil {
-		t.Error("expected error from BlockedCountByDomain when table missing")
-	}
 }
 
-// empty: empty table → 0 total and empty (non-nil) groups.
+// empty: empty table → 0 total.
 func TestBlockStatsAdapter_EmptyTable(t *testing.T) {
 	r := newTestRepo(t)
 	adapter := NewBlockStatsAdapter(r)
 	total, err := adapter.BlockedTotalCount()
 	if err != nil || total != 0 {
 		t.Errorf("expected 0,nil on empty table, got %d,%v", total, err)
-	}
-	groups, err := adapter.BlockedCountByDomain()
-	if err != nil {
-		t.Fatalf("BlockedCountByDomain empty: %v", err)
-	}
-	if len(groups) != 0 {
-		t.Errorf("expected empty groups, got %v", groups)
 	}
 }

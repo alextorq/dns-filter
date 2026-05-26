@@ -81,11 +81,6 @@ export interface DbClient {
   vendor?: string;
 }
 
-export interface DbDomainCount {
-  count?: number;
-  domain?: string;
-}
-
 export interface DbSource {
   active?: boolean;
   created_at?: string;
@@ -334,10 +329,6 @@ export interface WebGetAllSuggestBlocksRequest {
 export interface WebGetAllSuggestBlocksResponse {
   list?: DbSuggestBlock[];
   total?: number;
-}
-
-export interface WebGetAmountByDomainResponse {
-  groups?: DbDomainCount[];
 }
 
 export interface WebGetAmountResponse {

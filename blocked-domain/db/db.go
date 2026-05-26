@@ -48,8 +48,3 @@ type GetRecordsResult struct {
 	Total int64       `json:"total"`
 	List  []BlockList `json:"list"`
 }
-
-type DomainCount struct {
-	Domain string `json:"domain"`
-	Count  int64  `json:"count"`
-}

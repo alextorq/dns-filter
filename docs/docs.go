@@ -655,31 +655,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/events/block/amount-by-group": {
-            "post": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "events"
-                ],
-                "summary": "Block events grouped by domain",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/web.GetAmountByDomainResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_web.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/filter/change-status": {
             "post": {
                 "produces": [
@@ -1432,17 +1407,6 @@ const docTemplate = `{
                 }
             }
         },
-        "db.DomainCount": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "domain": {
-                    "type": "string"
-                }
-            }
-        },
         "db.Source": {
             "type": "object",
             "properties": {
@@ -2051,17 +2015,6 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
-                }
-            }
-        },
-        "web.GetAmountByDomainResponse": {
-            "type": "object",
-            "properties": {
-                "groups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/db.DomainCount"
-                    }
                 }
             }
         },

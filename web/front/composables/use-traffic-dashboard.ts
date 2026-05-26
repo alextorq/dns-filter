@@ -8,7 +8,7 @@ import { isAbortError } from "../utils/is-abort-error";
 // "all" omits the `blocked` query param so the backend returns both.
 export type VerdictFilter = "all" | "blocked" | "allowed";
 
-const DOMAINS_PAGE_SIZE = 50;
+const DOMAINS_PAGE_SIZE = 15;
 const TOP_DOMAINS_LIMIT = 50;
 
 const verdictToBlocked = (v: VerdictFilter): boolean | undefined => {
@@ -27,10 +27,6 @@ const deviceKey = (d: WebDeviceDTO): string => `${d.client_kind ?? ""}:${d.clien
  * skeleton. Aborted requests (superseded by a newer one) are swallowed.
  */
 export const useTrafficDashboard = () => {
-    // Shared day range (YYYY-MM-DD), applied to the device list + drill-down.
-    const from = ref("");
-    const to = ref("");
-
     // --- Device list ---
     const devices = ref([]) as Ref<WebDeviceDTO[]>;
     const devicesLoading = ref(false);
@@ -44,10 +40,7 @@ export const useTrafficDashboard = () => {
         devicesLoading.value = true;
         devicesError.value = null;
         try {
-            const res = await api.getTrafficDevices(
-                { from: from.value || undefined, to: to.value || undefined },
-                ctrl.signal,
-            );
+            const res = await api.getTrafficDevices({}, ctrl.signal);
             devices.value = res.devices ?? [];
         } catch (error) {
             if (isAbortError(error)) return;
@@ -88,8 +81,6 @@ export const useTrafficDashboard = () => {
                     kind: device.client_kind ?? "",
                     value: device.client_value ?? "",
                     blocked: verdictToBlocked(blockedFilter.value),
-                    from: from.value || undefined,
-                    to: to.value || undefined,
                     limit: DOMAINS_PAGE_SIZE,
                     offset: domainsPageIndex.value * DOMAINS_PAGE_SIZE,
                 },
@@ -163,15 +154,37 @@ export const useTrafficDashboard = () => {
         }
     };
 
+    // --- Headline totals (derived from the full device list, no extra fetch) ---
+    // DeviceSummary returns every device (unpaginated), so summing its rows is the
+    // grand total of observed queries — and it stays consistent with the top-domains
+    // list, which is likewise all-time. heroMetric tracks the active verdict filter
+    // so the big number, the ranked list and the filter all read as one view.
+    const totalAllowed = computed(() =>
+        devices.value.reduce((acc, d) => acc + (d.allowed_count ?? 0), 0),
+    );
+    const totalBlocked = computed(() =>
+        devices.value.reduce((acc, d) => acc + (d.blocked_count ?? 0), 0),
+    );
+    const totalQueries = computed(() => totalAllowed.value + totalBlocked.value);
+    const deviceCount = computed(() => devices.value.length);
+    const heroMetric = computed(() => {
+        if (topBlockedFilter.value === "blocked") return totalBlocked.value;
+        if (topBlockedFilter.value === "allowed") return totalAllowed.value;
+        return totalQueries.value;
+    });
+
     return {
-        // shared range
-        from,
-        to,
         // devices
         devices,
         devicesLoading,
         devicesError,
         loadDevices,
+        // headline totals
+        totalAllowed,
+        totalBlocked,
+        totalQueries,
+        deviceCount,
+        heroMetric,
         // drill-down
         selectedDevice,
         selectedKey,

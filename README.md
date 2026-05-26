@@ -95,12 +95,18 @@ flowchart TD
   `AutoBlocked` source on the Sources page — disabled candidates fall through
   to `suggest_blocks` instead. See [ARCHITECTURE.md §11](ARCHITECTURE.md) for
   the scoring rules.
-- Per-device traffic dashboard (`/traffic` page) — for each device on the LAN,
-  how many DNS queries it made, to which domains, split by **blocked vs
-  allowed** and bucketed by **day** (local-midnight). Devices are keyed by their
-  **MAC** (with the OUI vendor shown), falling back to IP, so a device stays the
-  same row across DHCP IP churn. Read-only, backed by the unified
-  `domain_traffic` counter (counts only, no per-query rows) via:
+- Traffic dashboard (`/traffic` page) — a single view that merges the old
+  Statistic page into the per-device traffic analytics. A headline count-up and
+  a verdict filter (**All / Blocked / Allowed**) sit on top, always in view; the
+  big number tracks the filter. Below are two tabs sharing that headline:
+  **Top domains** (the ranked top-targets list, filtered by the verdict) and
+  **Devices** (every device on the LAN: how many DNS queries it made, split by
+  **blocked vs allowed** and bucketed by **day**, local-midnight). Devices are
+  keyed by their **MAC** (with the OUI vendor shown), falling back to IP, so a
+  device stays the same row across DHCP IP churn; clicking a device opens a
+  **side panel** with its per-domain breakdown (its own verdict filter +
+  pagination). Read-only, backed by the unified `domain_traffic` counter (counts
+  only, no per-query rows) via:
   - `GET /api/traffic/devices` — per-device allowed/blocked totals, current IP,
     vendor and last-seen (optional `from`/`to` day range, `YYYY-MM-DD`);
   - `GET /api/traffic/devices/domains` — the domains a single device queried,
@@ -113,9 +119,11 @@ flowchart TD
   (env seed `DNS_FILTER_TRAFFIC_RETENTION_DAYS`, default **30**, range 1..3650),
   editable in the UI without a restart; a single daily prune drops rows older
   than the window.
-- Block-stats metrics (Prometheus) — the `/api/events/block/*` endpoints now
-  aggregate `SUM(count)` from `domain_traffic` (blocked scope); the legacy
-  `block_domain_events`/`allow_domain_events` tables were removed.
+- Block-total counter — `POST /api/events/block/amount` aggregates
+  `SUM(count)` from `domain_traffic` (blocked scope) for the home dashboard's
+  headline number; the legacy `block_domain_events`/`allow_domain_events` tables
+  were removed. (The former `/amount-by-group` endpoint was dropped — the
+  Traffic page's `top-domains` covers grouped-by-domain stats.)
 - Persistent runtime settings from the Settings page (`GET/PUT/DELETE
   /api/settings`) — log level, DoH upstream + bootstrap IPs, the cache
   tuning knobs (SWR on/off, stale grace/TTL, refresh concurrency) and the

@@ -7,11 +7,7 @@ import (
 )
 
 // DomainTotal is a (domain, summed-count) pair returned by the aggregation
-// reads. Its JSON shape mirrors blocked-domain/db.DomainCount byte-for-byte so
-// the repointed legacy block-stats endpoint stays wire-compatible with the
-// existing frontend. It is named DomainTotal (not DomainCount) so the two
-// package `db` types do not collide in the generated OpenAPI schema, which
-// would otherwise force swag to fully-qualify blocked-domain's DomainCount.
+// reads (TopDomains, DomainsForDevice) and surfaced by the traffic dashboard.
 type DomainTotal struct {
 	Domain string `json:"domain"`
 	Count  int64  `json:"count"`
@@ -51,27 +47,9 @@ type DomainsResult struct {
 	List  []DomainTotal `json:"list"`
 }
 
-// CountByDomain returns SUM(count) per domain scoped to the given verdict,
-// across all devices and days. It replaces blocked-domain's GetEventsByDomain
-// for the legacy block-stats endpoint (called with blocked=true). Uses the
-// (blocked, day) index for the verdict scan. Empty table → empty (non-nil)
-// slice.
-func (r *Repo) CountByDomain(blocked bool) ([]DomainTotal, error) {
-	results := []DomainTotal{}
-	err := r.db.Model(&DomainTraffic{}).
-		Select("domain, SUM(count) as count").
-		Where("blocked = ?", blocked).
-		Group("domain").
-		Scan(&results).Error
-	if err != nil {
-		return nil, err
-	}
-	return results, nil
-}
-
-// TotalCount returns the grand SUM(count) over the verdict scope. It replaces
-// blocked-domain's GetEventsAmount (called with blocked=true). COALESCE keeps an
-// empty table at 0 rather than a NULL scan target.
+// TotalCount returns the grand SUM(count) over the verdict scope. It backs the
+// home dashboard's blocked-total counter (called with blocked=true). COALESCE
+// keeps an empty table at 0 rather than a NULL scan target.
 func (r *Repo) TotalCount(blocked bool) (int64, error) {
 	var total int64
 	err := r.db.Model(&DomainTraffic{}).

@@ -46,7 +46,6 @@ import type {
   WebGetAllSourcesResponse,
   WebGetAllSuggestBlocksRequest,
   WebGetAllSuggestBlocksResponse,
-  WebGetAmountByDomainResponse,
   WebGetAmountResponse,
   WebGetSignalCodesResponse,
   WebListClientsResponse,
@@ -422,24 +421,6 @@ export class Api<
       GithubComAlextorqDnsFilterBlockedDomainWebErrorResponse
     >({
       path: `/api/events/block/amount`,
-      method: "POST",
-      format: "json",
-      ...params,
-    });
-  /**
-   * No description
-   *
-   * @tags events
-   * @name EventsBlockAmountByGroupCreate
-   * @summary Block events grouped by domain
-   * @request POST:/api/events/block/amount-by-group
-   */
-  eventsBlockAmountByGroupCreate = (params: RequestParams = {}) =>
-    this.request<
-      WebGetAmountByDomainResponse,
-      GithubComAlextorqDnsFilterBlockedDomainWebErrorResponse
-    >({
-      path: `/api/events/block/amount-by-group`,
       method: "POST",
       format: "json",
       ...params,

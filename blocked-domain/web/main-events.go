@@ -26,24 +26,3 @@ func (h *Handlers) GetAmount(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, GetAmountResponse{Amount: amount})
 }
-
-// GetAmountByDomain returns blocked-query counts grouped by domain. Step 4
-// repoints this onto the domain_traffic counter (SUM(count) WHERE blocked
-// GROUP BY domain) via the BlockStats port; the {groups:[{domain,count}]}
-// response shape is unchanged.
-// @Summary      Block events grouped by domain
-// @Tags         events
-// @Produce      json
-// @Success      200 {object} GetAmountByDomainResponse
-// @Failure      500 {object} ErrorResponse
-// @Router       /api/events/block/amount-by-group [post]
-func (h *Handlers) GetAmountByDomain(c *gin.Context) {
-	groups, err := h.BlockStats.BlockedCountByDomain()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Message: "Failed to retrieve data"})
-		h.Log.Error(fmt.Errorf("failed to get rows by domains: %w", err))
-		return
-	}
-
-	c.JSON(http.StatusOK, GetAmountByDomainResponse{Groups: groups})
-}

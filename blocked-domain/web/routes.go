@@ -10,5 +10,4 @@ func (h *Handlers) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/dns-records/update", h.ChangeDnsRecordActive)
 
 	rg.POST("/events/block/amount", h.GetAmount)
-	rg.POST("/events/block/amount-by-group", h.GetAmountByDomain)
 }

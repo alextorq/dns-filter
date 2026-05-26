@@ -36,8 +36,3 @@ type UpdateDnsRecordResponse struct {
 type GetAmountResponse struct {
 	Amount int64 `json:"amount"`
 }
-
-// GetAmountByDomainResponse groups block events by domain.
-type GetAmountByDomainResponse struct {
-	Groups []blocked_domain_db.DomainCount `json:"groups"`
-}

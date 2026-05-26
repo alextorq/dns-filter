@@ -76,19 +76,6 @@ describe("useTrafficDashboard — devices", () => {
         expect(d.devicesError.value).toBeNull();
     });
 
-    it("passes the date range to the devices request", async () => {
-        devicesSpy.mockResolvedValue(devicesResponse);
-        const d = useTrafficDashboard();
-        d.from.value = "2026-05-01";
-        d.to.value = "2026-05-25";
-
-        await d.loadDevices();
-
-        const arg = devicesSpy.mock.calls[0]![0] as { from?: string; to?: string };
-        expect(arg.from).toBe("2026-05-01");
-        expect(arg.to).toBe("2026-05-25");
-    });
-
     it("sets a visible error and stops loading when the devices fetch rejects", async () => {
         devicesSpy.mockRejectedValue(new Error("devices boom"));
         const d = useTrafficDashboard();
@@ -121,6 +108,43 @@ describe("useTrafficDashboard — devices", () => {
     });
 });
 
+describe("useTrafficDashboard — headline totals", () => {
+    it("are zero before any devices are loaded", () => {
+        const d = useTrafficDashboard();
+        expect(d.totalAllowed.value).toBe(0);
+        expect(d.totalBlocked.value).toBe(0);
+        expect(d.totalQueries.value).toBe(0);
+        expect(d.deviceCount.value).toBe(0);
+        // "all" filter → grand total, which is 0 with no devices.
+        expect(d.heroMetric.value).toBe(0);
+    });
+
+    it("sum the device rows once loaded", async () => {
+        devicesSpy.mockResolvedValue(devicesResponse);
+        const d = useTrafficDashboard();
+
+        await d.loadDevices();
+
+        expect(d.totalAllowed.value).toBe(127); // 120 + 7
+        expect(d.totalBlocked.value).toBe(5); // 5 + 0
+        expect(d.totalQueries.value).toBe(132);
+        expect(d.deviceCount.value).toBe(2);
+    });
+
+    it("heroMetric tracks the active verdict filter", async () => {
+        devicesSpy.mockResolvedValue(devicesResponse);
+        const d = useTrafficDashboard();
+        await d.loadDevices();
+
+        d.topBlockedFilter.value = "all";
+        expect(d.heroMetric.value).toBe(132);
+        d.topBlockedFilter.value = "blocked";
+        expect(d.heroMetric.value).toBe(5);
+        d.topBlockedFilter.value = "allowed";
+        expect(d.heroMetric.value).toBe(127);
+    });
+});
+
 describe("useTrafficDashboard — device domains", () => {
     it("selecting a device loads its domains with kind/value and pagination", async () => {
         domainsSpy.mockResolvedValue(domainsResponse);
@@ -132,7 +156,7 @@ describe("useTrafficDashboard — device domains", () => {
         const arg = domainsSpy.mock.calls[0]![0] as Record<string, unknown>;
         expect(arg.kind).toBe("mac");
         expect(arg.value).toBe("aa:bb:cc:dd:ee:ff");
-        expect(arg.limit).toBe(50);
+        expect(arg.limit).toBe(15);
         expect(arg.offset).toBe(0);
         expect(d.domains.value).toEqual(domainsResponse.list);
         expect(d.domainsTotal.value).toBe(2);
@@ -174,8 +198,8 @@ describe("useTrafficDashboard — device domains", () => {
         await d.changeDomainsPage(3);
 
         const arg = domainsSpy.mock.calls[0]![0] as Record<string, unknown>;
-        expect(arg.offset).toBe(100);
-        expect(arg.limit).toBe(50);
+        expect(arg.offset).toBe(30);
+        expect(arg.limit).toBe(15);
     });
 
     it("sets a visible error when the domains fetch rejects", async () => {

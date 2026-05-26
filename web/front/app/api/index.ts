@@ -99,8 +99,6 @@ class Api {
 
     createDomain = (domain: string) => this.client.dnsRecordsCreateCreate({ domain });
 
-    getBlockDomainsGroups = () => this.client.eventsBlockAmountByGroupCreate();
-
     getBlockDomainsAmount = () => this.client.eventsBlockAmountCreate();
 
     // Runtime settings persisted in the DB (log level, DoH upstream, cache

@@ -9,12 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	allow_domain_use_cases "github.com/alextorq/dns-filter/allow-domain/business/use-cases"
-	allow_clear_events_uc "github.com/alextorq/dns-filter/allow-domain/business/use-cases/clear-events"
-	allow_domain_db "github.com/alextorq/dns-filter/allow-domain/db"
 	authBusiness "github.com/alextorq/dns-filter/auth/business"
-	block_domain_uc "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/block-domain"
-	clear_events_uc "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/clear-events"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	blockedWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	"github.com/alextorq/dns-filter/clients"
@@ -47,25 +42,7 @@ import (
 	traffic_db "github.com/alextorq/dns-filter/traffic/db"
 	trafficWeb "github.com/alextorq/dns-filter/traffic/web"
 	"github.com/alextorq/dns-filter/web"
-	dnsLib "github.com/miekg/dns"
 )
-
-type Handlers struct {
-	allowHandler func(domain string)
-	blockHandler func(domain string)
-}
-
-func (h Handlers) Allowed(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
-	first := r.Question[0]
-	domain := first.Name
-	h.allowHandler(domain)
-}
-
-func (h Handlers) Blocked(_ dnsLib.ResponseWriter, r *dnsLib.Msg) {
-	first := r.Question[0]
-	domain := first.Name
-	h.blockHandler(domain)
-}
 
 // buildIdentifier picks the per-request client identifier strategy based on
 // the deployment Mode. ModePublic is reserved for the future DoH frontend; we
@@ -154,7 +131,6 @@ func main() {
 	// connection, then *Module / *Handlers wired from those repos. After this
 	// point no feature reads db.GetConnection() — wiring is explicit.
 	blockRepo := blocked_domain_db.NewRepo(conn)
-	allowRepo := allow_domain_db.NewRepo(conn)
 	sourceRepo := source_db.NewRepo(conn)
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
 	settingsRepo := settings_db.NewRepo(conn)
@@ -178,22 +154,19 @@ func main() {
 		panic(err)
 	}
 
-	// Step 3 of the traffic-dashboard migration: suggest-to-block and
-	// domain-inspect now READ allowed-domain data from the unified
-	// domain_traffic counter instead of allow_domain_events. The ports are
-	// unchanged — only who they read from. Dual-write into allow_domain_events
-	// continues (allowWorker below) until Step 7 removes the legacy table.
+	// suggest-to-block and domain-inspect READ allowed-domain data from the
+	// unified domain_traffic counter (domains ever forwarded upstream). The
+	// legacy allow_domain_events table has been removed; these ports now read
+	// only from traffic.
 	trafficAllowAdapter := traffic_db.NewAllowFilterAdapter(trafficRepo)
 	suggestModule := suggest_to_block.NewModule(blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger)
 	domain_inspect_checks.SetAllowLookup(trafficRepo.IsAllowed)
 
-	go clear_events_uc.ClearEvent(blockRepo)
-	go allow_clear_events_uc.ClearEvent(allowRepo)
-	// Daily retention prune over the unified domain_traffic table. Additive
-	// alongside the two legacy clear-events tasks above (they still prune the
-	// dual-written block/allow event tables until Step 7 removes them). The
-	// retention window is the traffic_retention_days dynamic setting; the loop
-	// reads its atomic fresh each tick, so a UI change applies on the next prune.
+	// Daily retention prune over the unified domain_traffic table — now the sole
+	// retention task (the two legacy block/allow clear-events tasks were removed
+	// with their tables). The retention window is the traffic_retention_days
+	// dynamic setting; the loop reads its atomic fresh each tick, so a UI change
+	// applies on the next prune.
 	go traffic_prune_uc.Run(trafficRepo)
 	go suggestModule.Start(context.Background())
 	go authBusiness.ClearExpiredSessions()
@@ -208,12 +181,10 @@ func main() {
 
 	cacheWithMetric := dns_cache.GetCacheWithMetric()
 	metricInstance := dns.CreateMetric()
-	allowWorker := allow_domain_use_cases.CreateAllowDomainEventStore(allowRepo, chanLogger, 100)
-	blockWorker := block_domain_uc.NewBlockDomainEventStore(blockRepo, chanLogger, 100)
-	// Per-device traffic counter (new, unified table). Dual-write alongside the
-	// block/allow stores during the staged migration — see TRAFFIC_DASHBOARD_PLAN.md.
-	// Capacity bounds DISTINCT aggregation keys held in RAM between flushes, not
-	// raw events, so it can be larger than the event stores' batch size.
+	// Per-device traffic counter (the unified table). It is the sole recorder of
+	// block/allow verdicts now that the legacy event stores are gone. Capacity
+	// bounds DISTINCT aggregation keys held in RAM between flushes, not raw
+	// events, so it can be sized generously.
 	trafficWorker := traffic_record_uc.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
 
 	// Reloadable upstream: constructed from env defaults, then re-pointed by the
@@ -223,10 +194,7 @@ func main() {
 	resolver := dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)
 
 	ident := buildIdentifier(conf.Mode)
-	dnsServer := dns.CreateServerWithResolver(chanLogger, cacheWithMetric, filterModule.CheckExist, metricInstance, Handlers{
-		allowHandler: allowWorker.SendAllowDomainEvent,
-		blockHandler: blockWorker.SendBlockDomainEvent,
-	}, ident, resolver)
+	dnsServer := dns.CreateServerWithResolver(chanLogger, cacheWithMetric, filterModule.CheckExist, metricInstance, ident, resolver)
 	dnsServer.Traffic = trafficWorker
 
 	// Runtime settings store. Every sink (logger, resolver, cache, server) now

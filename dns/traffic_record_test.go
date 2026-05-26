@@ -53,7 +53,6 @@ func newRecordingServer(filter func(string) bool, ident identifier.Identifier, r
 		Filter:     filter,
 		Upstream:   &staticResolver{rcode: dnsLib.RcodeSuccess},
 		Metric:     noopMetric{},
-		Handlers:   noopHandlers{},
 		Identifier: ident,
 		Clients:    noopClientStore{},
 		Traffic:    rec,

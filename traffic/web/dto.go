@@ -46,8 +46,8 @@ type TopDomainsResponse struct {
 	List []DomainCountDTO `json:"list"`
 }
 
-// toDomainCountDTOs projects repo DomainCount rows onto the wire DTO.
-func toDomainCountDTOs(rows []traffic_db.DomainCount) []DomainCountDTO {
+// toDomainCountDTOs projects repo DomainTotal rows onto the wire DTO.
+func toDomainCountDTOs(rows []traffic_db.DomainTotal) []DomainCountDTO {
 	out := make([]DomainCountDTO, len(rows))
 	for i, r := range rows {
 		out[i] = DomainCountDTO{Domain: r.Domain, Count: r.Count}

@@ -6,7 +6,6 @@ import (
 	"os"
 	"testing"
 
-	allow_db "github.com/alextorq/dns-filter/allow-domain/db"
 	blocked_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	app_db "github.com/alextorq/dns-filter/db"
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
@@ -28,8 +27,6 @@ func TestMain(m *testing.M) {
 	conn := app_db.GetConnection()
 	if err := conn.AutoMigrate(
 		&blocked_db.BlockList{},
-		&blocked_db.BlockDomainEvent{},
-		&allow_db.AllowDomainEvent{},
 	); err != nil {
 		os.RemoveAll(tmp)
 		panic(err)
@@ -44,12 +41,14 @@ func resetTables(t *testing.T) {
 	t.Helper()
 	conn := app_db.GetConnection()
 	conn.Exec("DELETE FROM block_lists")
-	conn.Exec("DELETE FROM block_domain_events")
-	conn.Exec("DELETE FROM allow_domain_events")
 }
 
 func TestLocalStats_UnknownDomain(t *testing.T) {
 	resetTables(t)
+	// Default allow lookup is the safe no-op (returns not-allowed) — nothing to
+	// inject here. Reset it explicitly so a previous test's injection doesn't
+	// leak in.
+	SetAllowLookup(noopAllowLookup)
 
 	res := LocalStats(context.Background(), "unknown.example")
 
@@ -64,7 +63,11 @@ func TestLocalStats_UnknownDomain(t *testing.T) {
 	}
 }
 
-func TestLocalStats_BlockedDomainWithEvents(t *testing.T) {
+// TestLocalStats_BlockedDomain — happy path: a domain present in block_lists is
+// reported with its source/active flags. The legacy per-domain block-event
+// count was removed with block_domain_events, so block_events_total is no
+// longer emitted.
+func TestLocalStats_BlockedDomain(t *testing.T) {
 	resetTables(t)
 	conn := app_db.GetConnection()
 
@@ -73,33 +76,31 @@ func TestLocalStats_BlockedDomainWithEvents(t *testing.T) {
 	if err := conn.Create(&blocklist).Error; err != nil {
 		t.Fatalf("seed blocklist: %v", err)
 	}
-	for range 3 {
-		if err := conn.Create(&blocked_db.BlockDomainEvent{DomainId: blocklist.ID}).Error; err != nil {
-			t.Fatalf("seed event: %v", err)
-		}
-	}
 
 	res := LocalStats(context.Background(), domain)
 
 	if got, _ := res.Details["in_block_list"].(bool); !got {
 		t.Error("expected in_block_list=true")
 	}
+	if got, _ := res.Details["block_list_active"].(bool); !got {
+		t.Error("expected block_list_active=true")
+	}
 	if got, _ := res.Details["block_list_source"].(string); got != "test" {
 		t.Errorf("source: got %q, want %q", got, "test")
 	}
-	if got, _ := res.Details["block_events_total"].(int64); got != 3 {
-		t.Errorf("event count: got %d, want 3", got)
+	if _, present := res.Details["block_events_total"]; present {
+		t.Error("block_events_total must no longer be emitted after the events table was dropped")
 	}
 }
 
+// TestLocalStats_AllowedDomain — happy path for allow membership: a domain the
+// injected lookup reports as allowed shows in_allow_list/allow_list_active.
 func TestLocalStats_AllowedDomain(t *testing.T) {
 	resetTables(t)
-	conn := app_db.GetConnection()
 
 	const domain = "allowed.example"
-	if err := conn.Create(&allow_db.AllowDomainEvent{Domain: domain, Active: true}).Error; err != nil {
-		t.Fatalf("seed allow: %v", err)
-	}
+	SetAllowLookup(func(d string) (bool, error) { return d == domain, nil })
+	t.Cleanup(func() { SetAllowLookup(noopAllowLookup) })
 
 	res := LocalStats(context.Background(), domain)
 
@@ -111,9 +112,8 @@ func TestLocalStats_AllowedDomain(t *testing.T) {
 	}
 }
 
-// TestLocalStats_AllowLookupRepointed proves Step 3's repoint: when SetAllowLookup
-// is wired to a traffic-backed function, the allow signal reflects traffic data,
-// independently of the legacy allow_domain_events table.
+// TestLocalStats_AllowLookupRepointed proves the repoint: when SetAllowLookup
+// is wired to a traffic-backed function, the allow signal reflects traffic data.
 func TestLocalStats_AllowLookupRepointed(t *testing.T) {
 	resetTables(t)
 
@@ -122,10 +122,9 @@ func TestLocalStats_AllowLookupRepointed(t *testing.T) {
 	SetAllowLookup(func(domain string) (bool, error) {
 		return traffic[domain], nil
 	})
-	t.Cleanup(func() { SetAllowLookup(legacyAllowLookup) })
+	t.Cleanup(func() { SetAllowLookup(noopAllowLookup) })
 
-	// happy: a domain the traffic counter has forwarded shows as allowed even
-	// though no allow_domain_events row exists for it.
+	// happy: a domain the traffic counter has forwarded shows as allowed.
 	res := LocalStats(context.Background(), seen)
 	if got, _ := res.Details["in_allow_list"].(bool); !got {
 		t.Error("expected in_allow_list=true from traffic-backed lookup")
@@ -149,7 +148,7 @@ func TestLocalStats_AllowLookupError(t *testing.T) {
 	SetAllowLookup(func(_ string) (bool, error) {
 		return false, errors.New("db down")
 	})
-	t.Cleanup(func() { SetAllowLookup(legacyAllowLookup) })
+	t.Cleanup(func() { SetAllowLookup(noopAllowLookup) })
 
 	res := LocalStats(context.Background(), "whatever.example")
 	if res.Status != domain_inspect.StatusOK {

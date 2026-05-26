@@ -2,7 +2,6 @@ package db
 
 import (
 	"errors"
-	"time"
 
 	create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
 	"github.com/alextorq/dns-filter/db"
@@ -163,10 +162,8 @@ type idURL struct {
 const staleDeleteBatch = 4000
 
 // DeleteDNSRecordsBySourceNotIn hard-deletes block_lists rows of source whose
-// url is absent from keep, together with their block_domain_events children —
-// an event carries only domain_id, so once its block_lists row is gone it is
-// unrecoverable and orphaning it serves nothing. Deletion is scoped strictly
-// to source, so User / AutoBlocked / SuggestedToBlock rows are never touched.
+// url is absent from keep. Deletion is scoped strictly to source, so User /
+// AutoBlocked / SuggestedToBlock rows are never touched.
 //
 // keep is the union of every freshly synced source, not just this one: a
 // domain shared by two block lists must survive as long as any list still
@@ -175,7 +172,7 @@ const staleDeleteBatch = 4000
 //
 // The stale set is diffed in memory (a `NOT IN` over the full keep set would
 // blow past SQLite's bound-parameter limit) and removed in batches inside one
-// transaction, so a crash cannot leave an event orphaned from its row.
+// transaction.
 func (r *Repo) DeleteDNSRecordsBySourceNotIn(source string, keep []string) error {
 	if len(keep) == 0 {
 		return nil
@@ -206,11 +203,6 @@ func (r *Repo) DeleteDNSRecordsBySourceNotIn(source string, keep []string) error
 		for i := 0; i < len(staleIDs); i += staleDeleteBatch {
 			batch := staleIDs[i:min(i+staleDeleteBatch, len(staleIDs))]
 			if err := tx.Unscoped().
-				Where("domain_id IN ?", batch).
-				Delete(&BlockDomainEvent{}).Error; err != nil {
-				return err
-			}
-			if err := tx.Unscoped().
 				Where("id IN ?", batch).
 				Delete(&BlockList{}).Error; err != nil {
 				return err
@@ -224,54 +216,4 @@ func (r *Repo) ChangeRecordStatusBySource(source string, active bool) error {
 	return r.db.Model(&BlockList{}).
 		Where("source = ?", source).
 		Update("active", active).Error
-}
-
-// ----- BlockDomainEvent -----
-
-func (r *Repo) BatchCreateBlockDomainEvents(domains []string) error {
-	if len(domains) == 0 {
-		return nil
-	}
-	uniq := utils.OnlyUniqString(domains)
-	var rows []idURL
-	if err := r.db.Model(&BlockList{}).
-		Select("id", "url").
-		Where("url IN ?", uniq).
-		Find(&rows).Error; err != nil {
-		return err
-	}
-	domainMap := make(map[string]uint, len(rows))
-	for _, row := range rows {
-		domainMap[row.Url] = row.ID
-	}
-	var events []BlockDomainEvent
-	for _, d := range domains {
-		if id, ok := domainMap[d]; ok {
-			events = append(events, BlockDomainEvent{DomainId: id})
-		}
-	}
-	return db.BatchInsertOn(r.db, events, 100)
-}
-
-func (r *Repo) DeleteEventsOlderThan(days int) error {
-	cutoff := time.Now().AddDate(0, 0, -days)
-	return r.db.Unscoped().
-		Where("created_at < ?", cutoff).
-		Delete(&BlockDomainEvent{}).Error
-}
-
-func (r *Repo) GetEventsAmount() int64 {
-	var count int64
-	r.db.Model(&BlockDomainEvent{}).Count(&count)
-	return count
-}
-
-func (r *Repo) GetEventsByDomain() ([]DomainCount, error) {
-	var results []DomainCount
-	err := r.db.Model(&BlockDomainEvent{}).
-		Select("block_lists.url as domain, COUNT(block_domain_events.id) as count").
-		Joins("left join block_lists on block_lists.id = block_domain_events.domain_id").
-		Group("block_lists.url").
-		Scan(&results).Error
-	return results, err
 }

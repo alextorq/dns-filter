@@ -2,8 +2,8 @@ package suggest_to_block
 
 import (
 	"testing"
+	"time"
 
-	allow_domain_db "github.com/alextorq/dns-filter/allow-domain/db"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/filter"
@@ -12,6 +12,7 @@ import (
 	source_db "github.com/alextorq/dns-filter/source/db"
 	collect "github.com/alextorq/dns-filter/suggest-to-block/business/use-cases/collect"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
+	traffic_db "github.com/alextorq/dns-filter/traffic/db"
 	"github.com/alextorq/dns-filter/utils"
 
 	"github.com/glebarez/sqlite"
@@ -45,8 +46,7 @@ func newHarness(t *testing.T) *harness {
 	if err := conn.AutoMigrate(
 		&blocked_domain_db.BlockList{},
 		&blocked_domain_db.BlockListReason{},
-		&blocked_domain_db.BlockDomainEvent{},
-		&allow_domain_db.AllowDomainEvent{},
+		&traffic_db.DomainTraffic{},
 		&suggest_to_block_db.SuggestBlock{},
 		&suggest_to_block_db.SuggestBlockReason{},
 		&source_db.Source{},
@@ -55,7 +55,10 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	blockRepo := blocked_domain_db.NewRepo(conn)
-	allowRepo := allow_domain_db.NewRepo(conn)
+	// The suggest candidate pool now comes from domain_traffic (domains ever
+	// forwarded upstream) via the traffic AllowFilterAdapter — the AllowRepo
+	// port is unchanged, only its backing table moved (Step 3 of the migration).
+	allowRepo := traffic_db.NewAllowFilterAdapter(traffic_db.NewRepo(conn))
 	sourceRepo := source_db.NewRepo(conn)
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
 
@@ -107,11 +110,20 @@ func (h *harness) seedBlockedWithSource(domain, src string) {
 	}
 }
 
+// seedAllowed records the domain as forwarded-upstream traffic (blocked=false),
+// which is exactly the candidate pool the traffic AllowFilterAdapter exposes to
+// the suggest collector. Mirrors a single device querying the domain once.
 func (h *harness) seedAllowed(domain string) {
 	h.t.Helper()
-	if err := h.conn.Create(&allow_domain_db.AllowDomainEvent{
-		Domain: domain,
-		Active: true,
+	if err := h.conn.Create(&traffic_db.DomainTraffic{
+		ClientKind:  "ip",
+		ClientValue: "10.0.0.1",
+		ClientIP:    "10.0.0.1",
+		Domain:      domain,
+		Blocked:     false,
+		Day:         time.Now().Truncate(24 * time.Hour),
+		Count:       1,
+		LastSeen:    time.Now(),
 	}).Error; err != nil {
 		h.t.Fatalf("seed allowed %s: %v", domain, err)
 	}

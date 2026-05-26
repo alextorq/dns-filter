@@ -1321,32 +1321,11 @@ const docTemplate = `{
                 }
             }
         },
-        "db.BlockDomainEvent": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "domainId": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                }
-            }
-        },
         "db.BlockList": {
             "type": "object",
             "properties": {
                 "active": {
                     "type": "boolean"
-                },
-                "blocked-events": {
-                    "description": "One-to-Many",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/db.BlockDomainEvent"
-                    }
                 },
                 "created_at": {
                     "type": "string"
@@ -1449,6 +1428,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "vendor": {
+                    "type": "string"
+                }
+            }
+        },
+        "db.DomainCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "domain": {
                     "type": "string"
                 }
             }
@@ -1630,17 +1620,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_alextorq_dns-filter_blocked-domain_db.DomainCount": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "domain": {
                     "type": "string"
                 }
             }
@@ -2081,7 +2060,7 @@ const docTemplate = `{
                 "groups": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_alextorq_dns-filter_blocked-domain_db.DomainCount"
+                        "$ref": "#/definitions/db.DomainCount"
                     }
                 }
             }

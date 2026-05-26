@@ -106,7 +106,6 @@ func newHarness(t *testing.T) *harness {
 	if err := conn.AutoMigrate(
 		&blocked_domain_db.BlockList{},
 		&blocked_domain_db.BlockListReason{},
-		&blocked_domain_db.BlockDomainEvent{},
 		&suggest_to_block_db.SuggestBlock{},
 		&suggest_to_block_db.SuggestBlockReason{},
 	); err != nil {

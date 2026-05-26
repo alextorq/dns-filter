@@ -45,16 +45,8 @@ export interface CreateDomainRequestBody {
   source?: string;
 }
 
-export interface DbBlockDomainEvent {
-  created_at?: string;
-  domainId?: number;
-  id?: number;
-}
-
 export interface DbBlockList {
   active?: boolean;
-  /** One-to-Many */
-  "blocked-events"?: DbBlockDomainEvent[];
   created_at?: string;
   deletedAt?: GormDeletedAt;
   id?: number;
@@ -87,6 +79,11 @@ export interface DbClient {
   token?: string;
   updated_at?: string;
   vendor?: string;
+}
+
+export interface DbDomainCount {
+  count?: number;
+  domain?: string;
 }
 
 export interface DbSource {
@@ -147,11 +144,6 @@ export interface GithubComAlextorqDnsFilterAuthWebErrorResponse {
 
 export interface GithubComAlextorqDnsFilterAuthWebStatusResponse {
   status?: string;
-}
-
-export interface GithubComAlextorqDnsFilterBlockedDomainDbDomainCount {
-  count?: number;
-  domain?: string;
 }
 
 export interface GithubComAlextorqDnsFilterBlockedDomainWebErrorResponse {
@@ -345,7 +337,7 @@ export interface WebGetAllSuggestBlocksResponse {
 }
 
 export interface WebGetAmountByDomainResponse {
-  groups?: GithubComAlextorqDnsFilterBlockedDomainDbDomainCount[];
+  groups?: DbDomainCount[];
 }
 
 export interface WebGetAmountResponse {

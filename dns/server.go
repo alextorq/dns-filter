@@ -47,7 +47,6 @@ type DnsServer struct {
 	Filter     func(string2 string) bool
 	Upstream   UpstreamResolver
 	Metric     Metric
-	Handlers   DnsRequestHandlers
 	Identifier identifier.Identifier
 	Clients    ClientStore
 	// Traffic records per-device query counters off the hot path. Optional —
@@ -94,11 +93,6 @@ type Cache interface {
 
 type Metric interface {
 	HandleDNSRequest(clientIP, qtype, rcode string, respSize int, duration time.Duration)
-}
-
-type DnsRequestHandlers interface {
-	Allowed(w dns.ResponseWriter, r *dns.Msg)
-	Blocked(w dns.ResponseWriter, r *dns.Msg)
 }
 
 // TrafficRecorder is the narrow port the hot path uses to record per-device
@@ -210,7 +204,6 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 		if useFilter {
 			// Блокируем → NXDOMAIN
 			m.Rcode = dns.RcodeNameError
-			s.Handlers.Blocked(w, r)
 		} else {
 			s.Logger.Debug("Запрос:", qname, "Тип:", qtype)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -226,7 +219,6 @@ func (s *DnsServer) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 				m.Ns = append(m.Ns, resp.Ns...)
 				m.Extra = append(m.Extra, resp.Extra...)
 			}
-			s.Handlers.Allowed(w, r)
 		}
 
 		// В конце отправляем общий ответ клиенту
@@ -327,7 +319,7 @@ func (s *DnsServer) Shutdown() error {
 // resolver. main passes a *ReloadableResolver so the upstream can be swapped at
 // runtime via the settings module; the same instance backs both the hot path
 // and the refresh worker.
-func CreateServerWithResolver(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, handlers DnsRequestHandlers, ident identifier.Identifier, upstream UpstreamResolver) *DnsServer {
+func CreateServerWithResolver(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, ident identifier.Identifier, upstream UpstreamResolver) *DnsServer {
 	conf := config.GetConfig()
 	s := &DnsServer{
 		Logger:     logger,
@@ -335,7 +327,6 @@ func CreateServerWithResolver(logger Logger, cache Cache, filter func(string2 st
 		Filter:     filter,
 		Upstream:   upstream,
 		Metric:     metric,
-		Handlers:   handlers,
 		Identifier: ident,
 		Clients:    store.Get(),
 	}

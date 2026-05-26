@@ -28,7 +28,7 @@ const (
 type TrafficRepo interface {
 	DeviceSummary(from, to *time.Time) ([]traffic_db.DeviceSummary, error)
 	DomainsForDevice(p traffic_db.DeviceDomainsParams) (traffic_db.DomainsResult, error)
-	TopDomains(blocked *bool, limit int) ([]traffic_db.DomainCount, error)
+	TopDomains(blocked *bool, limit int) ([]traffic_db.DomainTotal, error)
 }
 
 // Logger is the narrow logging port used by handlers.

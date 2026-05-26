@@ -1,7 +1,6 @@
 package migrate
 
 import (
-	allow_domain_db "github.com/alextorq/dns-filter/allow-domain/db"
 	auth_db "github.com/alextorq/dns-filter/auth/db"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	clients_db "github.com/alextorq/dns-filter/clients/db"
@@ -39,8 +38,6 @@ func Migrate() {
 		&suggest_db.SuggestBlockReason{},
 		&blocked_domain_db.BlockList{},
 		&blocked_domain_db.BlockListReason{},
-		&blocked_domain_db.BlockDomainEvent{},
-		&allow_domain_db.AllowDomainEvent{},
 		&clients_db.Client{},
 		&syncDb.Source{},
 		&auth_db.User{},
@@ -50,6 +47,20 @@ func Migrate() {
 	)
 	if err != nil {
 		panic(err)
+	}
+
+	// Drop the two legacy event tables. They were dual-written until the
+	// per-device traffic counter (domain_traffic) fully replaced them; the
+	// unified table now serves block stats, the suggest candidate pool, and
+	// domain-inspect allow membership. No backfill — old per-day rows are
+	// simply discarded (see TRAFFIC_DASHBOARD_PLAN.md Step 7). DropTable is a
+	// no-op once the tables are gone, so this is idempotent across boots.
+	for _, table := range []string{"block_domain_events", "allow_domain_events"} {
+		if m.HasTable(table) {
+			if err := m.DropTable(table); err != nil {
+				panic(err)
+			}
+		}
 	}
 
 	// One-shot migration from the legacy exclude_clients table to clients.

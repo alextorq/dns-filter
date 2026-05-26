@@ -28,7 +28,7 @@ func (a *AllowFilterAdapter) GetAllActiveFilters() ([]string, error) {
 // (/api/events/block/*) off block_domain_events onto domain_traffic's blocked
 // scope. The port returns blocked_domain_db.DomainCount so the HTTP response
 // stays byte-compatible with the existing frontend; this adapter projects the
-// traffic repo's DomainCount onto that type. Only main.go wiring changes — the
+// traffic repo's DomainTotal onto that type. Only main.go wiring changes — the
 // blocked-domain/web handlers depend on the unchanged port.
 type BlockStatsAdapter struct {
 	repo *Repo

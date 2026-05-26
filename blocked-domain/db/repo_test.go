@@ -22,7 +22,7 @@ func newTestRepo(t *testing.T) *Repo {
 	}
 	// SQLite :memory: is per-connection; pin to one so all queries share state.
 	sqlConn.SetMaxOpenConns(1)
-	if err := conn.AutoMigrate(&BlockList{}, &BlockListReason{}, &BlockDomainEvent{}); err != nil {
+	if err := conn.AutoMigrate(&BlockList{}, &BlockListReason{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return NewRepo(conn)
@@ -488,35 +488,6 @@ func TestRepo_DeleteDNSRecordsBySourceNotIn(t *testing.T) {
 		}
 	})
 
-	t.Run("removes block_domain_events of pruned domains, keeps the rest", func(t *testing.T) {
-		r := newTestRepo(t)
-		if err := r.CreateDNSRecordsByDomains([]string{"stays.example", "vanishes.example"}, "src"); err != nil {
-			t.Fatalf("seed: %v", err)
-		}
-		// По событию блокировки на каждый домен.
-		if err := r.BatchCreateBlockDomainEvents([]string{"stays.example", "vanishes.example"}); err != nil {
-			t.Fatalf("seed events: %v", err)
-		}
-		if err := r.DeleteDNSRecordsBySourceNotIn("src", []string{"stays.example"}); err != nil {
-			t.Fatalf("prune: %v", err)
-		}
-
-		var total int64
-		r.db.Model(&BlockDomainEvent{}).Count(&total)
-		if total != 1 {
-			t.Errorf("осталось %d событий, want 1 — события удалённого домена не вычищены", total)
-		}
-		var stays BlockList
-		if err := r.db.Where("url = ?", "stays.example").First(&stays).Error; err != nil {
-			t.Fatalf("lookup stays: %v", err)
-		}
-		var orphans int64
-		r.db.Model(&BlockDomainEvent{}).Where("domain_id <> ?", stays.ID).Count(&orphans)
-		if orphans != 0 {
-			t.Errorf("остались осиротевшие события: %d", orphans)
-		}
-	})
-
 	t.Run("prunes a large vanished set across delete batches", func(t *testing.T) {
 		r := newTestRepo(t)
 		const n = 5000 // > staleDeleteBatch, заставляет удаление идти пакетами
@@ -527,19 +498,11 @@ func TestRepo_DeleteDNSRecordsBySourceNotIn(t *testing.T) {
 		if err := r.CreateDNSRecordsByDomains(seed, "src"); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
-		if err := r.BatchCreateBlockDomainEvents(seed); err != nil {
-			t.Fatalf("seed events: %v", err)
-		}
 		if err := r.DeleteDNSRecordsBySourceNotIn("src", []string{"d0.example"}); err != nil {
 			t.Fatalf("prune: %v", err)
 		}
 		if got := countBlockList(t, r); got != 1 {
 			t.Errorf("got %d rows after large prune, want 1", got)
-		}
-		var events int64
-		r.db.Model(&BlockDomainEvent{}).Count(&events)
-		if events != 1 {
-			t.Errorf("got %d events after large prune, want 1 (события удалённых не вычищены)", events)
 		}
 	})
 }
@@ -567,100 +530,6 @@ func TestRepo_ChangeRecordStatusBySource(t *testing.T) {
 	}
 	if len(urls) != 1 || urls[0] != "c.example" {
 		t.Errorf("expected only c.example active, got %v", urls)
-	}
-}
-
-// ----- BatchCreateBlockDomainEvents -----
-
-func TestRepo_BatchCreateBlockDomainEvents(t *testing.T) {
-	r := newTestRepo(t)
-	if err := r.CreateDomain("known.example", "src"); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	t.Run("links known domains, ignores unknown", func(t *testing.T) {
-		err := r.BatchCreateBlockDomainEvents([]string{
-			"known.example", "known.example", "unknown.example",
-		})
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-		if got := r.GetEventsAmount(); got != 2 {
-			// Two events for "known.example", "unknown.example" skipped silently.
-			t.Errorf("expected 2 events, got %d", got)
-		}
-	})
-
-	t.Run("empty input is no-op", func(t *testing.T) {
-		r := newTestRepo(t)
-		if err := r.BatchCreateBlockDomainEvents(nil); err != nil {
-			t.Fatalf("err: %v", err)
-		}
-		if got := r.GetEventsAmount(); got != 0 {
-			t.Errorf("expected 0 events, got %d", got)
-		}
-	})
-}
-
-// ----- DeleteEventsOlderThan -----
-
-func TestRepo_DeleteEventsOlderThan(t *testing.T) {
-	r := newTestRepo(t)
-	if err := r.CreateDomain("d.example", "src"); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	// Insert two events: one recent, one ancient.
-	if err := r.BatchCreateBlockDomainEvents([]string{"d.example"}); err != nil {
-		t.Fatalf("seed events: %v", err)
-	}
-	old := BlockDomainEvent{DomainId: 1}
-	if err := r.db.Create(&old).Error; err != nil {
-		t.Fatalf("seed old: %v", err)
-	}
-	// Backdate the second event to 30 days ago.
-	if err := r.db.Model(&BlockDomainEvent{}).
-		Where("id = ?", old.ID).
-		Update("created_at", "1999-01-01").Error; err != nil {
-		t.Fatalf("backdate: %v", err)
-	}
-
-	if err := r.DeleteEventsOlderThan(2); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	if got := r.GetEventsAmount(); got != 1 {
-		t.Errorf("expected 1 event left, got %d", got)
-	}
-}
-
-// ----- GetEventsByDomain -----
-
-func TestRepo_GetEventsByDomain(t *testing.T) {
-	r := newTestRepo(t)
-	if err := r.CreateDomain("a.example", "src"); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	if err := r.CreateDomain("b.example", "src"); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	for range 3 {
-		if err := r.BatchCreateBlockDomainEvents([]string{"a.example"}); err != nil {
-			t.Fatalf("seed event: %v", err)
-		}
-	}
-	if err := r.BatchCreateBlockDomainEvents([]string{"b.example"}); err != nil {
-		t.Fatalf("seed event: %v", err)
-	}
-
-	rows, err := r.GetEventsByDomain()
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	got := map[string]int64{}
-	for _, row := range rows {
-		got[row.Domain] = row.Count
-	}
-	if got["a.example"] != 3 || got["b.example"] != 1 {
-		t.Errorf("expected a=3,b=1, got %v", got)
 	}
 }
 
@@ -723,21 +592,5 @@ func TestRepo_CreateDomainWithReasons_RollbackOnReasonFailure(t *testing.T) {
 	r.db.Model(&BlockList{}).Where("url = ?", "ads.example.com").Count(&count)
 	if count != 0 {
 		t.Errorf("block_lists row must be rolled back on reason failure, got %d rows", count)
-	}
-}
-
-func TestBlockDomainEvent_DomainIdIsIndexed(t *testing.T) {
-	r := newTestRepo(t)
-	m := r.db.Migrator()
-	// Positive: the high-volume events table must be indexed on the column its
-	// join (GetEventsByDomain) and prune (DeleteDNSRecordsBySourceNotIn) filter
-	// on, or both degrade to full scans as the table grows.
-	if !m.HasIndex(&BlockDomainEvent{}, "DomainId") {
-		t.Error("expected an index on BlockDomainEvent.DomainId")
-	}
-	// Negative guard: the migration indexes DomainId specifically, not every
-	// column — CreatedAt is deliberately left unindexed.
-	if m.HasIndex(&BlockDomainEvent{}, "CreatedAt") {
-		t.Error("CreatedAt should not be indexed; only DomainId is")
 	}
 }

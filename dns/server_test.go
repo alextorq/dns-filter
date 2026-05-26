@@ -110,11 +110,6 @@ type noopMetric struct{}
 
 func (noopMetric) HandleDNSRequest(_ string, _ string, _ string, _ int, _ time.Duration) {}
 
-type noopHandlers struct{}
-
-func (noopHandlers) Allowed(_ dnsLib.ResponseWriter, _ *dnsLib.Msg) {}
-func (noopHandlers) Blocked(_ dnsLib.ResponseWriter, _ *dnsLib.Msg) {}
-
 type noopClientStore struct{}
 
 func (noopClientStore) IsExcluded(_ identifier.Lookup) bool { return false }
@@ -231,7 +226,6 @@ func TestServeAnswersOverTCP(t *testing.T) {
 		Filter:            func(string) bool { return false },
 		Upstream:          &staticResolver{rcode: dnsLib.RcodeSuccess},
 		Metric:            noopMetric{},
-		Handlers:          noopHandlers{},
 		Identifier:        identifier.IPIdentifier{},
 		Clients:           noopClientStore{},
 		NotifyStartedFunc: func() { started <- struct{}{} },
@@ -273,7 +267,6 @@ func TestHandleDNSCopiesUpstreamRcode(t *testing.T) {
 		Filter:     func(string) bool { return false },
 		Upstream:   &staticResolver{rcode: dnsLib.RcodeNameError},
 		Metric:     noopMetric{},
-		Handlers:   noopHandlers{},
 		Identifier: identifier.IPIdentifier{},
 		Clients:    noopClientStore{},
 	}

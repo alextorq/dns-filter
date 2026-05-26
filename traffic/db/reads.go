@@ -6,11 +6,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// DomainCount is a (domain, summed-count) pair returned by the aggregation
+// DomainTotal is a (domain, summed-count) pair returned by the aggregation
 // reads. Its JSON shape mirrors blocked-domain/db.DomainCount byte-for-byte so
 // the repointed legacy block-stats endpoint stays wire-compatible with the
-// existing frontend.
-type DomainCount struct {
+// existing frontend. It is named DomainTotal (not DomainCount) so the two
+// package `db` types do not collide in the generated OpenAPI schema, which
+// would otherwise force swag to fully-qualify blocked-domain's DomainCount.
+type DomainTotal struct {
 	Domain string `json:"domain"`
 	Count  int64  `json:"count"`
 }
@@ -46,7 +48,7 @@ type DeviceDomainsParams struct {
 // distinct domains matching the filter (before limit/offset) for pagination.
 type DomainsResult struct {
 	Total int64         `json:"total"`
-	List  []DomainCount `json:"list"`
+	List  []DomainTotal `json:"list"`
 }
 
 // CountByDomain returns SUM(count) per domain scoped to the given verdict,
@@ -54,8 +56,8 @@ type DomainsResult struct {
 // for the legacy block-stats endpoint (called with blocked=true). Uses the
 // (blocked, day) index for the verdict scan. Empty table → empty (non-nil)
 // slice.
-func (r *Repo) CountByDomain(blocked bool) ([]DomainCount, error) {
-	results := []DomainCount{}
+func (r *Repo) CountByDomain(blocked bool) ([]DomainTotal, error) {
+	results := []DomainTotal{}
 	err := r.db.Model(&DomainTraffic{}).
 		Select("domain, SUM(count) as count").
 		Where("blocked = ?", blocked).
@@ -144,7 +146,7 @@ func (r *Repo) DeviceSummary(from, to *time.Time) ([]DeviceSummary, error) {
 // filter (before limit/offset) so the UI can render pagination. An unknown
 // device yields Total 0 and an empty list.
 func (r *Repo) DomainsForDevice(p DeviceDomainsParams) (DomainsResult, error) {
-	out := DomainsResult{List: []DomainCount{}}
+	out := DomainsResult{List: []DomainTotal{}}
 
 	base := r.db.Model(&DomainTraffic{}).
 		Where("client_kind = ? AND client_value = ?", p.Kind, p.Value)
@@ -178,8 +180,8 @@ func (r *Repo) DomainsForDevice(p DeviceDomainsParams) (DomainsResult, error) {
 // TopDomains returns the highest-traffic domains across all devices, optionally
 // scoped to a verdict, ordered by summed count desc, capped at limit. A nil
 // blocked counts both verdicts. Empty table → empty (non-nil) slice.
-func (r *Repo) TopDomains(blocked *bool, limit int) ([]DomainCount, error) {
-	results := []DomainCount{}
+func (r *Repo) TopDomains(blocked *bool, limit int) ([]DomainTotal, error) {
+	results := []DomainTotal{}
 	q := r.db.Model(&DomainTraffic{}).
 		Select("domain, SUM(count) as count")
 	if blocked != nil {

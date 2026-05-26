@@ -27,7 +27,7 @@ type fakeRepo struct {
 	domains     traffic_db.DomainsResult
 	domainsErr  error
 	gotParams   traffic_db.DeviceDomainsParams
-	top         []traffic_db.DomainCount
+	top         []traffic_db.DomainTotal
 	topErr      error
 	gotBlocked  *bool
 	gotTopLimit int
@@ -43,7 +43,7 @@ func (f *fakeRepo) DomainsForDevice(p traffic_db.DeviceDomainsParams) (traffic_d
 	return f.domains, f.domainsErr
 }
 
-func (f *fakeRepo) TopDomains(blocked *bool, limit int) ([]traffic_db.DomainCount, error) {
+func (f *fakeRepo) TopDomains(blocked *bool, limit int) ([]traffic_db.DomainTotal, error) {
 	f.gotBlocked, f.gotTopLimit = blocked, limit
 	return f.top, f.topErr
 }
@@ -157,7 +157,7 @@ func TestGetDevices_RepoError_Returns500(t *testing.T) {
 func TestGetDeviceDomains_HappyPlumbsParams(t *testing.T) {
 	repo := &fakeRepo{domains: traffic_db.DomainsResult{
 		Total: 2,
-		List:  []traffic_db.DomainCount{{Domain: "ads.example", Count: 9}, {Domain: "track.example", Count: 3}},
+		List:  []traffic_db.DomainTotal{{Domain: "ads.example", Count: 9}, {Domain: "track.example", Count: 3}},
 	}}
 	h := newHandlers(repo)
 
@@ -257,7 +257,7 @@ func TestGetDeviceDomains_DefaultLimitWhenAbsent(t *testing.T) {
 // ----- GetTopDomains -----
 
 func TestGetTopDomains_HappyPlumbsParams(t *testing.T) {
-	repo := &fakeRepo{top: []traffic_db.DomainCount{{Domain: "x.example", Count: 99}}}
+	repo := &fakeRepo{top: []traffic_db.DomainTotal{{Domain: "x.example", Count: 99}}}
 	h := newHandlers(repo)
 	w := doGET(h.GetTopDomains, "?blocked=false&limit=5")
 	if w.Code != http.StatusOK {

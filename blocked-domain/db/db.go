@@ -15,8 +15,6 @@ type BlockList struct {
 	Url       string         `gorm:"type:varchar(255);not null;uniqueIndex:idx_theme_host" json:"url"`
 	Active    bool           `gorm:"default:true" json:"active"`
 	Source    string         `gorm:"type:varchar(255)" json:"source"`
-	// One-to-Many
-	BlockedEvents []BlockDomainEvent `gorm:"foreignKey:DomainId" json:"blocked-events"`
 	// Reasons holds the auto-block signal codes (#95); read paths must
 	// Preload("Reasons") to populate it. See CreateDomainWithReasons.
 	Reasons []BlockListReason `gorm:"foreignKey:BlockListID;constraint:OnDelete:CASCADE" json:"reasons,omitempty"`
@@ -37,17 +35,6 @@ type BlockListReason struct {
 	BlockListID uint   `gorm:"index;not null" json:"-"`
 	Code        string `gorm:"index;not null" json:"code"`
 	MatchValue  string `json:"match,omitempty"`
-}
-
-// BlockDomainEvent tracks when a domain was blocked. DomainId is indexed: it is
-// the column the high-volume events table is filtered/joined on — the stats
-// aggregation (GetEventsByDomain joins block_lists on domain_id) and the stale
-// prune (DeleteDNSRecordsBySourceNotIn deletes WHERE domain_id IN (...)). Without
-// the index both degrade to full table scans as the events table grows.
-type BlockDomainEvent struct {
-	ID        uint      `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	DomainId  uint      `gorm:"index"`
 }
 
 type GetAllParams struct {

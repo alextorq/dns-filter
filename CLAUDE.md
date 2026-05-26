@@ -23,7 +23,7 @@ These rules are mandatory for every change in this repo:
 - All tests (matches CI): `go test -v -race -coverprofile=coverage.out -covermode=atomic ./...`
 - Single package: `go test -v -race ./dns/...`
 - Single test: `go test -v -run TestName ./dns`
-- The backend uses CGO (sqlite3); a C toolchain must be available locally and Docker builds use `golang:1.26-alpine` with `gcc musl-dev`.
+- The backend is **pure Go (no CGO)** — SQLite is the `github.com/glebarez/sqlite` GORM driver, backed by `modernc.org/sqlite` (see `db/connect.go`). No C toolchain is needed; `Dockerfile.backend` builds with `CGO_ENABLED=0` on `golang:1.26-alpine` and installs no `gcc`/`musl-dev`.
 
 ### Frontend (Nuxt 4 + Vue 3, in `web/front/`)
 - **Requires Node ≥ 22.** CI pins Node 22 (`.github/workflows/test.yml`), and the ESLint 10 toolchain (`eslint-flat-config-utils`) calls `Object.groupBy`, which only exists on Node 21+ — `npm run lint` crashes with `TypeError: Object.groupBy is not a function` on Node 20. The Docker frontend build stage uses `node:26-alpine`. If you bump the CI Node version, keep it ≥ 22.

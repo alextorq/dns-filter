@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -10,6 +11,40 @@ import (
 
 	"github.com/grandcat/zeroconf"
 )
+
+// mdnsBrowseBudget caps a one-shot BrowseMDNS call. It mirrors Discover's
+// 5-second budget: long enough for the parallel per-service browses to answer,
+// short enough that a background caller passing a long-lived context (the app
+// lifetime) is not blocked until shutdown.
+const mdnsBrowseBudget = 5 * time.Second
+
+// MDNSHost is an IP→hostname pair learned from a multicast browse. It is the
+// exported, stringified form of mDNSEntry for callers (the hostname collector)
+// that want the raw pairs rather than the merged Device view Discover builds.
+type MDNSHost struct {
+	IP       string
+	Hostname string
+}
+
+// BrowseMDNS runs a one-shot multicast browse and returns the IP→hostname pairs
+// it learned. When the caller's context carries no deadline it imposes its own
+// (mdnsBrowseBudget) so a long-lived ctx does not leave the browses blocking
+// until shutdown. Partial results are returned alongside a joined error when
+// some service browses fail; callers should log the error and still use the
+// returned hosts.
+func BrowseMDNS(ctx context.Context) ([]MDNSHost, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, mdnsBrowseBudget)
+		defer cancel()
+	}
+	entries, errs := runMDNSDiscovery(ctx)
+	hosts := make([]MDNSHost, 0, len(entries))
+	for _, e := range entries {
+		hosts = append(hosts, MDNSHost{IP: e.IP.String(), Hostname: e.Hostname})
+	}
+	return hosts, errors.Join(errs...)
+}
 
 // mDNSEntry is a hostname-by-IP fact learned from a multicast browse. We don't
 // expose service types or instance names — the goal is just to put a friendly

@@ -8,14 +8,17 @@ type ErrorResponse struct {
 }
 
 // DeviceDTO is one device row in the dashboard, enriched on the read side with
-// its OUI vendor (empty for ip-kind devices and unknown prefixes). client_value
-// is the stable device key (MAC when known, else IP); current_ip is the most
-// recent IP the device was seen using.
+// its OUI vendor and (for mac-kind devices) a friendly hostname learned by the
+// background mDNS collector. Both are empty for ip-kind devices, unknown OUI
+// prefixes, or devices that announce no mDNS name. client_value is the stable
+// device key (MAC when known, else IP); current_ip is the most recent IP the
+// device was seen using.
 type DeviceDTO struct {
 	ClientKind   string `json:"client_kind"`
 	ClientValue  string `json:"client_value"`
 	CurrentIP    string `json:"current_ip"`
 	Vendor       string `json:"vendor"`
+	Hostname     string `json:"hostname"`
 	AllowedCount int64  `json:"allowed_count"`
 	BlockedCount int64  `json:"blocked_count"`
 	LastSeen     string `json:"last_seen"`

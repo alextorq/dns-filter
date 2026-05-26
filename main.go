@@ -15,6 +15,8 @@ import (
 	"github.com/alextorq/dns-filter/clients"
 	"github.com/alextorq/dns-filter/clients/arpwatcher"
 	"github.com/alextorq/dns-filter/clients/discovery"
+	"github.com/alextorq/dns-filter/clients/hostnames"
+	hostnames_db "github.com/alextorq/dns-filter/clients/hostnames/db"
 	"github.com/alextorq/dns-filter/clients/identifier"
 	"github.com/alextorq/dns-filter/config"
 	app_db "github.com/alextorq/dns-filter/db"
@@ -135,6 +137,7 @@ func main() {
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
 	settingsRepo := settings_db.NewRepo(conn)
 	trafficRepo := traffic_db.NewRepo(conn)
+	hostnamesRepo := hostnames_db.NewRepo(conn)
 
 	bloom := filter_bloom.GetFilter()
 	cache := filter_cache.GetCache()
@@ -177,6 +180,18 @@ func main() {
 	// pairs). The watcher exits its own loop on non-Linux platforms.
 	if conf.Mode == config.ModeLAN {
 		go arpwatcher.Run(context.Background(), chanLogger, arpwatcher.DefaultInterval)
+
+		// Background mDNS sweep that learns friendly device names and persists
+		// them as MAC→hostname rows. It resolves discovered IPs to MACs via the
+		// same arpwatcher cache the hot path uses, so a device's traffic rows and
+		// its learned name share the stable MAC key. LAN-only: there is no LAN to
+		// browse behind a public DoH endpoint.
+		go (&hostnames.Collector{
+			Browse: discovery.BrowseMDNS,
+			MACs:   arpwatcher.Get(),
+			Store:  hostnamesRepo,
+			Log:    chanLogger,
+		}).Run(context.Background())
 	}
 
 	cacheWithMetric := dns_cache.GetCacheWithMetric()
@@ -258,8 +273,9 @@ func main() {
 		},
 		Settings: &settingsWeb.Handlers{Service: settingsModule},
 		// Per-device traffic dashboard (read-only). Vendor enrichment uses the
-		// pure, local OUI lookup — no DB/network on the read path.
-		Traffic: trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, chanLogger),
+		// pure, local OUI lookup; hostname enrichment reads the mDNS collector's
+		// MAC→hostname table (empty in public mode, where no collector runs).
+		Traffic: trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, hostnamesRepo.AllAsMap, chanLogger),
 	})
 
 	if err := dnsServer.Serve(); err != nil {

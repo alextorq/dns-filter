@@ -2,8 +2,10 @@ package web
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	traffic_db "github.com/alextorq/dns-filter/traffic/db"
@@ -42,18 +44,53 @@ type Logger interface {
 // testable without the embedded OUI table.
 type VendorFunc func(mac string) string
 
+// HostnameFunc returns the current MAC→hostname map learned by the background
+// mDNS collector (clients/hostnames). clients/hostnames/db.Repo.AllAsMap
+// satisfies it. It may be nil (e.g. public mode, where there is no collector);
+// a non-nil error means the lookup table couldn't be read and the dashboard
+// degrades gracefully to vendor/IP rather than failing the request.
+type HostnameFunc func() (map[string]string, error)
+
 // Handlers groups the read-only traffic-dashboard endpoints with their
 // dependencies. Construct one at the composition root via NewHandlers.
 type Handlers struct {
-	Repo   TrafficRepo
-	Vendor VendorFunc
-	Log    Logger
+	Repo     TrafficRepo
+	Vendor   VendorFunc
+	Hostname HostnameFunc
+	Log      Logger
 }
 
 // NewHandlers wires the dashboard handlers from the traffic repo, a vendor
-// lookup, and a logger.
-func NewHandlers(repo TrafficRepo, vendor VendorFunc, log Logger) *Handlers {
-	return &Handlers{Repo: repo, Vendor: vendor, Log: log}
+// lookup, a hostname lookup, and a logger. The hostname lookup may be nil when
+// no collector is running (public mode).
+func NewHandlers(repo TrafficRepo, vendor VendorFunc, hostname HostnameFunc, log Logger) *Handlers {
+	return &Handlers{Repo: repo, Vendor: vendor, Hostname: hostname, Log: log}
+}
+
+// normalizeMAC canonicalizes a MAC to the lowercase colon form so dashboard
+// device keys (ClientValue) line up with the keys the hostname collector
+// stores. Unparseable input falls back to a trimmed, lowercased copy.
+func normalizeMAC(mac string) string {
+	mac = strings.TrimSpace(mac)
+	if parsed, err := net.ParseMAC(mac); err == nil {
+		return parsed.String()
+	}
+	return strings.ToLower(mac)
+}
+
+// hostnameMap reads the collector's MAC→hostname table once per request. A nil
+// lookup or a read error yields an empty map (logged), so device enrichment is
+// best-effort and never blocks the dashboard.
+func (h *Handlers) hostnameMap() map[string]string {
+	if h.Hostname == nil {
+		return nil
+	}
+	m, err := h.Hostname()
+	if err != nil {
+		h.Log.Error(fmt.Errorf("traffic: hostname lookup: %w", err))
+		return nil
+	}
+	return m
 }
 
 // parseDateRange reads the optional from/to query params (YYYY-MM-DD). A bad
@@ -146,17 +183,22 @@ func (h *Handlers) GetDevices(c *gin.Context) {
 		return
 	}
 
+	hostnames := h.hostnameMap()
 	devices := make([]DeviceDTO, 0, len(summaries))
 	for _, s := range summaries {
-		vendor := ""
-		if s.ClientKind == "mac" && h.Vendor != nil {
-			vendor = h.Vendor(s.ClientValue)
+		vendor, hostname := "", ""
+		if s.ClientKind == "mac" {
+			if h.Vendor != nil {
+				vendor = h.Vendor(s.ClientValue)
+			}
+			hostname = hostnames[normalizeMAC(s.ClientValue)]
 		}
 		devices = append(devices, DeviceDTO{
 			ClientKind:   s.ClientKind,
 			ClientValue:  s.ClientValue,
 			CurrentIP:    s.CurrentIP,
 			Vendor:       vendor,
+			Hostname:     hostname,
 			AllowedCount: s.AllowedCount,
 			BlockedCount: s.BlockedCount,
 			LastSeen:     s.LastSeen.Format(time.RFC3339),

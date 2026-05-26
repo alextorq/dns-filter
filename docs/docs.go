@@ -1860,6 +1860,9 @@ const docTemplate = `{
                 "current_ip": {
                     "type": "string"
                 },
+                "hostname": {
+                    "type": "string"
+                },
                 "last_seen": {
                     "type": "string"
                 },

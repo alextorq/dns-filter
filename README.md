@@ -102,13 +102,19 @@ flowchart TD
   **Top domains** (the ranked top-targets list, filtered by the verdict) and
   **Devices** (every device on the LAN: how many DNS queries it made, split by
   **blocked vs allowed** and bucketed by **day**, local-midnight). Devices are
-  keyed by their **MAC** (with the OUI vendor shown), falling back to IP, so a
-  device stays the same row across DHCP IP churn; clicking a device opens a
-  **side panel** with its per-domain breakdown (its own verdict filter +
-  pagination). Read-only, backed by the unified `domain_traffic` counter (counts
-  only, no per-query rows) via:
+  keyed by their **MAC**, falling back to IP, so a device stays the same row
+  across DHCP IP churn. Each device is labelled by the most readable identifier
+  available — a **friendly hostname** when one is known, otherwise the **OUI
+  vendor**, otherwise its IP (the MAC/IP always stays visible underneath).
+  Hostnames are learned in the background by a periodic **mDNS sweep** (LAN mode
+  only): devices that announce themselves over mDNS (Apple gear, printers, TVs,
+  Chromecast, NAS) get a real name; devices that don't (many Android phones,
+  some IoT) fall back to vendor/IP. Clicking a device opens a **side panel** with
+  its per-domain breakdown (its own verdict filter + pagination). Read-only,
+  backed by the unified `domain_traffic` counter (counts only, no per-query
+  rows) via:
   - `GET /api/traffic/devices` — per-device allowed/blocked totals, current IP,
-    vendor and last-seen (optional `from`/`to` day range, `YYYY-MM-DD`);
+    vendor, hostname and last-seen (optional `from`/`to` day range, `YYYY-MM-DD`);
   - `GET /api/traffic/devices/domains` — the domains a single device queried,
     with summed counts (device picked by `kind`+`value` query params; optional
     `blocked` verdict, `from`/`to`, `limit`/`offset`);

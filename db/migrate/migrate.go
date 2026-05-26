@@ -4,6 +4,7 @@ import (
 	auth_db "github.com/alextorq/dns-filter/auth/db"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	clients_db "github.com/alextorq/dns-filter/clients/db"
+	hostnames_db "github.com/alextorq/dns-filter/clients/hostnames/db"
 	"github.com/alextorq/dns-filter/db"
 	settings_db "github.com/alextorq/dns-filter/settings/db"
 	syncDb "github.com/alextorq/dns-filter/source/db"
@@ -39,6 +40,7 @@ func Migrate() {
 		&blocked_domain_db.BlockList{},
 		&blocked_domain_db.BlockListReason{},
 		&clients_db.Client{},
+		&hostnames_db.HostName{},
 		&syncDb.Source{},
 		&auth_db.User{},
 		&auth_db.Session{},

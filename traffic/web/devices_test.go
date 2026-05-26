@@ -48,16 +48,24 @@ func (f *fakeRepo) TopDomains(blocked *bool, limit int) ([]traffic_db.DomainTota
 	return f.top, f.topErr
 }
 
+// vendorStub maps a fixed prefix → name, everything else "".
+func vendorStub(mac string) string {
+	if len(mac) >= 8 && mac[:8] == "aa:bb:cc" {
+		return "AcmeCorp"
+	}
+	return ""
+}
+
 func newHandlers(repo TrafficRepo) *Handlers {
 	gin.SetMode(gin.TestMode)
-	// vendor stub: a fixed prefix → name, everything else "".
-	vendor := func(mac string) string {
-		if len(mac) >= 8 && mac[:8] == "aa:bb:cc" {
-			return "AcmeCorp"
-		}
-		return ""
-	}
-	return NewHandlers(repo, vendor, fakeLog{})
+	// nil hostname lookup: the no-collector case (public mode). GetDevices must
+	// stay nil-safe and simply leave Hostname empty.
+	return NewHandlers(repo, vendorStub, nil, fakeLog{})
+}
+
+func newHandlersWithHostnames(repo TrafficRepo, hostname HostnameFunc) *Handlers {
+	gin.SetMode(gin.TestMode)
+	return NewHandlers(repo, vendorStub, hostname, fakeLog{})
 }
 
 func doGET(h gin.HandlerFunc, path string) *httptest.ResponseRecorder {
@@ -102,6 +110,103 @@ func TestGetDevices_HappyEnrichesVendorAndIP(t *testing.T) {
 	// ip-kind device gets no vendor lookup.
 	if resp.Devices[1].Vendor != "" {
 		t.Errorf("ip-kind device must have empty vendor, got %q", resp.Devices[1].Vendor)
+	}
+	// nil hostname lookup (this handler) must leave Hostname empty, not panic.
+	if mac.Hostname != "" {
+		t.Errorf("nil hostname lookup must yield empty hostname, got %q", mac.Hostname)
+	}
+}
+
+func TestGetDevices_EnrichesHostname(t *testing.T) {
+	repo := &fakeRepo{summaries: []traffic_db.DeviceSummary{
+		{ClientKind: "mac", ClientValue: "aa:bb:cc:11:22:33", CurrentIP: "192.168.1.20", LastSeen: time.Now()},
+		{ClientKind: "ip", ClientValue: "10.0.0.5", CurrentIP: "10.0.0.5", LastSeen: time.Now()},
+	}}
+	hostname := func() (map[string]string, error) {
+		return map[string]string{"aa:bb:cc:11:22:33": "Kitchen-TV"}, nil
+	}
+	h := newHandlersWithHostnames(repo, hostname)
+
+	w := doGET(h.GetDevices, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
+	}
+	var resp DevicesResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Devices[0].Hostname != "Kitchen-TV" {
+		t.Errorf("mac device must be hostname-enriched, got %q", resp.Devices[0].Hostname)
+	}
+	// vendor still resolved alongside hostname.
+	if resp.Devices[0].Vendor != "AcmeCorp" {
+		t.Errorf("vendor must still resolve, got %q", resp.Devices[0].Vendor)
+	}
+	// ip-kind device never gets a hostname (only mac-kind is joined).
+	if resp.Devices[1].Hostname != "" {
+		t.Errorf("ip-kind device must have empty hostname, got %q", resp.Devices[1].Hostname)
+	}
+}
+
+func TestGetDevices_NormalizesMACForHostnameLookup(t *testing.T) {
+	// Device key arrives uppercase/dashed; the stored map is canonical lowercase
+	// colon form (what AllAsMap produces). The handler must normalize to match.
+	repo := &fakeRepo{summaries: []traffic_db.DeviceSummary{
+		{ClientKind: "mac", ClientValue: "AA-BB-CC-11-22-33", CurrentIP: "192.168.1.20", LastSeen: time.Now()},
+	}}
+	hostname := func() (map[string]string, error) {
+		return map[string]string{"aa:bb:cc:11:22:33": "Kitchen-TV"}, nil
+	}
+	h := newHandlersWithHostnames(repo, hostname)
+
+	w := doGET(h.GetDevices, "")
+	var resp DevicesResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Devices[0].Hostname != "Kitchen-TV" {
+		t.Errorf("normalized hostname lookup failed, got %q", resp.Devices[0].Hostname)
+	}
+}
+
+func TestGetDevices_NoMatchingHostname_Empty(t *testing.T) {
+	repo := &fakeRepo{summaries: []traffic_db.DeviceSummary{
+		{ClientKind: "mac", ClientValue: "aa:bb:cc:11:22:33", CurrentIP: "192.168.1.20", LastSeen: time.Now()},
+	}}
+	hostname := func() (map[string]string, error) {
+		return map[string]string{"99:99:99:99:99:99": "Other"}, nil
+	}
+	h := newHandlersWithHostnames(repo, hostname)
+
+	w := doGET(h.GetDevices, "")
+	var resp DevicesResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Devices[0].Hostname != "" {
+		t.Errorf("unmatched device must have empty hostname, got %q", resp.Devices[0].Hostname)
+	}
+}
+
+func TestGetDevices_HostnameLookupError_StillReturns200(t *testing.T) {
+	repo := &fakeRepo{summaries: []traffic_db.DeviceSummary{
+		{ClientKind: "mac", ClientValue: "aa:bb:cc:11:22:33", CurrentIP: "192.168.1.20", LastSeen: time.Now()},
+	}}
+	hostname := func() (map[string]string, error) {
+		return nil, errors.New("hostname table unreadable")
+	}
+	h := newHandlersWithHostnames(repo, hostname)
+
+	w := doGET(h.GetDevices, "")
+	// A failed hostname lookup must degrade gracefully — vendor/IP still render.
+	if w.Code != http.StatusOK {
+		t.Fatalf("hostname lookup error must not fail the request; got %d (body=%s)", w.Code, w.Body.String())
+	}
+	var resp DevicesResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Devices[0].Hostname != "" {
+		t.Errorf("expected empty hostname on lookup error, got %q", resp.Devices[0].Hostname)
+	}
+	if resp.Devices[0].Vendor != "AcmeCorp" {
+		t.Errorf("vendor must still resolve when hostname lookup fails, got %q", resp.Devices[0].Vendor)
 	}
 }
 

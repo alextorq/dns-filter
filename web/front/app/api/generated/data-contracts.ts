@@ -267,6 +267,7 @@ export interface WebDeviceDTO {
   client_kind?: string;
   client_value?: string;
   current_ip?: string;
+  hostname?: string;
   last_seen?: string;
   vendor?: string;
 }

@@ -92,9 +92,12 @@ const topRanked = computed(() => t.topDomains.value.slice(0, TOP_DISPLAY));
 const topMax = computed(() => Math.max(...topRanked.value.map((d) => d.count ?? 0), 1));
 
 // --- Devices ---
+// Title precedence: the friendly mDNS hostname is the most human-readable, then
+// the OUI vendor, then the raw IP. The MAC/IP identifier always stays visible in
+// the subtitle, so promoting a name here never hides which device it is.
 const deviceTitle = (d: WebDeviceDTO) => {
-    const isMac = d.client_kind === "mac";
-    if (isMac && d.vendor) return d.vendor;
+    if (d.hostname) return d.hostname;
+    if (d.client_kind === "mac" && d.vendor) return d.vendor;
     return d.current_ip || d.client_value || "Unknown device";
 };
 const deviceSubtitle = (d: WebDeviceDTO) => {

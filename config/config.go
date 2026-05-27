@@ -81,6 +81,30 @@ type Config struct {
 	// takes precedence at runtime. The daily prune deletes day-buckets older
 	// than this window.
 	TrafficRetentionDays int
+
+	// --- Suggest-to-block reputation enrichment (opt-in) ---
+	// SuggestInspectEnabled gates the background worker that enriches weak
+	// lexical candidates with reputation checks (RDAP/VirusTotal/Safe Browsing).
+	// OFF by default: it sends observed domains to third parties (a privacy
+	// trade-off) and only adds value when a VT/SB key is configured. The worker
+	// does not even start unless this is true AND at least one key is set.
+	SuggestInspectEnabled bool
+	// SuggestInspectBudget caps domains inspected per tick — the guard against
+	// the VirusTotal free-tier quota (≈4/min, 500/day).
+	SuggestInspectBudget int
+	// SuggestInspectInterval is the worker tick period.
+	SuggestInspectInterval time.Duration
+	// SuggestInspectCacheTTL is how long a verdict (and RDAP age) stays fresh
+	// before the domain is eligible for re-inspection.
+	SuggestInspectCacheTTL time.Duration
+	// SuggestInspectPause is the delay between external calls within a tick, so
+	// a budget burst does not trip VirusTotal's per-minute limit.
+	SuggestInspectPause time.Duration
+	// SuggestInspectBackoff is the retry delay for a transient/undecided result.
+	SuggestInspectBackoff time.Duration
+	// SuggestInspectMaxErrors is how many times a domain may fail/stay unknown
+	// before the worker gives up and caches "unknown".
+	SuggestInspectMaxErrors int
 }
 
 func (c *Config) UpdateLogLevel(l string) {
@@ -163,6 +187,20 @@ func getDuration(key string, fallback time.Duration) time.Duration {
 	return d
 }
 
+// getDurationPositive is getDuration that additionally rejects non-positive
+// values. time.ParseDuration happily accepts "0s" and "-1h", but a zero or
+// negative interval/TTL is always a misconfiguration — e.g. time.NewTicker
+// panics on a non-positive interval — so we fall back rather than crash. (Plain
+// getDuration is kept for knobs where 0 is meaningful, e.g. CacheStaleGrace.)
+func getDurationPositive(key string, fallback time.Duration) time.Duration {
+	d := getDuration(key, fallback)
+	if d <= 0 {
+		log.Printf("%s=%s is not positive, falling back to %s", key, d, fallback)
+		return fallback
+	}
+	return d
+}
+
 // getInt parses a positive int env var with a default. Non-positive or
 // non-numeric values fall back so a typo cannot e.g. disable the refresh pool.
 func getInt(key string, fallback int) int {
@@ -229,6 +267,14 @@ func GetConfig() *Config {
 			CacheStaleTTL:           getDuration("DNS_FILTER_CACHE_STALE_TTL", 30*time.Second),
 			CacheRefreshConcurrency: getInt("DNS_FILTER_CACHE_REFRESH_CONCURRENCY", 32),
 			TrafficRetentionDays:    getInt("DNS_FILTER_TRAFFIC_RETENTION_DAYS", 30),
+
+			SuggestInspectEnabled:   getBool("DNS_FILTER_SUGGEST_INSPECT_ENABLED", false),
+			SuggestInspectBudget:    getInt("DNS_FILTER_SUGGEST_INSPECT_BUDGET", 5),
+			SuggestInspectInterval:  getDurationPositive("DNS_FILTER_SUGGEST_INSPECT_INTERVAL", time.Hour),
+			SuggestInspectCacheTTL:  getDurationPositive("DNS_FILTER_SUGGEST_INSPECT_CACHE_TTL", 7*24*time.Hour),
+			SuggestInspectPause:     getDuration("DNS_FILTER_SUGGEST_INSPECT_PAUSE", 20*time.Second),
+			SuggestInspectBackoff:   getDuration("DNS_FILTER_SUGGEST_INSPECT_BACKOFF", 30*time.Minute),
+			SuggestInspectMaxErrors: getInt("DNS_FILTER_SUGGEST_INSPECT_MAX_ERRORS", 3),
 		}
 		instance.Enabled.Store(true)
 	})

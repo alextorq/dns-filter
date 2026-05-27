@@ -12,9 +12,15 @@ import (
 // the signal; Match optionally carries the related blocked-domain for signals
 // that compare against the blocklist (subdomain / similar). Stored verbatim
 // in the suggest_block_reasons table — no human-readable text on the backend.
+// Reason carries a signal code and an optional related value. The json tags
+// are load-bearing: reasons are snapshotted into inspect_candidate.reasons_json
+// and round-tripped by the worker, and the canonical wire form is lowercase
+// {"code":...,"match":...} — matching SuggestBlockReason's API shape. Without
+// tags json.Marshal would emit PascalCase keys and an always-present empty
+// "match", diverging from that contract.
 type Reason struct {
-	Code  string
-	Match string
+	Code  string `json:"code"`
+	Match string `json:"match,omitempty"`
 }
 
 type Suggestion struct {
@@ -43,6 +49,12 @@ const (
 	// (e.g. brand-impersonation + similar-to-blocked, или subdomain + entropy
 	// + similar) must independently agree on the verdict.
 	ThresholdToAutoBlock = 60
+	// MinInspectCandidateScore is the lower bound of the lexical band that is
+	// too weak to surface in the UI on its own (< ThresholdToSuggestBlocking)
+	// but strong enough to be worth a (rate-limited, opt-in) reputation check.
+	// Domains scoring in [MinInspectCandidateScore, ThresholdToSuggestBlocking)
+	// are routed to the inspect queue instead of the suggest list.
+	MinInspectCandidateScore = 10
 )
 
 // ShouldAutoBlock reports whether a collected suggestion qualifies for
@@ -81,6 +93,19 @@ const (
 	CodeBrandImpersonation = "brand_impersonation"
 )
 
+// Reason codes produced by the reputation-enrichment worker (not the lexical
+// pass). They MUST all carry the "inspect_" prefix: the worker's upsert path
+// (UpsertWithInspect) refreshes only inspect-derived reasons by matching that
+// prefix, so no lexical code above may ever start with it. They are defined
+// here so both the adapter and the signal catalog share one source of truth
+// without an import cycle.
+const (
+	CodeInspectVTMalicious   = "inspect_vt_malicious"
+	CodeInspectSafeBrowsing  = "inspect_safe_browsing"
+	CodeInspectRDAPYoung     = "inspect_rdap_young"
+	CodeInspectCleanEndorsed = "inspect_clean_endorsed"
+)
+
 // SignalDescriptor — публичное описание одного сигнала. Бек отдаёт каталог
 // на /api/suggest-to-block/codes, фронт использует его и для человеческих
 // лейблов в таблице, и для опций мульти-селекта фильтра.
@@ -95,6 +120,21 @@ type SignalDescriptor struct {
 // Доступ только через Catalog() — это защищает от случайной мутации
 // глобального слайса вызывающим кодом или тестами.
 var signalCatalog = []SignalDescriptor{
+	{
+		Code:        CodeInspectVTMalicious,
+		Label:       "VirusTotal malicious",
+		Description: "Multiple antivirus engines on VirusTotal flag the domain as malicious.",
+	},
+	{
+		Code:        CodeInspectSafeBrowsing,
+		Label:       "Safe Browsing hit",
+		Description: "Google Safe Browsing lists the domain as malware, phishing, or unwanted software.",
+	},
+	{
+		Code:        CodeInspectRDAPYoung,
+		Label:       "Recently registered",
+		Description: "Domain was registered very recently (RDAP) — freshly registered names dominate phishing.",
+	},
 	{
 		Code:        CodeBrandImpersonation,
 		Label:       "Brand impersonation",
@@ -140,6 +180,11 @@ var signalCatalog = []SignalDescriptor{
 		Label:       "Ad/tracker keywords",
 		Description: "Contains tokens commonly used by ad/tracking infrastructure (ad, ads, tracker, pixel, …).",
 	},
+	{
+		Code:        CodeInspectCleanEndorsed,
+		Label:       "Reputation clean",
+		Description: "Reputation checks (VirusTotal / Safe Browsing / domain age) actively endorse the domain as clean.",
+	},
 }
 
 // Catalog returns a defensive copy of the signal catalog. Returning a clone
@@ -148,7 +193,13 @@ func Catalog() []SignalDescriptor {
 	return slices.Clone(signalCatalog)
 }
 
-func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
+// ScoreCandidates runs the lexical heuristics once over every allowed domain
+// and returns each one that triggered at least one signal (Score > 0), with NO
+// policy threshold applied. Building the blocked index is the expensive part,
+// so callers run this once and bucket by score themselves: CollectSuggest keeps
+// the UI-worthy band (>= ThresholdToSuggestBlocking) and the inspect queue
+// takes the weaker [MinInspectCandidateScore, ThresholdToSuggestBlocking) band.
+func ScoreCandidates(blockedDomains []string, allowedDomains []string) []Suggestion {
 	// Inputs из miekg/dns (q.Name) приходят с trailing dot, blocklist-источники
 	// (HaGeZi и т.д.) — без. Без нормализации depth-гейт в similar-ветке считает
 	// domain. за depth+1 (фантомный пустой лейбл от trailing dot), а Match-поле
@@ -213,12 +264,26 @@ func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggesti
 			suggestion.Reasons = append(suggestion.Reasons, Reason{Code: CodeSimilarToBlocked, Match: match})
 		}
 
-		if suggestion.Score >= ThresholdToSuggestBlocking {
+		if suggestion.Score > 0 {
 			result = append(result, suggestion)
 		}
 
 	}
 
+	return result
+}
+
+// CollectSuggest returns the candidates worth surfacing in the UI on lexical
+// signal alone — those at or above ThresholdToSuggestBlocking. It is a thin
+// policy filter over ScoreCandidates (the scoring pass runs once); the weaker
+// band below the threshold is consumed separately by the inspect queue.
+func CollectSuggest(blockedDomains []string, allowedDomains []string) []Suggestion {
+	var result []Suggestion
+	for _, s := range ScoreCandidates(blockedDomains, allowedDomains) {
+		if s.Score >= ThresholdToSuggestBlocking {
+			result = append(result, s)
+		}
+	}
 	return result
 }
 

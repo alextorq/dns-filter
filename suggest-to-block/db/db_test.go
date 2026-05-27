@@ -215,3 +215,141 @@ func TestGetAllSuggestBlocks_FilterByCodes(t *testing.T) {
 		t.Errorf("expected empty result for unknown code, got total=%d list=%+v", res.Total, res.List)
 	}
 }
+
+// TestUpsertWithInspect_InsertsNewWithAllReasons: a domain not yet in the
+// suggest list is created with its full reason set (lexical + inspect_*).
+func TestUpsertWithInspect_InsertsNewWithAllReasons(t *testing.T) {
+	conn, err := gorm.Open(sqlite.Open("file::memory:?cache=private"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := conn.AutoMigrate(&SuggestBlock{}, &SuggestBlockReason{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	reasons := []SuggestBlockReason{
+		{Code: "risky_tld"},
+		{Code: "bad_keywords"},
+		{Code: "inspect_vt_malicious", MatchValue: "malicious=5"},
+	}
+	if err := upsertWithInspectOn(conn, "evil.example.com", 15, reasons); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	var got SuggestBlock
+	if err := conn.Preload("Reasons").Where("domain = ?", "evil.example.com").First(&got).Error; err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got.Score != 15 {
+		t.Errorf("score = %d, want 15 (lexical)", got.Score)
+	}
+	if !got.Active {
+		t.Error("new suggest row must be active")
+	}
+	if len(got.Reasons) != 3 {
+		t.Fatalf("expected 3 reasons on insert, got %d (%+v)", len(got.Reasons), got.Reasons)
+	}
+}
+
+// TestUpsertWithInspect_RefreshesOnlyInspectReasons: on a re-run for an existing
+// row, lexical reasons survive, stale inspect_* reasons are replaced, the score
+// is refreshed, and no duplicates accumulate.
+func TestUpsertWithInspect_RefreshesOnlyInspectReasons(t *testing.T) {
+	conn, err := gorm.Open(sqlite.Open("file::memory:?cache=private"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := conn.AutoMigrate(&SuggestBlock{}, &SuggestBlockReason{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	// First pass: a young domain flagged by RDAP.
+	first := []SuggestBlockReason{
+		{Code: "risky_tld"},
+		{Code: "inspect_rdap_young", MatchValue: "age_days=3"},
+	}
+	if err := upsertWithInspectOn(conn, "x.example.com", 12, first); err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+
+	// Second pass (after TTL): now VirusTotal flags it malicious; RDAP signal gone.
+	second := []SuggestBlockReason{
+		{Code: "risky_tld"}, // lexical, already present — must not duplicate
+		{Code: "inspect_vt_malicious", MatchValue: "malicious=7"},
+	}
+	if err := upsertWithInspectOn(conn, "x.example.com", 18, second); err != nil {
+		t.Fatalf("second upsert: %v", err)
+	}
+
+	var got SuggestBlock
+	if err := conn.Preload("Reasons").Where("domain = ?", "x.example.com").First(&got).Error; err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got.Score != 18 {
+		t.Errorf("score must refresh to 18, got %d", got.Score)
+	}
+
+	codes := map[string]int{}
+	for _, r := range got.Reasons {
+		codes[r.Code]++
+	}
+	if codes["risky_tld"] != 1 {
+		t.Errorf("lexical risky_tld must survive exactly once, got %d", codes["risky_tld"])
+	}
+	if codes["inspect_rdap_young"] != 0 {
+		t.Errorf("stale inspect_rdap_young must be removed, got %d", codes["inspect_rdap_young"])
+	}
+	if codes["inspect_vt_malicious"] != 1 {
+		t.Errorf("new inspect_vt_malicious must be present once, got %d", codes["inspect_vt_malicious"])
+	}
+	if len(got.Reasons) != 2 {
+		t.Errorf("expected exactly 2 reasons after refresh, got %d (%+v)", len(got.Reasons), got.Reasons)
+	}
+
+	// Only one suggest row — upsert, not duplicate insert.
+	var count int64
+	conn.Model(&SuggestBlock{}).Where("domain = ?", "x.example.com").Count(&count)
+	if count != 1 {
+		t.Errorf("expected single suggest row, got %d", count)
+	}
+}
+
+// TestUpsertWithInspect_PreservesDeactivated: a row an operator turned off must
+// stay off after a later worker pass.
+func TestUpsertWithInspect_PreservesDeactivated(t *testing.T) {
+	conn, err := gorm.Open(sqlite.Open("file::memory:?cache=private"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := conn.AutoMigrate(&SuggestBlock{}, &SuggestBlockReason{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	if err := conn.Create(&SuggestBlock{
+		Domain: "off.example.com", Score: 12,
+		Reasons: []SuggestBlockReason{{Code: "risky_tld"}},
+	}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Force Active=false: GORM's default:true tag substitutes the default for a
+	// zero-value bool on Create, so it must be set with an explicit Update.
+	if err := conn.Model(&SuggestBlock{}).Where("domain = ?", "off.example.com").
+		Update("active", false).Error; err != nil {
+		t.Fatalf("deactivate seed: %v", err)
+	}
+
+	if err := upsertWithInspectOn(conn, "off.example.com", 18, []SuggestBlockReason{
+		{Code: "risky_tld"},
+		{Code: "inspect_vt_malicious", MatchValue: "malicious=4"},
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	var got SuggestBlock
+	if err := conn.Where("domain = ?", "off.example.com").First(&got).Error; err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got.Active {
+		t.Error("a deactivated suggest row must not be reactivated by the worker")
+	}
+}

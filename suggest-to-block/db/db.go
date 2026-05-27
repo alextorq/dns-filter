@@ -1,8 +1,16 @@
 package db
 
 import (
+	"strings"
+
 	"gorm.io/gorm"
 )
+
+// InspectReasonPrefix marks reason codes produced by the reputation worker (as
+// opposed to the lexical pass). It is the discriminator UpsertWithInspect uses
+// to refresh only worker-derived reasons on a re-run while leaving the lexical
+// ones intact. No lexical code (see collect package) may start with it.
+const InspectReasonPrefix = "inspect_"
 
 type SuggestBlock struct {
 	ID      uint                 `gorm:"primarykey" json:"id"`
@@ -57,6 +65,74 @@ func createSuggestBlockBatchOn(conn *gorm.DB, suggests []SuggestBlock) error {
 			return nil
 		}
 		return tx.CreateInBatches(toCreate, 100).Error
+	})
+}
+
+// upsertWithInspectOn promotes a domain from the inspect queue into the suggest
+// list. `reasons` is the combined set (lexical snapshot + inspect_* codes), all
+// as SuggestBlockReason. Score stays lexical.
+//
+//   - New domain: insert the row with all reasons.
+//   - Existing domain: keep the lexical reasons untouched, replace only the
+//     inspect_* ones (idempotent across worker cycles), and refresh the score.
+//     Active is deliberately NOT reset — if an operator deactivated the row, a
+//     later worker pass must not silently resurrect it.
+func upsertWithInspectOn(conn *gorm.DB, domain string, lexicalScore int, reasons []SuggestBlockReason) error {
+	return conn.Transaction(func(tx *gorm.DB) error {
+		// Find (not First) so a missing row is RowsAffected==0 rather than an
+		// ErrRecordNotFound the GORM logger prints at error level on every insert.
+		var existing SuggestBlock
+		found := tx.Where("domain = ?", domain).Limit(1).Find(&existing)
+		if found.Error != nil {
+			return found.Error
+		}
+		if found.RowsAffected == 0 {
+			return tx.Create(&SuggestBlock{
+				Domain:  domain,
+				Score:   lexicalScore,
+				Reasons: reasons,
+			}).Error
+		}
+
+		if err := tx.Model(&existing).Update("score", lexicalScore).Error; err != nil {
+			return err
+		}
+
+		// Delete existing inspect_* reasons by id. We match the prefix in Go
+		// rather than via SQL LIKE 'inspect_%' because '_' is a single-char
+		// wildcard in LIKE — a literal underscore there would over-match.
+		var current []SuggestBlockReason
+		if err := tx.Where("suggest_id = ?", existing.ID).Find(&current).Error; err != nil {
+			return err
+		}
+		var staleIDs []uint
+		for _, r := range current {
+			if strings.HasPrefix(r.Code, InspectReasonPrefix) {
+				staleIDs = append(staleIDs, r.ID)
+			}
+		}
+		if len(staleIDs) > 0 {
+			if err := tx.Delete(&SuggestBlockReason{}, staleIDs).Error; err != nil {
+				return err
+			}
+		}
+
+		// Re-insert only the inspect_* reasons from the incoming set; the lexical
+		// ones are already attached from the original insert.
+		var toAdd []SuggestBlockReason
+		for _, r := range reasons {
+			if strings.HasPrefix(r.Code, InspectReasonPrefix) {
+				toAdd = append(toAdd, SuggestBlockReason{
+					SuggestID:  existing.ID,
+					Code:       r.Code,
+					MatchValue: r.MatchValue,
+				})
+			}
+		}
+		if len(toAdd) > 0 {
+			return tx.Create(&toAdd).Error
+		}
+		return nil
 	})
 }
 

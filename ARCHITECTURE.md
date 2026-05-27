@@ -443,6 +443,57 @@ blocklist (инцидент 2026-05-14, 25 авто-блокировок за о
 Каждое решение дополнительно логируется (`Auto-blocked domain from suggest:
 ... score: ... reasons: ...`).
 
+**Обогащение репутацией (opt-in, `suggest-to-block/inspect/`).** Лексика —
+слабый сигнал: мошеннику достаточно «нормального» имени. Поверх неё есть
+**вторая стадия-воронка**, переиспользующая сильные проверки `domain-inspect`
+(возраст RDAP + VirusTotal + Safe Browsing). Скоринг отделён от порогов:
+`collect.ScoreCandidates` делает один проход и возвращает все домены со
+`score > 0`; `Collect` раскладывает их по корзинам:
+- `score >= 30` → `suggest_blocks` / auto-block (как выше, без изменений);
+- `score ∈ [10, 30)` → **очередь** `inspect_candidate` (только если воркер
+  включён; иначе домен отбрасывается, как раньше — поведение идентично);
+- `score < 10` → отбрасывается.
+
+Очередь разгребает отдельный фоновый **воркер** (`inspect.Worker`, свой
+ctx-aware тикер, НЕ `periodic.Run`). За тик он берёт `Budget` самых
+высокобалльных кандидатов (`PickForInspection`), инспектирует по одному с
+паузой `Pause` между внешними вызовами и решает по сводному вердикту
+(`domain_inspect.summarize`):
+
+| вердикт | действие |
+|---|---|
+| `malicious` | kill-switch вкл → auto-block (тот же `create_domain.CreateDomain` + один `UpdateFromDb`) и `Drop` из очереди; выкл → `UpsertWithInspect` в `suggest_blocks` |
+| `suspicious` | `UpsertWithInspect` в `suggest_blocks` (всплывает даже при слабой лексике) |
+| `clean` | `SaveResult(clean)` — кэшируется, из eligible-набора уходит до TTL (не `Drop`: иначе следующий `Collect` вернёт домен и сожжёт квоту повторной инспекцией) |
+| `unknown`/ошибка | `ScheduleRetry`; после `MaxErrors` — `SaveResult(unknown)` |
+
+`Score` строки `suggest_blocks` остаётся **лексическим**; вердикт инспекции
+живёт в reason-кодах `inspect_*` (`inspect_vt_malicious`,
+`inspect_safe_browsing`, `inspect_rdap_young`, `inspect_clean_endorsed`).
+`UpsertWithInspect` идемпотентен между прогонами: лексические reasons
+сохраняются, обновляются только `inspect_*` (удаление по префиксу
+`InspectReasonPrefix` — ни один лексический код не начинается с `inspect_`,
+это закреплено тестом).
+
+**Квоты и кэш.** Binding constraint — бесплатный VirusTotal (4 запроса/мин,
+500/день). Поэтому: маленький `Budget` (5) + пауза 20с между доменами
+(`Budget × тиков/день` ≪ 500), и двухуровневый кэш — строка `inspect_candidate`
+сама по себе кэш по FQDN (`PickForInspection` пропускает свежие до
+`CacheTTL`), плюс `rdap_cache` по eTLD+1, чтобы соседние FQDN одного домена
+не дёргали RDAP повторно. На HTTP 429 (`domain_inspect.StatusRateLimited`)
+адаптер возвращает `ErrRateLimited`, и воркер **прекращает весь прогон**, не
+трогая текущий домен (это «пауза рана», а не ретрай). Прун
+(`inspect.StartPrune`, образец `traffic_prune`) удаляет строки, не
+инспектированные дольше `4×CacheTTL`.
+
+**Приватность / включение.** Воркер отправляет наблюдённые домены локальной
+сети во VirusTotal/Google — поэтому он **выключен по умолчанию** и стартует
+из `main.go` только при `SuggestInspectEnabled` И наличии VT-/SB-ключа (без
+ключа один RDAP не превышает порог вердикта — пользы нет). Конфиг —
+env-переменные `DNS_FILTER_SUGGEST_INSPECT_*` (см. README). Метрики
+Prometheus: `suggest_inspect_decisions_total{verdict}`, `_rate_limited_total`,
+`_errors_total`, `_queue_depth`, `_rdap_cache_hits_total`.
+
 ---
 
 ### 12. Настройки (`settings/`)

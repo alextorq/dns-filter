@@ -93,8 +93,12 @@ flowchart TD
   `Source = AutoBlocked`; the rest go to `suggest_blocks` for manual
   approval via the UI. Auto-promotion can be turned off by toggling the
   `AutoBlocked` source on the Sources page — disabled candidates fall through
-  to `suggest_blocks` instead. See [ARCHITECTURE.md §11](ARCHITECTURE.md) for
-  the scoring rules.
+  to `suggest_blocks` instead. **Weaker lexical candidates (score 10–29) are
+  not surfaced directly; with the opt-in reputation-enrichment worker enabled
+  they are queued and checked against VirusTotal / Safe Browsing / domain age,
+  and only a confirmed verdict acts on them (malicious → block, suspicious →
+  `suggest_blocks`, clean → dropped).** See [ARCHITECTURE.md §11](ARCHITECTURE.md)
+  for the scoring rules and the enrichment funnel.
 - Traffic dashboard (`/traffic` page) — a single view that merges the old
   Statistic page into the per-device traffic analytics. A headline count-up and
   a verdict filter (**All / Blocked / Allowed**) sit on top, always in view; the
@@ -165,6 +169,31 @@ verification instructions live in **[docs/inspect-keys.md](docs/inspect-keys.md)
 
 Keys live in `.env` (see `.env.example` for the template). The file is
 git-ignored, so secrets don't end up in the repo.
+
+### Reputation enrichment of suggestions (opt-in)
+
+By default the suggest collector scores candidates with lexical heuristics only.
+A background worker can additionally enrich the **weak** band (score 10–29) with
+the reputation checks above (RDAP age + VirusTotal + Safe Browsing). It is **off
+by default**: it sends observed domains to third parties (a privacy trade-off)
+and only adds value with a VT/SB key configured — it will not even start without
+one.
+
+| Env var                                | Default | Meaning                                                       |
+| -------------------------------------- | ------- | ------------------------------------------------------------- |
+| `DNS_FILTER_SUGGEST_INSPECT_ENABLED`   | `false` | master switch (needs a VT or SB key to take effect)           |
+| `DNS_FILTER_SUGGEST_INSPECT_BUDGET`    | `5`     | domains inspected per tick — bounds the VirusTotal quota      |
+| `DNS_FILTER_SUGGEST_INSPECT_INTERVAL`  | `1h`    | worker tick period                                            |
+| `DNS_FILTER_SUGGEST_INSPECT_CACHE_TTL` | `168h`  | how long a verdict stays fresh before re-inspection           |
+| `DNS_FILTER_SUGGEST_INSPECT_PAUSE`     | `20s`   | delay between external calls (stay under VirusTotal's 4/min)  |
+| `DNS_FILTER_SUGGEST_INSPECT_BACKOFF`   | `30m`   | retry delay for an undecided/failed domain                    |
+| `DNS_FILTER_SUGGEST_INSPECT_MAX_ERRORS`| `3`     | give up (cache "unknown") after this many failures            |
+
+Durations use Go's `time.ParseDuration` format: write `168h`, **not** `7d` —
+days are not supported. With the default budget (5) and interval (1h) the worker
+makes ~120 VirusTotal lookups/day, well under the free tier's 500/day. Metrics
+are exported under `suggest_inspect_*` (decisions by verdict, queue depth,
+rate-limits, RDAP cache hits).
 
 ## Getting Started
 

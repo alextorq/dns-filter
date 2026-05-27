@@ -101,17 +101,28 @@ func RDAPAge(ctx context.Context, domain string) domain_inspect.CheckResult {
 	if !registered.IsZero() {
 		ageDays := int(time.Since(registered).Hours() / 24)
 		details["age_days"] = ageDays
-		switch {
-		case ageDays < 30:
-			verdict = domain_inspect.VerdictSuspicious
-		case ageDays > 365:
-			verdict = domain_inspect.VerdictClean
-		}
+		verdict = RDAPVerdictForAge(ageDays)
 	}
 
 	return domain_inspect.CheckResult{
 		Status:  domain_inspect.StatusOK,
 		Verdict: verdict,
 		Details: details,
+	}
+}
+
+// RDAPVerdictForAge maps a domain's registration age in days to a verdict:
+// freshly registered (<30d) is suspicious — phishing/malware dominate that
+// band; well-aged (>365d) is clean; in-between is unknown. Exported so a
+// caching caller (the suggest-inspect adapter) can reuse the exact thresholds
+// when serving an age from cache instead of re-deriving them.
+func RDAPVerdictForAge(ageDays int) domain_inspect.Verdict {
+	switch {
+	case ageDays < 30:
+		return domain_inspect.VerdictSuspicious
+	case ageDays > 365:
+		return domain_inspect.VerdictClean
+	default:
+		return domain_inspect.VerdictUnknown
 	}
 }

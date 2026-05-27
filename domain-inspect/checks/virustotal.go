@@ -60,6 +60,14 @@ func VirusTotal(ctx context.Context, domain string) domain_inspect.CheckResult {
 			Details: map[string]any{"known_to_vt": false},
 		}
 	}
+	// 429 is reported as its own status so a batch caller can pause + back off
+	// rather than burn the rest of its run getting the same answer.
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return domain_inspect.CheckResult{
+			Status: domain_inspect.StatusRateLimited,
+			Error:  "virustotal http 429",
+		}
+	}
 	if resp.StatusCode >= 400 {
 		return domain_inspect.CheckResult{
 			Status: domain_inspect.StatusError,

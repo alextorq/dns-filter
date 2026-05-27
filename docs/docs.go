@@ -1520,13 +1520,15 @@ const docTemplate = `{
                 "ok",
                 "error",
                 "skipped",
-                "timeout"
+                "timeout",
+                "rate_limited"
             ],
             "x-enum-varnames": [
                 "StatusOK",
                 "StatusError",
                 "StatusSkipped",
-                "StatusTimeout"
+                "StatusTimeout",
+                "StatusRateLimited"
             ]
         },
         "domain_inspect.InspectResult": {

@@ -14,6 +14,7 @@ const statusColor: Record<DomainInspectCheckStatus, "success" | "neutral" | "err
     [DomainInspectCheckStatus.StatusError]: "error",
     [DomainInspectCheckStatus.StatusSkipped]: "neutral",
     [DomainInspectCheckStatus.StatusTimeout]: "warning",
+    [DomainInspectCheckStatus.StatusRateLimited]: "warning",
 };
 
 const statusLabel: Record<DomainInspectCheckStatus, string> = {
@@ -21,6 +22,7 @@ const statusLabel: Record<DomainInspectCheckStatus, string> = {
     [DomainInspectCheckStatus.StatusError]: "Error",
     [DomainInspectCheckStatus.StatusSkipped]: "Skipped",
     [DomainInspectCheckStatus.StatusTimeout]: "Timeout",
+    [DomainInspectCheckStatus.StatusRateLimited]: "Rate-limited",
 };
 
 // detailEntries pre-stringifies non-primitive values once — the template

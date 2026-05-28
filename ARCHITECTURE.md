@@ -201,7 +201,12 @@ hostname → vendor → IP, при этом MAC/IP всегда остаётся
 окна, читая атомик `retentionDays` СВЕЖИМ на каждом тике (`Run` →
 `pruneTaskAt`). Окно — динамическая настройка `traffic_retention_days` (Apply-хук
 пишет тот же атомик), поэтому изменение в UI применяется со следующего прогона
-без рестарта.
+без рестарта. Атомик стартует в сентинеле `0` («не сконфигурировано»): `pruneTaskAt`
+при `<=0` пропускает прогон, поэтому прун, случайно запущенный ДО `HydrateAll`, не
+удаляет ничего по seed-догадке (которая могла бы оказаться меньше большего
+override и снести нужные сутки). `main` запускает горутину строго после
+`HydrateAll` (который всегда применяет override или дефолт), так что первый же
+прогон вооружён; сентинел — страховка от будущего реордеринга.
 
 ### 5. Клиенты-исключения (`clients/`)
 
@@ -766,7 +771,6 @@ func main() {
         blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger,
     )
     domain_inspect_checks.SetAllowLookup(trafficRepo.IsAllowed)
-    go traffic_prune.Run(trafficRepo)
     go suggestModule.Start(context.Background())
     go authBusiness.ClearExpiredSessions()
     // LAN-режим: arpwatcher (IP↔MAC) + hostname-сборщик (mDNS → host_names).
@@ -794,6 +798,9 @@ func main() {
     filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
     _ = filter.RestoreState(settingsRepo, conf)
     _ = settingsModule.HydrateAll()
+    // Ретеншн-prune над domain_traffic стартует ТОЛЬКО после HydrateAll: первый
+    // (немедленный) прогон уже видит эффективное окно, а не seed-сентинел.
+    go traffic_prune.Run(trafficRepo)
     go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
     // 9. HTTP API: все per-feature *Handlers собраны в web.Handlers и проброшены явно
@@ -816,7 +823,7 @@ func main() {
 - `filterModule.UpdateFromDb()` (стартовый, синхронный) поднимает bloom из того, что **уже** лежит в БД, ДО старта DNS — рестарт сразу отдаёт прошлый блок-лист. На честном первом запуске БД пуста и до конца фонового синка ничего не блокируется (осознанный компромисс ради неблокирующего старта).
 - `sourceModule.Sync()` ушёл из синхронного пути в фоновую горутину `backgroundSync` — DNS-сервер стартует не дожидаясь сети. По завершении синка `backgroundSync` повторно вызывает `filterModule.UpdateFromDb()` (пересборка bloom + чистка verdict-кеша). Горутина **не паникует**: `panic` убил бы уже обслуживающий запросы DNS-сервер. Упавший синк (обычно — нет сети на первом старте) повторяется с экспоненциальным backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`), пока не пройдёт успешно.
 - `clients.Sync()` — после Migrate, до DNS Serve (чтение локальной БД, без сети).
-- `trafficWorker` (`traffic_record.NewTrafficEventStore`) присваивается в `dnsServer.Traffic` ДО `Serve()` — это единственный регистратор вердиктов после удаления event-сторов. Две прежние горутины `clear-events` (block/allow) и их event-сторы убраны; вместо них одна горутина `traffic_prune.Run(trafficRepo)` (ежедневный ретеншн над `domain_traffic`). suggest/domain-inspect получают «разрешённые домены» из `trafficRepo` через адаптеры (`NewAllowFilterAdapter`, `SetAllowLookup(trafficRepo.IsAllowed)`), статистика блокировок — через `NewBlockStatsAdapter`; порты при этом не менялись.
+- `trafficWorker` (`traffic_record.NewTrafficEventStore`) присваивается в `dnsServer.Traffic` ДО `Serve()` — это единственный регистратор вердиктов после удаления event-сторов. Две прежние горутины `clear-events` (block/allow) и их event-сторы убраны; вместо них одна горутина `traffic_prune.Run(trafficRepo)` (ежедневный ретеншн над `domain_traffic`), запускаемая **после `HydrateAll`**, чтобы первый немедленный прогон уже видел эффективное окно ретеншна, а не seed-сентинел. suggest/domain-inspect получают «разрешённые домены» из `trafficRepo` через адаптеры (`NewAllowFilterAdapter`, `SetAllowLookup(trafficRepo.IsAllowed)`), статистика блокировок — через `NewBlockStatsAdapter`; порты при этом не менялись.
 - Апстрим строится как `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` и передаётся в `dns.CreateServerWithResolver` — один инстанс на hot-path и refresh-воркер, чтобы рантайм-своп репойнтил оба.
 - **`settings` поднимается после всех sink'ов и строго до `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (нужны уже построенные `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (восстановить on/off и паузу) → `settingsModule.HydrateAll()` (применить эффективные значения). `RestoreState` и `HydrateAll` **не фатальны** — ошибка оставляет значения на compiled-default, а не валит уже здоровый старт.
 - HTTP запускается в горутине внутри `web.CreateServer`, блокирующий `dnsServer.Serve()` держит main живым.
@@ -832,7 +839,7 @@ func main() {
 
 2. **Канальный логгер** — асинхронное логирование не блокирует DNS-запросы
 
-3. **Асинхронный учёт трафика** — вердикт каждого запроса (blocked/allowed) пишется в единый счётчик `domain_traffic` через канальный `TrafficRecorder`: одна строка на (устройство, домен, вердикт, сутки), аддитивный upsert батчами, drop-on-full. Ответ DNS никогда не ждёт записи в БД. Заменил две прежние event-таблицы (`block_domain_events`/`allow_domain_events`).
+3. **Асинхронный учёт трафика** — вердикт каждого запроса (blocked/allowed) пишется в единый счётчик `domain_traffic` через канальный `TrafficRecorder`: одна строка на (устройство, домен, вердикт, сутки), аддитивный upsert батчами, drop-on-full. Ответ DNS никогда не ждёт записи в БД. При ошибке `UpsertBatch` (например, `SQLITE_BUSY`) `flush` **не сбрасывает буфер**, а сохраняет счётчики и ретраит их на следующем тике (один flush = один атомарный батч, поэтому повтор идемпотентен); рост буфера при затяжном сбое БД ограничен `capacity` — новые ключи отбрасываются, как и в drop-on-full очереди. Заменил две прежние event-таблицы (`block_domain_events`/`allow_domain_events`).
 
 4. **In-memory словари** — для Bloom filter и списка исключений клиентов (быстрый доступ без блокировок)
 

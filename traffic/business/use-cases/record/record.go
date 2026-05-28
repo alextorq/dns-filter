@@ -166,6 +166,15 @@ func (s *TrafficEventStore) accumulate(e Event) {
 	}
 	v, ok := s.buf[k]
 	if !ok {
+		if len(s.buf) >= s.capacity {
+			// Buffer is full and a prior flush has not drained it — the DB write is
+			// failing or stalling (flush retains the buffer on error, see flush()).
+			// Shed NEW keys rather than grow the map without bound during an outage;
+			// same drop-on-full policy as the inbox channel. Counts already buffered
+			// keep accumulating and are retried by the next flush.
+			s.log.Warn("Traffic aggregation buffer full, dropping event for: " + e.Domain)
+			return
+		}
 		v = &aggVal{}
 		s.buf[k] = v
 	}
@@ -177,8 +186,19 @@ func (s *TrafficEventStore) accumulate(e Event) {
 }
 
 // flush converts the current map into a []DomainTraffic and hands it to the
-// repo, then resets the map. Errors are logged, not propagated (this is a
+// repo. On success the map is reset; on error it is KEPT so the next flush
+// retries the accumulated counts. Errors are logged, not propagated (this is a
 // background worker).
+//
+// Why retain on error: UpsertBatch is an additive upsert (count += excluded.count)
+// applied as a single DB batch for our buffer sizes — capacity (2000 in prod)
+// stays under db.upsertBatchSize (4000), so a flush is one atomic transaction
+// that either fully commits or fully rolls back. A failed flush therefore
+// committed nothing, and replaying the same rows is exactly-once. Resetting the
+// map before checking the error (the previous behavior) silently dropped the
+// whole batch on any DB error — e.g. SQLITE_BUSY under write-lock contention.
+// Unbounded growth during a prolonged outage is prevented by accumulate, which
+// sheds new keys once the buffer reaches capacity.
 func (s *TrafficEventStore) flush() {
 	if len(s.buf) == 0 {
 		return
@@ -196,10 +216,11 @@ func (s *TrafficEventStore) flush() {
 			LastSeen:    v.lastSeen,
 		})
 	}
-	s.buf = make(map[aggKey]*aggVal)
 	if err := s.repo.UpsertBatch(rows); err != nil {
 		s.log.Error(fmt.Errorf("error processing batch traffic events: %w", err))
+		return // keep s.buf — the next flush (ticker or capacity) retries these counts
 	}
+	s.buf = make(map[aggKey]*aggVal)
 }
 
 // record enqueues an already-stamped event, dropping on a full inbox. It is the

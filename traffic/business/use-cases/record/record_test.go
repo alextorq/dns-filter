@@ -1,6 +1,7 @@
 package traffic_use_cases_record
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -318,3 +319,112 @@ var errAlwaysFails = &testErr{}
 type testErr struct{}
 
 func (*testErr) Error() string { return "db down" }
+
+// flakyRepo fails UpsertBatch while `failing` is set and records ONLY the
+// batches it accepts — a rejected additive upsert commits nothing, so the test
+// can assert exactly what reached the DB. Models a transiently unavailable DB
+// (e.g. SQLITE_BUSY under write-lock contention).
+type flakyRepo struct {
+	mu      sync.Mutex
+	failing bool
+	batches [][]traffic_db.DomainTraffic
+}
+
+func (f *flakyRepo) setFailing(v bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failing = v
+}
+
+func (f *flakyRepo) UpsertBatch(rows []traffic_db.DomainTraffic) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failing {
+		return errAlwaysFails
+	}
+	batch := make([]traffic_db.DomainTraffic, len(rows))
+	copy(batch, rows)
+	f.batches = append(f.batches, batch)
+	return nil
+}
+
+func (f *flakyRepo) allRows() []traffic_db.DomainTraffic {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []traffic_db.DomainTraffic
+	for _, b := range f.batches {
+		out = append(out, b...)
+	}
+	return out
+}
+
+// TestFlushRetainsCountsOnError is the regression for the silent counter-loss bug
+// (#3): when UpsertBatch fails, the accumulated counts must NOT be discarded —
+// they stay buffered, keep accumulating, and are persisted on the next
+// successful flush. The old flush() reset the buffer BEFORE checking the upsert
+// error, losing the whole batch on any DB error.
+func TestFlushRetainsCountsOnError(t *testing.T) {
+	repo := &flakyRepo{failing: true}
+	// Long ticker so only our explicit flushNow calls drive the worker.
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
+
+	// One event, then a flush that the DB rejects: the count must be retained.
+	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: at})
+	store.flushNow()
+	if got := len(repo.allRows()); got != 0 {
+		t.Fatalf("expected nothing persisted while DB failing, got %d rows", got)
+	}
+
+	// A second event for the SAME key must fold into the retained buffer (proving
+	// it was not cleared), so the eventual count is 2, not 1.
+	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: at})
+
+	// DB recovers; the retained-and-accumulated counts flush on the next attempt.
+	repo.setFailing(false)
+	store.flushNow()
+
+	rows := repo.allRows()
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row after recovery, got %d: %+v", len(rows), rows)
+	}
+	if rows[0].Count != 2 {
+		t.Fatalf("expected Count=2 (no counts lost across the failed flush), got %d", rows[0].Count)
+	}
+}
+
+// TestFlushBoundedDuringOutage is the negative case for the retain-on-error fix:
+// a prolonged DB outage must not let the aggregation buffer grow without bound.
+// Once the buffer is full (capacity distinct keys) and flushes keep failing, NEW
+// keys are shed (drop-on-full, like the inbox), so after recovery no more than
+// `capacity` distinct rows survive.
+func TestFlushBoundedDuringOutage(t *testing.T) {
+	const capacity = 3
+	repo := &flakyRepo{failing: true}
+	log := &recordingLog{}
+	store := newWithChannelSizeAndInterval(repo, log, capacity, 1000, time.Hour)
+	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
+
+	// Pump far more distinct keys than capacity while the DB is down.
+	for i := range 20 {
+		store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: fmt.Sprintf("d%02d.example.", i), Blocked: true, At: at})
+	}
+	// A flush while still failing is FIFO after all 20 records, so once it returns
+	// every event has been processed and the buffer is bounded at `capacity`.
+	store.flushNow()
+	if log.warns.Load() == 0 {
+		t.Fatalf("expected drop-on-full warnings while the buffer was saturated")
+	}
+
+	// DB recovers; drain whatever survived.
+	repo.setFailing(false)
+	store.flushNow()
+
+	rows := repo.allRows()
+	if len(rows) == 0 {
+		t.Fatalf("expected some rows to survive and flush after recovery")
+	}
+	if len(rows) > capacity {
+		t.Fatalf("aggregation buffer not bounded: %d distinct rows > capacity %d", len(rows), capacity)
+	}
+}

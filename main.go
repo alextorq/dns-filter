@@ -201,12 +201,6 @@ func main() {
 	)
 	inspectWorker.SetFeatureGate(inspectGate)
 
-	// Daily retention prune over the unified domain_traffic table — now the sole
-	// retention task (the two legacy block/allow clear-events tasks were removed
-	// with their tables). The retention window is the traffic_retention_days
-	// dynamic setting; the loop reads its atomic fresh each tick, so a UI change
-	// applies on the next prune.
-	go traffic_prune_uc.Run(trafficRepo)
 	go authBusiness.ClearExpiredSessions()
 
 	// Start the ARP watcher only in LAN mode. Public mode has no LAN to
@@ -286,6 +280,15 @@ func main() {
 	go suggestModule.Start(context.Background())
 	go inspectWorker.Start(context.Background())
 	go suggest_inspect.StartPrune(inspectRepo, 4*conf.SuggestInspectCacheTTL)
+
+	// Daily retention prune over the unified domain_traffic table — the sole
+	// retention task (the two legacy block/allow clear-events tasks were removed
+	// with their tables). The retention window is the traffic_retention_days
+	// dynamic setting; the loop reads its atomic fresh each tick, so a UI change
+	// applies on the next prune. Launched AFTER HydrateAll so the very first
+	// (immediate) prune already sees the effective window — otherwise it could
+	// hard-delete rows using the pre-hydrate seed (see traffic_prune.retentionDays).
+	go traffic_prune_uc.Run(trafficRepo)
 
 	// Pull the block lists in the background and refresh the filter once done.
 	// The DNS server (started below via dnsServer.Serve) does not wait on this.

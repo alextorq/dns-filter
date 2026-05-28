@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alextorq/dns-filter/config"
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
@@ -16,23 +15,21 @@ func withVTEndpointAndKey(t *testing.T, ts *httptest.Server, key string) {
 	prev := vtEndpoint
 	vtEndpoint = ts.URL + "/"
 
-	cfg := config.GetConfig()
-	prevKey := cfg.VirusTotalKey
-	cfg.VirusTotalKey = key
+	prevKey := GetVTKey()
+	SetVTKey(key)
 
 	t.Cleanup(func() {
 		vtEndpoint = prev
-		cfg.VirusTotalKey = prevKey
+		SetVTKey(prevKey)
 	})
 }
 
 // Without a key the check must be skipped, never errored — operators who
 // don't have a VT API key should still get a sensible aggregated result.
 func TestVirusTotal_NoKey_Skipped(t *testing.T) {
-	cfg := config.GetConfig()
-	prev := cfg.VirusTotalKey
-	cfg.VirusTotalKey = ""
-	t.Cleanup(func() { cfg.VirusTotalKey = prev })
+	prev := GetVTKey()
+	SetVTKey("")
+	t.Cleanup(func() { SetVTKey(prev) })
 
 	res := VirusTotal(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusSkipped {

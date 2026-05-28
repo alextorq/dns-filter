@@ -68,12 +68,35 @@ type Module struct {
 	repo         SuggestRepo
 	log          Logger
 	inspectQueue InspectQueue // optional; nil keeps the feature inert
+	// inspectGate — рантайм-гейт включения reputation-обогащения.
+	// nil = всегда включено (обратная совместимость с тестами и со средой,
+	// где SetInspectQueue не звался). В production main.go выставляет gate
+	// в inspect.IsEnabled, чтобы UI-тогл управлял маршрутизацией без
+	// рестарта.
+	inspectGate func() bool
 }
 
 // SetInspectQueue wires the optional reputation-enrichment queue. Call once at
 // composition time, before Start. Leaving it unset disables queue population —
 // Collect then behaves exactly as before the feature existed.
 func (m *Module) SetInspectQueue(q InspectQueue) { m.inspectQueue = q }
+
+// SetInspectGate подключает рантайм-гейт включения inspect-обогащения. Когда
+// gate возвращает false, Collect не маршрутизирует кандидатов в очередь и не
+// обращается к InspectQueue вообще — поведение идентично "очередь не подключена".
+func (m *Module) SetInspectGate(g func() bool) { m.inspectGate = g }
+
+// inspectActive — true, когда очередь подключена и фича не выключена рантайм-
+// гейтом. nil-gate = "всегда включено" (тестовое поведение).
+func (m *Module) inspectActive() bool {
+	if m.inspectQueue == nil {
+		return false
+	}
+	if m.inspectGate == nil {
+		return true
+	}
+	return m.inspectGate()
+}
 
 func NewModule(
 	blockRepo BlockRepo,
@@ -160,10 +183,12 @@ func (m *Module) Collect() error {
 		}
 
 		// Weak lexical signal: too low for the UI on its own, but worth a
-		// reputation check IF the feature is wired. When the queue is unset the
-		// candidate is dropped — identical to the old CollectSuggest filter, so
-		// a disabled feature leaves system behaviour unchanged.
-		if m.inspectQueue != nil && domain.Score >= collect.MinInspectCandidateScore {
+		// reputation check IF the feature is wired AND включена в БД-настройках.
+		// Когда фича отключена (queue не подключена или gate=false), кандидат
+		// отбрасывается — поведение идентично состоянию "очередь не подключена",
+		// то есть кэш очереди не растёт впустую и не выплеснется внезапно при
+		// последующем включении.
+		if m.inspectActive() && domain.Score >= collect.MinInspectCandidateScore {
 			if err := m.inspectQueue.UpsertCandidate(domain.Domain, domain.Score, reasonsJSON(domain.Reasons)); err != nil {
 				m.log.Error(err)
 			} else {

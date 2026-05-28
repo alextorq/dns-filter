@@ -487,11 +487,25 @@ ctx-aware тикер, НЕ `periodic.Run`). За тик он берёт `Budget`
 инспектированные дольше `4×CacheTTL`.
 
 **Приватность / включение.** Воркер отправляет наблюдённые домены локальной
-сети во VirusTotal/Google — поэтому он **выключен по умолчанию** и стартует
-из `main.go` только при `SuggestInspectEnabled` И наличии VT-/SB-ключа (без
-ключа один RDAP не превышает порог вердикта — пользы нет). Конфиг —
-env-переменные `DNS_FILTER_SUGGEST_INSPECT_*` (см. README). Метрики
-Prometheus: `suggest_inspect_decisions_total{verdict}`, `_rate_limited_total`,
+сети во VirusTotal/Google — поэтому **по умолчанию выключен**. Мастер-тогл
+(`suggest_inspect_enabled`) и оба провайдер-ключа (`virustotal_key`,
+`safebrowsing_key`) переехали в БД-настройки и управляются из UI:
+- сам воркер и `StartPrune` теперь стартуют **всегда** (после `HydrateAll`),
+  но `Worker.RunOnce` — no-op, пока флаг `suggest_inspect_enabled` выключен;
+  без ключа провайдер-чек возвращает `skipped`, и RunOnce ничего не
+  отправляет наружу;
+- `Module.Collect` маршрутизирует слабых кандидатов в `inspect_candidate`
+  только когда флаг включён — иначе очередь не растёт во время паузы;
+- ключи отдаются в API маскированными (`••••<последние 4>`) и вырезаются из
+  выгружаемой копии БД (`/api/config/db/download` использует
+  `VACUUM INTO` + `DELETE FROM settings WHERE key IN (…)`), поэтому ни UI-
+  скриншот, ни дамп миграции не утаскивают секрет.
+
+Прочий конфиг — env-переменные `DNS_FILTER_SUGGEST_INSPECT_*` (Budget,
+Interval, Pause, Backoff, CacheTTL, MaxErrors) — остаются env-only: это
+поведение под нагрузкой, его правильно настраивает оператор однажды на
+деплое, а не на горячую через UI. Метрики Prometheus:
+`suggest_inspect_decisions_total{verdict}`, `_rate_limited_total`,
 `_errors_total`, `_queue_depth`, `_rdap_cache_hits_total`.
 
 ---
@@ -508,7 +522,11 @@ Prometheus: `suggest_inspect_decisions_total{verdict}`, `_rate_limited_total`,
   - `HydrateAll()` — на старте для каждого ключа применяет эффективное значение (`БД override → env default`). И гидрация, и рантайм-изменение идут **через один путь** `Apply`. Битое значение в БД (например, enum сузился между версиями) не валит старт: подставляется default, проблема возвращается в агрегированной ошибке.
 - `settings/web` — `GET /api/settings` (эффективные значения + метаданные типа для UI), `PUT /api/settings/:key`, `DELETE /api/settings/:key` (сброс). Sentinel-ошибки модуля маппятся: неизвестный ключ → 404, невалидное значение → 400.
 
-**Apply-hooks (inversion of control).** Модуль ничего не знает про logger/dns/cache. В `main.go` (composition root, файл `settings_wiring.go`) дескрипторы связываются с runtime-sink'ами: `log_level`→`ChanLogger.UpdateLogLevel`; `doh_upstream`/`doh_bootstrap_ips`→`dns.ReloadableResolver.SetEndpoint/SetBootstrapIPs` (+ флаш dns-кеша); `cache_swr`→`DnsServer.SetSWR`; `cache_stale_grace`/`cache_stale_ttl`→`CacheWithMetrics.SetStaleGrace/SetStaleTTL`; `cache_refresh_concurrency`→`DnsServer.SetRefreshConcurrency`; `traffic_retention_days`→`traffic_prune.SetRetentionDays` (пишет атомик, который prune-цикл читает свежим на каждом тике).
+**Apply-hooks (inversion of control).** Модуль ничего не знает про logger/dns/cache. В `main.go` (composition root, файл `settings_wiring.go`) дескрипторы связываются с runtime-sink'ами: `log_level`→`ChanLogger.UpdateLogLevel`; `doh_upstream`/`doh_bootstrap_ips`→`dns.ReloadableResolver.SetEndpoint/SetBootstrapIPs` (+ флаш dns-кеша); `cache_swr`→`DnsServer.SetSWR`; `cache_stale_grace`/`cache_stale_ttl`→`CacheWithMetrics.SetStaleGrace/SetStaleTTL`; `cache_refresh_concurrency`→`DnsServer.SetRefreshConcurrency`; `traffic_retention_days`→`traffic_prune.SetRetentionDays` (пишет атомик, который prune-цикл читает свежим на каждом тике); `suggest_inspect_enabled`→`suggest_inspect.SetEnabled` (читается `Worker.RunOnce` и `suggestModule.Collect`); `virustotal_key`/`safebrowsing_key`→`checks.SetVTKey`/`SetSBKey` (читаются провайдер-чеком на каждом HTTP-запросе).
+
+**Секреты в KV (`Type: "secret"`).** Описанный выше pipeline не масштабируется на API-ключи напрямую: дампы и UI-скриншоты утаскивают plain-значение. Поэтому secret-тип получает две защиты:
+- в `effectiveViewLocked` value и default маскируются до `••••<последние 4 символа>`; UI рендерит password-инпут, маска идёт в placeholder, драфт стартует пустым (нечего отправлять «по ошибке»);
+- `db/web/download.go::DownloadDb` делает `VACUUM INTO` во временный файл и `DELETE FROM settings WHERE key IN (m.SecretKeys())` в копии. Live-БД не трогается; secret-ключи не покидают хост через `/api/config/db/download`. Сам `Apply` получает оригинальный raw — провайдер-чек читает атомик без маски.
 
 **Горячий путь без БД.** Все динамические настройки читаются на hot-path из памяти (атомики), БД — только персистентность. Конкретно: `ChanLogger.level` (`atomic.Int32`, заодно убрана гонка с горутиной логгера), `DnsServer.swrEnabled` (`atomic.Bool`), `Cache.staleGrace/staleTTL` (`atomic.Int64`), апстрим — через `dns.ReloadableResolver` (`atomic.Pointer[DoHResolver]`, своп без рестарта; один и тот же инстанс виден и серверу, и refresh-воркеру), пул рефрешей — пересобираемый семафор за `atomic.Pointer` (in-flight рефреш отпускает токен в тот семафор, из которого взял).
 

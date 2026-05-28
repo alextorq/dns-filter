@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/alextorq/dns-filter/config"
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
@@ -17,23 +16,21 @@ func withSafeBrowsingEndpointAndKey(t *testing.T, ts *httptest.Server, key strin
 	prev := sbEndpoint
 	sbEndpoint = ts.URL + "/"
 
-	cfg := config.GetConfig()
-	prevKey := cfg.SafeBrowsingKey
-	cfg.SafeBrowsingKey = key
+	prevKey := GetSBKey()
+	SetSBKey(key)
 
 	t.Cleanup(func() {
 		sbEndpoint = prev
-		cfg.SafeBrowsingKey = prevKey
+		SetSBKey(prevKey)
 	})
 }
 
 // Without a key the check must be skipped (not errored). Operators who don't
 // have a Google Cloud project should still see a sensible aggregated result.
 func TestSafeBrowsing_NoKey_Skipped(t *testing.T) {
-	cfg := config.GetConfig()
-	prev := cfg.SafeBrowsingKey
-	cfg.SafeBrowsingKey = ""
-	t.Cleanup(func() { cfg.SafeBrowsingKey = prev })
+	prev := GetSBKey()
+	SetSBKey("")
+	t.Cleanup(func() { SetSBKey(prev) })
 
 	res := SafeBrowsing(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusSkipped {

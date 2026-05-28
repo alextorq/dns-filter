@@ -100,6 +100,31 @@ func ValidateIntRange(lo, hi int) func(string) error {
 	}
 }
 
+// ValidateSecret accepts only a non-empty, trimmed value of at least 8
+// characters — короткие "ключи" почти всегда опечатка/обрезанный буфер обмена,
+// а пустое значение через Set путает API/UI (нет способа отличить «явная
+// пустота» от «сброс к env-default»). Очистка делается через DELETE
+// /api/settings/:key, не через Set("").
+//
+// Здесь мы не пытаемся валидировать формат провайдера (VT, SB и т.п.):
+// ассортимент возможных схем неустойчив; единственно полезные signal'ы — длина
+// и непустота — мы и проверяем.
+func ValidateSecret(raw string) error {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return fmt.Errorf("значение не может быть пустым; используйте сброс, чтобы очистить")
+	}
+	if len(s) < 8 {
+		return fmt.Errorf("значение слишком короткое (%d), ожидается ≥8 символов", len(s))
+	}
+	return nil
+}
+
+// ParseSecret возвращает обрезанное значение секрета. Скопированные из
+// браузера/терминала ключи часто содержат хвостовые пробелы/перевод строки;
+// Apply должен класть в атомик нормализованную строку.
+func ParseSecret(raw string) string { return strings.TrimSpace(raw) }
+
 // ValidateEnum returns a validator that accepts only the given values
 // (case-insensitive).
 func ValidateEnum(allowed ...string) func(string) error {

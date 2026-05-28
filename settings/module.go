@@ -16,6 +16,7 @@ package settings
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -41,13 +42,41 @@ type Repo interface {
 // persisted. Apply parses the validated raw value and pushes it into the
 // runtime sink; it is the single path used both for runtime changes and for
 // startup hydration.
+//
+// Type "secret" — частный случай: настоящее значение хранится в БД, но в API
+// (List/Get) маскируется до "••••<последние 4 символа>", чтобы скриншоты
+// административного UI, DevTools и (в порядке углубления защиты) дамп БД через
+// /api/config/db/download не утаскивали ключи. Сам апдейт ставит plain-значение
+// — UI отправляет новое значение, маска НЕ редактируется. См. также SecretKeys
+// и обработчик db/web/download.go.
 type Setting struct {
 	Key      string
-	Type     string // UI hint: "enum" | "url" | "ip-list" | "bool" | "duration" | "int"
+	Type     string // UI hint: "enum" | "url" | "ip-list" | "bool" | "duration" | "int" | "secret"
 	Enum     []string
 	Default  string
 	Validate func(raw string) error
 	Apply    func(raw string) error
+}
+
+// SecretType — единое имя для типа, который должен маскироваться при выдаче в
+// API. Вынесено в константу, чтобы download-санитизация и UI ссылались на тот
+// же литерал.
+const SecretType = "secret"
+
+// maskSecret возвращает безопасное для логов/UI представление секрета:
+//   - "" если значение не задано;
+//   - последние 4 символа после "••••", если строка длиннее 4;
+//   - все символы как "•", если строка короче 5 (так что 8-байтный «короткий»
+//     ключ всё ещё не утечёт целиком).
+func maskSecret(raw string) string {
+	n := len(raw)
+	if n == 0 {
+		return ""
+	}
+	if n <= 4 {
+		return strings.Repeat("•", n)
+	}
+	return "••••" + raw[n-4:]
 }
 
 // Effective is the resolved view of a setting for the API: its current value,
@@ -216,12 +245,36 @@ func (m *Module) effectiveViewLocked(key string) (Effective, error) {
 	if err != nil {
 		return Effective{}, err
 	}
+	value, dflt := raw, s.Default
+	if s.Type == SecretType {
+		// Маскируем оба поля: и текущее значение, и env-default (Reset вернёт
+		// БД-настройку именно к нему, поэтому утечь нельзя ни через value, ни
+		// через default).
+		value = maskSecret(raw)
+		dflt = maskSecret(s.Default)
+	}
 	return Effective{
 		Key:        key,
-		Value:      raw,
-		Default:    s.Default,
+		Value:      value,
+		Default:    dflt,
 		Overridden: overridden,
 		Type:       s.Type,
 		Enum:       s.Enum,
 	}, nil
+}
+
+// SecretKeys возвращает ключи всех зарегистрированных секретных настроек в
+// порядке регистрации. Используется обработчиком /api/config/db/download
+// (db/web/download.go), чтобы исключить эти строки из выгружаемой копии БД.
+func (m *Module) SecretKeys() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var out []string
+	for _, key := range m.order {
+		if m.byKey[key].Type == SecretType {
+			out = append(out, key)
+		}
+	}
+	return out
 }

@@ -66,7 +66,15 @@ const onLogout = async () => {
                 />
             </template>
             <template #body>
-                <UNavigationMenu :items="items" />
+                <UNavigationMenu
+                    :items="items"
+                    orientation="vertical"
+                    class="-mx-2.5"
+                    :ui="{
+                        link: 'py-3.5 gap-3 text-lg',
+                        linkLeadingIcon: 'size-6',
+                    }"
+                />
             </template>
         </UHeader>
         <UMain>

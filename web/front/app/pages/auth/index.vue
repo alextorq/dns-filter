@@ -285,94 +285,138 @@ const blockedSamples = [
             </aside>
 
             <main class="flex justify-center">
-                <div
-                    class="form-card border-default bg-elevated/60 relative w-full max-w-md rounded-xl border p-8 backdrop-blur sm:p-10"
-                >
-                    <span class="form-corner tl" aria-hidden="true"></span>
-                    <span class="form-corner tr" aria-hidden="true"></span>
-                    <span class="form-corner bl" aria-hidden="true"></span>
-                    <span class="form-corner br" aria-hidden="true"></span>
+                <div class="flex w-full max-w-md flex-col gap-5">
+                    <div
+                        class="form-card border-default bg-elevated/60 relative rounded-xl border p-6 backdrop-blur sm:p-10"
+                    >
+                        <span class="form-corner tl" aria-hidden="true"></span>
+                        <span class="form-corner tr" aria-hidden="true"></span>
+                        <span class="form-corner bl" aria-hidden="true"></span>
+                        <span class="form-corner br" aria-hidden="true"></span>
 
-                    <div class="mb-7">
-                        <span
-                            class="text-primary mb-4 inline-block font-mono text-[11px] tracking-[0.1em]"
+                        <div class="mb-6 sm:mb-7">
+                            <span
+                                class="text-primary mb-4 inline-block font-mono text-[11px] tracking-[0.1em]"
+                            >
+                                <span class="text-muted mx-1">[</span>
+                                access required
+                                <span class="text-muted mx-1">]</span>
+                            </span>
+                            <h1
+                                class="text-highlighted text-3xl leading-none font-medium tracking-tight sm:text-4xl"
+                            >
+                                Authenticate<span class="text-primary cursor-blink">_</span>
+                            </h1>
+                            <p class="text-muted mt-3 max-w-[34ch] text-sm leading-relaxed">
+                                Sign in to manage filtering rules, inspect query traffic, and tune
+                                the sinkhole.
+                            </p>
+                        </div>
+
+                        <UForm
+                            :schema="schema"
+                            :state="state"
+                            class="flex flex-col gap-4"
+                            @submit="onSubmit"
                         >
-                            <span class="text-muted mx-1">[</span>
-                            access required
-                            <span class="text-muted mx-1">]</span>
-                        </span>
-                        <h1
-                            class="text-highlighted text-4xl leading-none font-medium tracking-tight"
+                            <UFormField name="login">
+                                <template #label>
+                                    <span
+                                        class="text-muted font-mono text-[10.5px] font-medium tracking-[0.16em]"
+                                    >
+                                        <span class="text-primary mr-1.5">→</span> LOGIN
+                                    </span>
+                                </template>
+                                <UInput
+                                    v-model="state.login"
+                                    placeholder="admin"
+                                    size="xl"
+                                    autocomplete="username"
+                                    class="w-full"
+                                    :ui="{ base: 'font-mono' }"
+                                />
+                            </UFormField>
+
+                            <UFormField name="password">
+                                <template #label>
+                                    <span
+                                        class="text-muted font-mono text-[10.5px] font-medium tracking-[0.16em]"
+                                    >
+                                        <span class="text-primary mr-1.5">→</span> PASSWORD
+                                    </span>
+                                </template>
+                                <UInput
+                                    v-model="state.password"
+                                    type="password"
+                                    placeholder="••••••••"
+                                    size="xl"
+                                    autocomplete="current-password"
+                                    class="w-full"
+                                    :ui="{ base: 'font-mono' }"
+                                />
+                            </UFormField>
+
+                            <UButton
+                                type="submit"
+                                color="primary"
+                                size="xl"
+                                block
+                                :loading="isSubmitting"
+                                trailing-icon="i-lucide-arrow-right"
+                                class="mt-2 font-mono tracking-[0.18em]"
+                            >
+                                {{ isSubmitting ? "VERIFYING" : "AUTHENTICATE" }}
+                            </UButton>
+                        </UForm>
+
+                        <div
+                            class="border-default text-dimmed mt-5 flex items-center gap-2.5 border-t border-dashed pt-4 font-mono text-[10.5px] tracking-wide"
                         >
-                            Authenticate<span class="text-primary cursor-blink">_</span>
-                        </h1>
-                        <p class="text-muted mt-3 max-w-[34ch] text-sm leading-relaxed">
-                            Sign in to manage filtering rules, inspect query traffic, and tune the
-                            sinkhole.
-                        </p>
+                            <span class="text-primary">↳</span>
+                            <span>Session secured with encrypted cookies</span>
+                        </div>
                     </div>
 
-                    <UForm
-                        :schema="schema"
-                        :state="state"
-                        class="flex flex-col gap-4"
-                        @submit="onSubmit"
-                    >
-                        <UFormField name="login">
-                            <template #label>
-                                <span
-                                    class="text-muted font-mono text-[10.5px] font-medium tracking-[0.16em]"
-                                >
-                                    <span class="text-primary mr-1.5">→</span> LOGIN
-                                </span>
-                            </template>
-                            <UInput
-                                v-model="state.login"
-                                placeholder="admin"
-                                size="xl"
-                                autocomplete="username"
-                                class="w-full"
-                                :ui="{ base: 'font-mono' }"
-                            />
-                        </UFormField>
-
-                        <UFormField name="password">
-                            <template #label>
-                                <span
-                                    class="text-muted font-mono text-[10.5px] font-medium tracking-[0.16em]"
-                                >
-                                    <span class="text-primary mr-1.5">→</span> PASSWORD
-                                </span>
-                            </template>
-                            <UInput
-                                v-model="state.password"
-                                type="password"
-                                placeholder="••••••••"
-                                size="xl"
-                                autocomplete="current-password"
-                                class="w-full"
-                                :ui="{ base: 'font-mono' }"
-                            />
-                        </UFormField>
-
-                        <UButton
-                            type="submit"
-                            color="primary"
-                            size="xl"
-                            block
-                            :loading="isSubmitting"
-                            trailing-icon="i-lucide-arrow-right"
-                            class="mt-2 font-mono tracking-[0.18em]"
-                        >
-                            {{ isSubmitting ? "VERIFYING" : "AUTHENTICATE" }}
-                        </UButton>
-                    </UForm>
-
+                    <!-- compact trust strip — mobile only; desktop shows the full visual aside -->
                     <div
-                        class="border-default text-dimmed mt-5 flex items-center gap-2.5 border-t border-dashed pt-4 font-mono text-[10.5px] tracking-wide"
+                        class="border-default bg-elevated/40 grid grid-cols-3 divide-x divide-(--ui-border) rounded-xl border py-3 backdrop-blur lg:hidden"
                     >
-                        <span class="text-primary">↳</span>
-                        <span>Session secured with encrypted cookies</span>
+                        <div class="flex flex-col items-center gap-1 px-2 text-center">
+                            <span
+                                class="text-highlighted font-mono text-lg leading-none font-medium tracking-tight"
+                            >
+                                10M<span class="text-muted text-xs">+</span>
+                            </span>
+                            <span
+                                class="text-dimmed font-mono text-[9px] tracking-[0.06em] uppercase"
+                            >
+                                domains
+                            </span>
+                        </div>
+                        <div class="flex flex-col items-center gap-1 px-2 text-center">
+                            <span
+                                class="text-highlighted font-mono text-lg leading-none font-medium tracking-tight"
+                            >
+                                0.1<span class="text-muted text-xs">%</span>
+                            </span>
+                            <span
+                                class="text-dimmed font-mono text-[9px] tracking-[0.06em] uppercase"
+                            >
+                                false-pos
+                            </span>
+                        </div>
+                        <div class="flex flex-col items-center gap-1 px-2 text-center">
+                            <span
+                                class="text-highlighted font-mono text-lg leading-none font-medium tracking-tight"
+                            >
+                                :53<span class="text-muted text-xs">/udp</span>
+                            </span>
+                            <span
+                                class="text-dimmed font-mono text-[9px] tracking-[0.06em] uppercase"
+                            >
+                                listening
+                            </span>
+                        </div>
                     </div>
                 </div>
             </main>

@@ -123,7 +123,12 @@ const columns: TableColumn<DbSuggestBlock>[] = [
     {
         accessorKey: "id",
         header: "ID",
-        meta: { class: { td: "tabular-nums text-muted" } },
+        meta: {
+            class: {
+                th: "hidden lg:table-cell",
+                td: "hidden lg:table-cell tabular-nums text-muted",
+            },
+        },
     },
     {
         accessorKey: "domain",
@@ -140,11 +145,12 @@ const columns: TableColumn<DbSuggestBlock>[] = [
     {
         accessorKey: "score",
         header: "Score",
-        meta: { class: { td: "tabular-nums" } },
+        meta: { class: { th: "hidden sm:table-cell", td: "hidden sm:table-cell tabular-nums" } },
     },
     {
         accessorKey: "reasons",
         header: "Reason",
+        meta: { class: { th: "hidden lg:table-cell", td: "hidden lg:table-cell" } },
         cell: ({ row }) =>
             h(
                 "ul",
@@ -155,6 +161,7 @@ const columns: TableColumn<DbSuggestBlock>[] = [
     {
         id: "scan",
         header: "Scan",
+        meta: { class: { th: "hidden md:table-cell", td: "hidden md:table-cell" } },
         cell: ({ row }) => h(InspectTags, { domain: row.original.domain ?? "" }),
     },
     {

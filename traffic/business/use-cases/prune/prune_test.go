@@ -94,6 +94,23 @@ func TestPruneTask_RetentionChangeTakesEffectNextTick(t *testing.T) {
 	}
 }
 
+// Negative / regression for the startup race (#2): before HydrateAll has applied
+// the effective retention window, the atomic is unconfigured (the 0 sentinel). A
+// prune that fires in that window MUST NOT delete anything — pruning with a
+// guessed window that could be SMALLER than the operator's larger override would
+// hard-delete day-buckets they meant to keep.
+func TestPruneTask_SkipsWhenUnconfigured(t *testing.T) {
+	SetRetentionDays(0) // simulate the pre-hydrate sentinel
+	repo := &fakeRepo{}
+
+	if err := pruneTaskAt(repo, time.Now()); err != nil {
+		t.Fatalf("pruneTask: %v", err)
+	}
+	if repo.calls != 0 {
+		t.Fatalf("expected no DeleteOlderThan call while retention unconfigured, got %d", repo.calls)
+	}
+}
+
 // Negative: a repo error propagates so the periodic loop can log it.
 func TestPruneTask_PropagatesRepoError(t *testing.T) {
 	SetRetentionDays(30)

@@ -19,11 +19,24 @@ import (
 
 // retentionDays is the in-memory source of truth the prune loop reads. It is
 // written by SetRetentionDays from the settings Apply hook (and at boot by
-// HydrateAll), never read from the DB on the loop's path. Seeded to the
-// compiled default so a prune before HydrateAll still uses a sane window.
+// HydrateAll), never read from the DB on the loop's path.
+//
+// Seeded to retentionUnset (0): until HydrateAll has applied the effective
+// window, the prune MUST NOT run. A seeded guess (the old code used 30) is only
+// "sane" when it is >= the operator's real window — a larger DB override (e.g.
+// 365) would have day-buckets between 30 and 365 days old hard-deleted by a
+// prune that fired before hydrate. main launches the loop only after HydrateAll,
+// and HydrateAll always applies a value (DB override or compiled default) via
+// SetRetentionDays, so the loop is armed before its first real prune; this
+// sentinel is the belt-and-suspenders guard against a future reordering.
 var retentionDays atomic.Int64
 
-func init() { retentionDays.Store(30) }
+// retentionUnset marks the pre-hydrate state. It is outside the validated range
+// (1..3650 enforced by the settings module), so a real configured value is
+// always > 0.
+const retentionUnset = 0
+
+func init() { retentionDays.Store(retentionUnset) }
 
 // SetRetentionDays updates the retention window read by the prune loop. The
 // settings descriptor's Apply hook calls this; the value has already been
@@ -50,7 +63,13 @@ func Run(repo Repo) {
 // compute the cutoff relative to now, and ask the repo to delete older rows.
 // now is injected so tests need no real-time sleeps.
 func pruneTaskAt(repo Repo, now time.Time) error {
-	cutoff := cutoffForIn(now, GetRetentionDays(), time.Local)
+	days := GetRetentionDays()
+	if days <= retentionUnset {
+		// Not configured yet (a prune fired before HydrateAll). Skip rather than
+		// delete with an unconfigured/guessed window — see retentionDays.
+		return nil
+	}
+	cutoff := cutoffForIn(now, days, time.Local)
 	return repo.DeleteOlderThan(cutoff)
 }
 

@@ -69,11 +69,17 @@ const columns: TableColumn<DbSource>[] = [
     {
         accessorKey: "id",
         header: "ID",
-        meta: { class: { td: "tabular-nums text-muted" } },
+        meta: {
+            class: {
+                th: "hidden lg:table-cell",
+                td: "hidden lg:table-cell tabular-nums text-muted",
+            },
+        },
     },
     {
         accessorKey: "created_at",
         header: "Created",
+        meta: { class: { th: "hidden md:table-cell", td: "hidden md:table-cell" } },
         cell: ({ row }) => formatDate(row.getValue("created_at")),
     },
     {
@@ -83,6 +89,7 @@ const columns: TableColumn<DbSource>[] = [
     {
         accessorKey: "url",
         header: "URL",
+        meta: { class: { th: "hidden sm:table-cell", td: "hidden sm:table-cell" } },
         cell: ({ row }) => {
             const url = row.original.name ?? "";
             return h(

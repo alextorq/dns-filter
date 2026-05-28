@@ -93,7 +93,7 @@ const submitWithLoading = createLoadingRequest(async () => {
 
 <template>
     <UDrawer v-model:open="isActive" direction="right" @close="reset">
-        <UButton size="xl" label="Add domain" icon="i-lucide-plus" @click="openHandler" />
+        <UButton label="Add domain" icon="i-lucide-plus" @click="openHandler" />
 
         <template #header>
             <h1 class="text-lg font-semibold">Add Domain</h1>

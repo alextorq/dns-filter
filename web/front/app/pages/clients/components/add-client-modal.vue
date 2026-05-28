@@ -94,7 +94,7 @@ const submitWithLoading = createLoadingRequest(async () => {
 
 <template>
     <UDrawer v-model:open="isActive" direction="right" @close="reset">
-        <UButton size="xl" label="Add Client" icon="i-lucide-plus" @click="openHandler" />
+        <UButton label="Add Client" icon="i-lucide-plus" @click="openHandler" />
 
         <template #header>
             <h1 class="text-lg font-semibold">Add Client</h1>

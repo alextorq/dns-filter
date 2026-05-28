@@ -935,7 +935,7 @@ const formattedTime = (() => {
     align-items: center;
     justify-content: flex-start;
     gap: 0.625rem;
-    padding: 0.85rem 1.25rem 0.85rem 1.1rem;
+    padding: 0.4rem 1.25rem 0.4rem 1.1rem;
     width: 13rem;
     background: var(--bg-elev);
     border: 1px solid var(--line);

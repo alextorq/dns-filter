@@ -96,11 +96,17 @@ const columns: TableColumn<DbBlockList>[] = [
     {
         accessorKey: "id",
         header: "ID",
-        meta: { class: { td: "tabular-nums text-muted" } },
+        meta: {
+            class: {
+                th: "hidden lg:table-cell",
+                td: "hidden lg:table-cell tabular-nums text-muted",
+            },
+        },
     },
     {
         accessorKey: "created_at",
         header: "Created",
+        meta: { class: { th: "hidden md:table-cell", td: "hidden md:table-cell" } },
         cell: ({ row }) => formatDate(row.getValue("created_at")),
     },
     {
@@ -114,10 +120,12 @@ const columns: TableColumn<DbBlockList>[] = [
     {
         accessorKey: "source",
         header: "Source",
+        meta: { class: { th: "hidden sm:table-cell", td: "hidden sm:table-cell" } },
     },
     {
         accessorKey: "reasons",
         header: "Reason",
+        meta: { class: { th: "hidden lg:table-cell", td: "hidden lg:table-cell" } },
         cell: ({ row }) => {
             const reasons = row.original.reasons ?? [];
             if (reasons.length === 0) {

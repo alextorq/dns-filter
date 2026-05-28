@@ -113,11 +113,17 @@ const columns: TableColumn<DbClient>[] = [
     {
         accessorKey: "id",
         header: "ID",
-        meta: { class: { td: "tabular-nums text-muted" } },
+        meta: {
+            class: {
+                th: "hidden xl:table-cell",
+                td: "hidden xl:table-cell tabular-nums text-muted",
+            },
+        },
     },
     {
         accessorKey: "name",
         header: "Name",
+        meta: { class: { th: "hidden sm:table-cell", td: "hidden sm:table-cell" } },
         cell: ({ row }) => row.original.name || h("span", { class: "text-muted" }, "—"),
     },
     {
@@ -133,6 +139,7 @@ const columns: TableColumn<DbClient>[] = [
     {
         accessorKey: "mac",
         header: "MAC",
+        meta: { class: { th: "hidden lg:table-cell", td: "hidden lg:table-cell" } },
         cell: ({ row }) => {
             const mac = row.original.mac ?? "";
             return mac
@@ -143,11 +150,13 @@ const columns: TableColumn<DbClient>[] = [
     {
         accessorKey: "vendor",
         header: "Vendor",
+        meta: { class: { th: "hidden md:table-cell", td: "hidden md:table-cell" } },
         cell: ({ row }) => row.original.vendor || h("span", { class: "text-muted" }, "—"),
     },
     {
         accessorKey: "updated_at",
         header: "Updated",
+        meta: { class: { th: "hidden lg:table-cell", td: "hidden lg:table-cell" } },
         cell: ({ row }) => formatDate(row.getValue("updated_at")),
     },
     {

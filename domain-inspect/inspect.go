@@ -22,6 +22,12 @@ const (
 	StatusError   CheckStatus = "error"
 	StatusSkipped CheckStatus = "skipped"
 	StatusTimeout CheckStatus = "timeout"
+	// StatusRateLimited marks a check that hit the provider's request quota
+	// (HTTP 429). It is distinct from StatusError so a batch caller (the
+	// suggest-inspect worker) can react specifically — pause the run and back
+	// off — instead of treating it as a per-domain failure. Like every non-OK
+	// status it contributes nothing to summarize()'s score.
+	StatusRateLimited CheckStatus = "rate_limited"
 )
 
 type Verdict string

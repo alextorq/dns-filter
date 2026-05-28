@@ -1,6 +1,7 @@
 package suggest_to_block
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -605,5 +606,140 @@ func TestCollect_BlockRepoError_PropagatesAndSkipsRest(t *testing.T) {
 
 	if err := h.module.Collect(); err == nil {
 		t.Fatal("expected Collect to surface blockRepo error, got nil")
+	}
+}
+
+// fakeInspectQueue records UpsertCandidate calls so tests can assert exactly
+// which weak-band domains Collect routed to the reputation queue.
+type fakeInspectQueue struct {
+	err   error // when set, UpsertCandidate fails — to exercise the non-fatal path
+	calls []struct {
+		domain      string
+		score       int
+		reasonsJSON string
+	}
+}
+
+func (f *fakeInspectQueue) UpsertCandidate(domain string, lexicalScore int, reasonsJSON string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.calls = append(f.calls, struct {
+		domain      string
+		score       int
+		reasonsJSON string
+	}{domain, lexicalScore, reasonsJSON})
+	return nil
+}
+
+// TestCollect_InspectQueueDisabled_NoQueueNoChange is the golden regression: with
+// the inspect queue unwired (feature off, the default), a weak-band domain
+// (score in [10,30)) is silently dropped exactly as before — it reaches neither
+// the suggest list nor the blocklist, and Collect behaviour is unchanged.
+func TestCollect_InspectQueueDisabled_NoQueueNoChange(t *testing.T) {
+	h := newHarness(t)
+
+	const weak = "ads.shop.xyz" // score 10 — inspect band, below suggest threshold
+	h.seedAllowed(weak)
+
+	// Sanity: this domain is in the weak band, not the suggest band.
+	scored := collect.ScoreCandidates(nil, []string{weak})
+	if len(scored) != 1 || scored[0].Score >= collect.ThresholdToSuggestBlocking {
+		t.Fatalf("setup invariant: %s must be weak-band, got %+v", weak, scored)
+	}
+
+	if err := h.module.Collect(); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	var suggestCount, blockCount int64
+	h.conn.Model(&suggest_to_block_db.SuggestBlock{}).Where("domain = ?", weak).Count(&suggestCount)
+	h.conn.Model(&blocked_domain_db.BlockList{}).Where("url = ?", utils.CanonicalDomain(weak)).Count(&blockCount)
+	if suggestCount != 0 || blockCount != 0 {
+		t.Errorf("feature off: weak domain must be dropped, got suggest=%d block=%d", suggestCount, blockCount)
+	}
+}
+
+// TestCollect_InspectQueueEnabled_RoutesByBand pins the bucketing: with the
+// queue wired, a weak-band domain is queued (and kept out of the suggest list),
+// a strong domain goes to the suggest list (and is NOT queued), and a
+// signalless domain goes nowhere.
+func TestCollect_InspectQueueEnabled_RoutesByBand(t *testing.T) {
+	h := newHarness(t)
+	q := &fakeInspectQueue{}
+	h.module.SetInspectQueue(q)
+
+	const weak = "ads.shop.xyz"                  // ~10 → queue
+	const strong = "x8z7c4kqjfpw9.example.click" // >=30 → suggest list
+	const noise = "plain.example"                // 0 → nowhere
+	h.seedAllowed(weak)
+	h.seedAllowed(strong)
+	h.seedAllowed(noise)
+
+	if err := h.module.Collect(); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	// Weak domain queued exactly once, with its lexical score and a non-empty
+	// reasons snapshot; never the strong or noise domain.
+	if len(q.calls) != 1 {
+		t.Fatalf("expected exactly 1 queued candidate, got %d (%+v)", len(q.calls), q.calls)
+	}
+	if q.calls[0].domain != weak {
+		t.Errorf("queued domain = %q, want %q", q.calls[0].domain, weak)
+	}
+	if q.calls[0].score < collect.MinInspectCandidateScore || q.calls[0].score >= collect.ThresholdToSuggestBlocking {
+		t.Errorf("queued score %d not in inspect band", q.calls[0].score)
+	}
+	// Exact wire form: canonical lowercase {"code":...} with "match" omitted when
+	// empty — must match the shape the worker (M4) unmarshals and the db layer
+	// stores. "ads" bad-keyword is scored before ".xyz" risky-TLD, so the order
+	// is deterministic.
+	const wantReasons = `[{"code":"bad_keywords"},{"code":"risky_tld"}]`
+	if q.calls[0].reasonsJSON != wantReasons {
+		t.Errorf("queued reasons snapshot = %q, want %q", q.calls[0].reasonsJSON, wantReasons)
+	}
+
+	// Weak domain must NOT also be in the suggest list.
+	var weakInSuggest int64
+	h.conn.Model(&suggest_to_block_db.SuggestBlock{}).Where("domain = ?", weak).Count(&weakInSuggest)
+	if weakInSuggest != 0 {
+		t.Errorf("weak domain leaked into suggest list, got %d rows", weakInSuggest)
+	}
+
+	// Strong domain in suggest list, and never queued.
+	var strongInSuggest int64
+	h.conn.Model(&suggest_to_block_db.SuggestBlock{}).Where("domain = ?", strong).Count(&strongInSuggest)
+	if strongInSuggest != 1 {
+		t.Errorf("strong domain must be in suggest list, got %d rows", strongInSuggest)
+	}
+	for _, c := range q.calls {
+		if c.domain == strong || c.domain == noise {
+			t.Errorf("%q must not be queued for inspection", c.domain)
+		}
+	}
+}
+
+// TestCollect_InspectQueueError_DoesNotBreakBatch is the negative case for the
+// queue path: a failing UpsertCandidate is logged but must not abort Collect —
+// the strong-band domain still reaches the suggest list and Collect returns nil.
+func TestCollect_InspectQueueError_DoesNotBreakBatch(t *testing.T) {
+	h := newHarness(t)
+	q := &fakeInspectQueue{err: errors.New("queue down")}
+	h.module.SetInspectQueue(q)
+
+	const weak = "ads.shop.xyz"                  // would queue, but the queue errors
+	const strong = "x8z7c4kqjfpw9.example.click" // must still reach the suggest list
+	h.seedAllowed(weak)
+	h.seedAllowed(strong)
+
+	if err := h.module.Collect(); err != nil {
+		t.Fatalf("a queue error must not surface from Collect, got: %v", err)
+	}
+
+	var strongInSuggest int64
+	h.conn.Model(&suggest_to_block_db.SuggestBlock{}).Where("domain = ?", strong).Count(&strongInSuggest)
+	if strongInSuggest != 1 {
+		t.Errorf("strong domain must still be suggested despite queue error, got %d rows", strongInSuggest)
 	}
 }

@@ -38,6 +38,8 @@ import (
 	sourceWeb "github.com/alextorq/dns-filter/source/web"
 	suggest_to_block "github.com/alextorq/dns-filter/suggest-to-block"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
+	suggest_inspect "github.com/alextorq/dns-filter/suggest-to-block/inspect"
+	inspect_db "github.com/alextorq/dns-filter/suggest-to-block/inspect/db"
 	suggestWeb "github.com/alextorq/dns-filter/suggest-to-block/web"
 	traffic_prune_uc "github.com/alextorq/dns-filter/traffic/business/use-cases/prune"
 	traffic_record_uc "github.com/alextorq/dns-filter/traffic/business/use-cases/record"
@@ -164,6 +166,36 @@ func main() {
 	trafficAllowAdapter := traffic_db.NewAllowFilterAdapter(trafficRepo)
 	suggestModule := suggest_to_block.NewModule(blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger)
 	domain_inspect_checks.SetAllowLookup(trafficRepo.IsAllowed)
+
+	// Reputation-enrichment worker (opt-in). It starts ONLY when explicitly
+	// enabled AND a reputation key is configured: without a key it adds nothing
+	// (RDAP alone never crosses the verdict threshold), and it sends observed
+	// domains to third parties, so it must be a deliberate choice. When wired,
+	// Collect feeds the weak-lexical candidate band into the queue the worker
+	// drains; otherwise SetInspectQueue is never called and Collect behaves
+	// exactly as before. SetInspectQueue must run before suggestModule.Start.
+	inspectRepo := inspect_db.NewRepo(conn)
+	if conf.SuggestInspectEnabled && (conf.VirusTotalKey != "" || conf.SafeBrowsingKey != "") {
+		suggestModule.SetInspectQueue(inspectRepo)
+		inspectAdapter := suggest_inspect.NewAdapter(inspectRepo, conf.SuggestInspectCacheTTL)
+		inspectWorker := suggest_inspect.NewWorker(
+			inspectRepo, inspectAdapter, blockRepo, suggestRepo, sourceRepo, filterModule, chanLogger,
+			suggest_inspect.WorkerConfig{
+				Budget:    conf.SuggestInspectBudget,
+				Interval:  conf.SuggestInspectInterval,
+				CacheTTL:  conf.SuggestInspectCacheTTL,
+				Pause:     conf.SuggestInspectPause,
+				Backoff:   conf.SuggestInspectBackoff,
+				MaxErrors: conf.SuggestInspectMaxErrors,
+			},
+		)
+		go inspectWorker.Start(context.Background())
+		// Keep candidates for several TTLs: an active domain is re-inspected each
+		// TTL (refreshing its timestamp) so it is never pruned, while a domain
+		// that left the traffic set is eventually forgotten.
+		go suggest_inspect.StartPrune(inspectRepo, 4*conf.SuggestInspectCacheTTL)
+		chanLogger.Info("suggest-inspect worker enabled")
+	}
 
 	// Daily retention prune over the unified domain_traffic table — now the sole
 	// retention task (the two legacy block/allow clear-events tasks were removed

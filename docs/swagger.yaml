@@ -172,12 +172,14 @@ definitions:
     - error
     - skipped
     - timeout
+    - rate_limited
     type: string
     x-enum-varnames:
     - StatusOK
     - StatusError
     - StatusSkipped
     - StatusTimeout
+    - StatusRateLimited
   domain_inspect.InspectResult:
     properties:
       checks:

@@ -158,3 +158,25 @@ func TestRDAPAge_5xx_IsError(t *testing.T) {
 		t.Errorf("expected error status on 5xx, got %s", res.Status)
 	}
 }
+
+// TestRDAPVerdictForAge pins the threshold boundaries directly (no HTTP) so a
+// regression in the 30/365-day cutoffs is caught even when the cache path
+// reuses this mapping. <30 suspicious, >365 clean, the band between unknown.
+func TestRDAPVerdictForAge(t *testing.T) {
+	cases := []struct {
+		age  int
+		want domain_inspect.Verdict
+	}{
+		{0, domain_inspect.VerdictSuspicious},
+		{29, domain_inspect.VerdictSuspicious},
+		{30, domain_inspect.VerdictUnknown}, // boundary: 30 is no longer "young"
+		{200, domain_inspect.VerdictUnknown},
+		{365, domain_inspect.VerdictUnknown}, // boundary: exactly a year is not yet "clean"
+		{366, domain_inspect.VerdictClean},
+	}
+	for _, c := range cases {
+		if got := RDAPVerdictForAge(c.age); got != c.want {
+			t.Errorf("RDAPVerdictForAge(%d) = %s, want %s", c.age, got, c.want)
+		}
+	}
+}

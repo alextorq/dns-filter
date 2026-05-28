@@ -24,3 +24,10 @@ func (r *Repo) GetByFilter(params GetAllParams) (*GetAllResult, error) {
 func (r *Repo) UpdateActive(id uint, active bool) error {
 	return r.db.Model(&SuggestBlock{}).Where("id = ?", id).Update("active", active).Error
 }
+
+// UpsertWithInspect promotes a domain from the inspect queue into the suggest
+// list, creating it or refreshing only its inspect_* reasons. See
+// upsertWithInspectOn for the full contract.
+func (r *Repo) UpsertWithInspect(domain string, lexicalScore int, reasons []SuggestBlockReason) error {
+	return upsertWithInspectOn(r.db, domain, lexicalScore, reasons)
+}

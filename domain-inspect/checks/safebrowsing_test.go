@@ -126,6 +126,21 @@ func TestSafeBrowsing_Forbidden_IsError(t *testing.T) {
 	}
 }
 
+// 429 surfaces as its own rate_limited status (distinct from a generic error)
+// so a batch caller can pause and back off instead of failing the domain.
+func TestSafeBrowsing_RateLimited_IsRateLimited(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer ts.Close()
+	withSafeBrowsingEndpointAndKey(t, ts, "k")
+
+	res := SafeBrowsing(context.Background(), "x.example")
+	if res.Status != domain_inspect.StatusRateLimited {
+		t.Errorf("429 must surface as rate_limited, got status=%s", res.Status)
+	}
+}
+
 // Negative: malformed upstream JSON should not panic — must return error.
 func TestSafeBrowsing_GarbageJSON_IsError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

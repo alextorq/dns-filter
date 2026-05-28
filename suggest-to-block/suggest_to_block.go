@@ -5,6 +5,7 @@ package suggest_to_block
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -44,19 +45,35 @@ type SuggestRepo interface {
 	UpdateActive(id uint, active bool) error
 }
 
+// InspectQueue is the optional sink for weak lexical candidates — those scoring
+// in [collect.MinInspectCandidateScore, collect.ThresholdToSuggestBlocking).
+// When wired (the opt-in reputation feature is enabled), Collect upserts them
+// here for the inspect worker to enrich. When nil, Collect drops them exactly
+// as the pre-refactor CollectSuggest filter did, so the feature stays inert.
+// *inspect_db.Repo satisfies it.
+type InspectQueue interface {
+	UpsertCandidate(domain string, lexicalScore int, reasonsJSON string) error
+}
+
 type Logger interface {
 	Info(args ...any)
 	Error(err error)
 }
 
 type Module struct {
-	blockRepo  BlockRepo
-	allowRepo  AllowRepo
-	sourceGate SourceGate
-	filter     Filter
-	repo       SuggestRepo
-	log        Logger
+	blockRepo    BlockRepo
+	allowRepo    AllowRepo
+	sourceGate   SourceGate
+	filter       Filter
+	repo         SuggestRepo
+	log          Logger
+	inspectQueue InspectQueue // optional; nil keeps the feature inert
 }
+
+// SetInspectQueue wires the optional reputation-enrichment queue. Call once at
+// composition time, before Start. Leaving it unset disables queue population —
+// Collect then behaves exactly as before the feature existed.
+func (m *Module) SetInspectQueue(q InspectQueue) { m.inspectQueue = q }
 
 func NewModule(
 	blockRepo BlockRepo,
@@ -104,35 +121,55 @@ func (m *Module) Collect() error {
 		autoBlockEnabled = false
 	}
 
-	forBlock := collect.CollectSuggest(blocked, allowed)
-	suggests := make([]suggest_to_block_db.SuggestBlock, 0, len(forBlock))
-	var autoBlocked, autoAlreadyBlocked, autoErrors int
+	// Score every candidate once, then bucket by score. The heavy blocked-index
+	// scoring happens a single time inside ScoreCandidates; the thresholds here
+	// are pure policy.
+	scored := collect.ScoreCandidates(blocked, allowed)
+	suggests := make([]suggest_to_block_db.SuggestBlock, 0, len(scored))
+	var autoBlocked, autoAlreadyBlocked, autoErrors, queued int
 
-	for _, domain := range forBlock {
-		if autoBlockEnabled && collect.ShouldAutoBlock(domain) {
-			switch m.autoBlock(domain) {
-			case autoBlockInserted:
-				autoBlocked++
-			case autoBlockAlreadyExists:
-				autoAlreadyBlocked++
-			case autoBlockError:
-				autoErrors++
+	for _, domain := range scored {
+		// Strong lexical signal: surface in the UI (and maybe auto-block),
+		// reproducing the pre-refactor CollectSuggest(>=Threshold) behaviour.
+		if domain.Score >= collect.ThresholdToSuggestBlocking {
+			if autoBlockEnabled && collect.ShouldAutoBlock(domain) {
+				switch m.autoBlock(domain) {
+				case autoBlockInserted:
+					autoBlocked++
+				case autoBlockAlreadyExists:
+					autoAlreadyBlocked++
+				case autoBlockError:
+					autoErrors++
+				}
+				continue
 			}
+
+			reasons := make([]suggest_to_block_db.SuggestBlockReason, 0, len(domain.Reasons))
+			for _, r := range domain.Reasons {
+				reasons = append(reasons, suggest_to_block_db.SuggestBlockReason{
+					Code:       r.Code,
+					MatchValue: r.Match,
+				})
+			}
+			suggests = append(suggests, suggest_to_block_db.SuggestBlock{
+				Domain:  domain.Domain,
+				Score:   domain.Score,
+				Reasons: reasons,
+			})
 			continue
 		}
 
-		reasons := make([]suggest_to_block_db.SuggestBlockReason, 0, len(domain.Reasons))
-		for _, r := range domain.Reasons {
-			reasons = append(reasons, suggest_to_block_db.SuggestBlockReason{
-				Code:       r.Code,
-				MatchValue: r.Match,
-			})
+		// Weak lexical signal: too low for the UI on its own, but worth a
+		// reputation check IF the feature is wired. When the queue is unset the
+		// candidate is dropped — identical to the old CollectSuggest filter, so
+		// a disabled feature leaves system behaviour unchanged.
+		if m.inspectQueue != nil && domain.Score >= collect.MinInspectCandidateScore {
+			if err := m.inspectQueue.UpsertCandidate(domain.Domain, domain.Score, reasonsJSON(domain.Reasons)); err != nil {
+				m.log.Error(err)
+			} else {
+				queued++
+			}
 		}
-		suggests = append(suggests, suggest_to_block_db.SuggestBlock{
-			Domain:  domain.Domain,
-			Score:   domain.Score,
-			Reasons: reasons,
-		})
 	}
 
 	if err := m.repo.CreateBatch(suggests); err != nil {
@@ -156,8 +193,26 @@ func (m *Module) Collect() error {
 		"already-blocked:", autoAlreadyBlocked,
 		"auto-errors:", autoErrors,
 		"to-suggest:", len(suggests),
+		"queued-for-inspect:", queued,
 	)
 	return nil
+}
+
+// reasonsJSON serialises a candidate's lexical reasons for the inspect queue's
+// snapshot column, so the worker can later merge them with inspect_* reasons
+// when promoting the domain. A marshal failure (not expected for these plain
+// structs) degrades to an empty array rather than failing the whole batch.
+func reasonsJSON(reasons []collect.Reason) string {
+	// Normalise the empty case to "[]" rather than json.Marshal's "null" for a
+	// nil slice, so the snapshot column always holds a valid JSON array.
+	if len(reasons) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(reasons)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
 }
 
 // autoBlockOutcome distinguishes the three terminal states of autoBlock so the

@@ -1,6 +1,7 @@
 package collect
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -516,5 +517,102 @@ func TestSimilarityAtLeast(t *testing.T) {
 					tc.a, tc.b, tc.threshold, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestScoreCandidates_ReturnsWeakBandThatCollectSuggestDrops pins the split
+// introduced for the inspect queue: ScoreCandidates returns weak candidates
+// (score in [MinInspectCandidateScore, ThresholdToSuggestBlocking)) that
+// CollectSuggest deliberately filters out, while the heavy scoring runs once.
+func TestScoreCandidates_ReturnsWeakBandThatCollectSuggestDrops(t *testing.T) {
+	// "ads" exact bad-keyword token (+5) + ".xyz" risky TLD (+5) = 10: a weak
+	// candidate, below the suggest threshold but inside the inspect band.
+	const weak = "ads.shop.xyz"
+
+	scored := ScoreCandidates(nil, []string{weak})
+	if len(scored) != 1 {
+		t.Fatalf("expected weak domain to be scored, got %+v", scored)
+	}
+	if s := scored[0].Score; s < MinInspectCandidateScore || s >= ThresholdToSuggestBlocking {
+		t.Fatalf("weak score %d not in inspect band [%d,%d)", s, MinInspectCandidateScore, ThresholdToSuggestBlocking)
+	}
+
+	// The same input through CollectSuggest must drop it — the UI sees only the
+	// strong band.
+	if got := CollectSuggest(nil, []string{weak}); len(got) != 0 {
+		t.Errorf("CollectSuggest must drop the weak band, got %+v", got)
+	}
+}
+
+// TestScoreCandidates_DropsZeroScore confirms domains that trigger no signal are
+// absent entirely (not returned with score 0), so the inspect queue is not
+// flooded with clean traffic.
+func TestScoreCandidates_DropsZeroScore(t *testing.T) {
+	scored := ScoreCandidates(nil, []string{"plain.example", "ads.shop.xyz"})
+	for _, s := range scored {
+		if s.Score == 0 {
+			t.Errorf("zero-score domain leaked into ScoreCandidates: %+v", s)
+		}
+		if s.Domain == "plain.example" {
+			t.Errorf("signalless domain plain.example must not be returned: %+v", s)
+		}
+	}
+}
+
+// TestLexicalCodes_NoInspectPrefix pins the load-bearing invariant that the
+// reputation worker's upsert relies on: no lexical signal code may start with
+// "inspect_", because UpsertWithInspect refreshes worker reasons by matching
+// that prefix. A lexical code carrying the prefix would be silently wiped on
+// every worker pass.
+//
+// We enumerate from the catalog (the canonical source of every code the system
+// emits) rather than a hardcoded list — adding a new lexical code requires
+// extending the catalog for its UI label anyway, so this test will see it
+// automatically. The known inspect_* codes are listed below; anything else with
+// the prefix is a regression.
+func TestLexicalCodes_NoInspectPrefix(t *testing.T) {
+	knownInspect := map[string]struct{}{
+		CodeInspectVTMalicious:   {},
+		CodeInspectSafeBrowsing:  {},
+		CodeInspectRDAPYoung:     {},
+		CodeInspectCleanEndorsed: {},
+	}
+	for _, d := range Catalog() {
+		if _, isInspect := knownInspect[d.Code]; isInspect {
+			continue
+		}
+		if strings.HasPrefix(d.Code, "inspect_") {
+			t.Errorf("non-inspect catalog code %q must not use the reserved inspect_ prefix", d.Code)
+		}
+	}
+}
+
+// TestSignalCatalog_InspectCodes pins catalog completeness for the worker codes:
+// all four inspect_* codes are present (so the UI has a label for every reason
+// the worker can emit) and no stray inspect_*-prefixed code leaks in.
+func TestSignalCatalog_InspectCodes(t *testing.T) {
+	want := map[string]bool{
+		CodeInspectVTMalicious:   false,
+		CodeInspectSafeBrowsing:  false,
+		CodeInspectRDAPYoung:     false,
+		CodeInspectCleanEndorsed: false,
+	}
+	for _, d := range Catalog() {
+		if strings.HasPrefix(d.Code, "inspect_") {
+			seen, known := want[d.Code]
+			if !known {
+				t.Errorf("unexpected inspect_ code in catalog: %q", d.Code)
+				continue
+			}
+			if seen {
+				t.Errorf("duplicate catalog entry for %q", d.Code)
+			}
+			want[d.Code] = true
+		}
+	}
+	for code, seen := range want {
+		if !seen {
+			t.Errorf("inspect code %q missing from catalog (UI would show no label)", code)
+		}
 	}
 }

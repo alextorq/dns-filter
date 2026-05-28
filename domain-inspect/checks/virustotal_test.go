@@ -115,7 +115,7 @@ func TestVirusTotal_NotFound_IsUnknown(t *testing.T) {
 	}
 }
 
-func TestVirusTotal_RateLimited_IsError(t *testing.T) {
+func TestVirusTotal_RateLimited_IsRateLimited(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
@@ -123,8 +123,8 @@ func TestVirusTotal_RateLimited_IsError(t *testing.T) {
 	withVTEndpointAndKey(t, ts, "k")
 
 	res := VirusTotal(context.Background(), "x.example")
-	if res.Status != domain_inspect.StatusError {
-		t.Errorf("429 must surface as error, got status=%s", res.Status)
+	if res.Status != domain_inspect.StatusRateLimited {
+		t.Errorf("429 must surface as rate_limited (distinct from error), got status=%s", res.Status)
 	}
 	if !strings.Contains(res.Error, "429") {
 		t.Errorf("error should mention http code, got %q", res.Error)

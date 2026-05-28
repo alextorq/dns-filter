@@ -21,6 +21,7 @@ export enum DomainInspectCheckStatus {
   StatusError = "error",
   StatusSkipped = "skipped",
   StatusTimeout = "timeout",
+  StatusRateLimited = "rate_limited",
 }
 
 export enum DbBlockListSource {

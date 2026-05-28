@@ -561,18 +561,28 @@ func TestScoreCandidates_DropsZeroScore(t *testing.T) {
 
 // TestLexicalCodes_NoInspectPrefix pins the load-bearing invariant that the
 // reputation worker's upsert relies on: no lexical signal code may start with
-// "inspect_", because UpsertWithInspect refreshes worker reasons by deleting
-// exactly the inspect_-prefixed ones. A lexical code with that prefix would be
-// silently wiped on every worker pass.
+// "inspect_", because UpsertWithInspect refreshes worker reasons by matching
+// that prefix. A lexical code carrying the prefix would be silently wiped on
+// every worker pass.
+//
+// We enumerate from the catalog (the canonical source of every code the system
+// emits) rather than a hardcoded list — adding a new lexical code requires
+// extending the catalog for its UI label anyway, so this test will see it
+// automatically. The known inspect_* codes are listed below; anything else with
+// the prefix is a regression.
 func TestLexicalCodes_NoInspectPrefix(t *testing.T) {
-	lexical := []string{
-		CodeSuspiciousEntropy, CodeBadKeywords, CodeSubdomainOfBlocked,
-		CodeSimilarToBlocked, CodeRiskyTLD, CodeNumericRun, CodeHexUUID,
-		CodeHomograph, CodeBrandImpersonation,
+	knownInspect := map[string]struct{}{
+		CodeInspectVTMalicious:   {},
+		CodeInspectSafeBrowsing:  {},
+		CodeInspectRDAPYoung:     {},
+		CodeInspectCleanEndorsed: {},
 	}
-	for _, code := range lexical {
-		if strings.HasPrefix(code, "inspect_") {
-			t.Errorf("lexical code %q must not use the reserved inspect_ prefix", code)
+	for _, d := range Catalog() {
+		if _, isInspect := knownInspect[d.Code]; isInspect {
+			continue
+		}
+		if strings.HasPrefix(d.Code, "inspect_") {
+			t.Errorf("non-inspect catalog code %q must not use the reserved inspect_ prefix", d.Code)
 		}
 	}
 }

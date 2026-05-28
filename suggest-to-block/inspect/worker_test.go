@@ -20,14 +20,16 @@ func (silentLogger) Info(...any) {}
 func (silentLogger) Error(error) {}
 
 type fakeCandidateRepo struct {
-	pick    []inspect_db.InspectCandidate
-	pickErr error
-	saved   map[string]string
-	retried map[string]int
-	dropped map[string]bool
+	pick      []inspect_db.InspectCandidate
+	pickErr   error
+	pickCalls int // observed by the disabled-gate test
+	saved     map[string]string
+	retried   map[string]int
+	dropped   map[string]bool
 }
 
 func (f *fakeCandidateRepo) PickForInspection(time.Duration, int) ([]inspect_db.InspectCandidate, error) {
+	f.pickCalls++
 	return f.pick, f.pickErr
 }
 func (f *fakeCandidateRepo) SaveResult(domain, verdict string) error {
@@ -435,5 +437,50 @@ func TestWorker_CtxCancelled_StopsEarly(t *testing.T) {
 
 	if len(f.insp.calls) != 0 {
 		t.Errorf("cancelled ctx must stop before inspection, inspected %v", f.insp.calls)
+	}
+}
+
+// Гейт фичи в положении OFF делает RunOnce полным no-op: воркер не дёргает БД
+// (Pick/QueueDepth), не зовёт инспектор, не пишет в suggest_blocks. Это нужно,
+// чтобы UI-тогл suggest_inspect_enabled действительно «выключал» воркер до
+// следующего тика, не оставляя побочки в очереди или метриках.
+func TestWorker_FeatureGateOff_NoOp(t *testing.T) {
+	w, f := newTestWorker(t)
+	w.SetFeatureGate(func() bool { return false })
+	f.repo.pick = []inspect_db.InspectCandidate{cand("evil.com", 12)}
+	f.insp.results["evil.com"] = Result{Verdict: "malicious"}
+
+	w.RunOnce(context.Background())
+
+	if f.repo.pickCalls != 0 {
+		t.Errorf("Pick must not be called when gate=false (calls=%d)", f.repo.pickCalls)
+	}
+	if len(f.insp.calls) != 0 {
+		t.Errorf("inspector must not be called when gate=false (calls=%v)", f.insp.calls)
+	}
+	if len(f.block.created) != 0 {
+		t.Errorf("no auto-block must happen when gate=false, got %+v", f.block.created)
+	}
+	if len(f.sug.upserts) != 0 {
+		t.Errorf("no surface must happen when gate=false, got %+v", f.sug.upserts)
+	}
+}
+
+// Зеркальный позитивный случай: с gate=true работа идёт. Проверяем именно
+// явное включение, потому что featureGate==nil также включено (backward compat
+// для прежних тестов) — без этого теста легко регрессивно сломать "OFF→ON".
+func TestWorker_FeatureGateOn_ProcessesCandidates(t *testing.T) {
+	w, f := newTestWorker(t)
+	w.SetFeatureGate(func() bool { return true })
+	f.repo.pick = []inspect_db.InspectCandidate{cand("evil.com", 12)}
+	f.insp.results["evil.com"] = Result{Verdict: "clean"}
+
+	w.RunOnce(context.Background())
+
+	if f.repo.pickCalls != 1 {
+		t.Errorf("Pick must be called once, got %d", f.repo.pickCalls)
+	}
+	if len(f.insp.calls) != 1 {
+		t.Errorf("inspector must run once, got %v", f.insp.calls)
 	}
 }

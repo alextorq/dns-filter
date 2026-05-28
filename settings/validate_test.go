@@ -34,3 +34,35 @@ func TestValidateIntRange(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateSecret(t *testing.T) {
+	// Happy path: ≥8 символов, разные алфавиты и пробелы вокруг.
+	for _, ok := range []string{
+		"abcdefgh",
+		"12345678",
+		"  longerKeyWithSpaces  ",
+		"AAAAAAAA-BBBBBBBB-CCCCCCCC", // типовой VT-формат
+	} {
+		if err := ValidateSecret(ok); err != nil {
+			t.Errorf("%q должно проходить: %v", ok, err)
+		}
+	}
+
+	// Негатив: пустые/слишком короткие — характерные ошибки копипасты.
+	for _, bad := range []string{
+		"",       // полностью пусто — это путь к Reset, не Set
+		"   ",    // пробелы трактуются как пустота после Trim
+		"short7", // ровно 7 < 8
+		"a",      // мусор
+	} {
+		if err := ValidateSecret(bad); err == nil {
+			t.Errorf("%q должно отклоняться", bad)
+		}
+	}
+}
+
+func TestParseSecret_Trims(t *testing.T) {
+	if got := ParseSecret("  some-key-with-newline\n"); got != "some-key-with-newline" {
+		t.Errorf("ParseSecret = %q, want trimmed value", got)
+	}
+}

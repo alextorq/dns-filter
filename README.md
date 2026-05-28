@@ -176,18 +176,26 @@ By default the suggest collector scores candidates with lexical heuristics only.
 A background worker can additionally enrich the **weak** band (score 10–29) with
 the reputation checks above (RDAP age + VirusTotal + Safe Browsing). It is **off
 by default**: it sends observed domains to third parties (a privacy trade-off)
-and only adds value with a VT/SB key configured — it will not even start without
-one.
+and only adds value with at least one provider key configured.
 
-| Env var                                | Default | Meaning                                                       |
-| -------------------------------------- | ------- | ------------------------------------------------------------- |
-| `DNS_FILTER_SUGGEST_INSPECT_ENABLED`   | `false` | master switch (needs a VT or SB key to take effect)           |
-| `DNS_FILTER_SUGGEST_INSPECT_BUDGET`    | `5`     | domains inspected per tick — bounds the VirusTotal quota      |
-| `DNS_FILTER_SUGGEST_INSPECT_INTERVAL`  | `1h`    | worker tick period                                            |
-| `DNS_FILTER_SUGGEST_INSPECT_CACHE_TTL` | `168h`  | how long a verdict stays fresh before re-inspection           |
-| `DNS_FILTER_SUGGEST_INSPECT_PAUSE`     | `20s`   | delay between external calls (stay under VirusTotal's 4/min)  |
-| `DNS_FILTER_SUGGEST_INSPECT_BACKOFF`   | `30m`   | retry delay for an undecided/failed domain                    |
-| `DNS_FILTER_SUGGEST_INSPECT_MAX_ERRORS`| `3`     | give up (cache "unknown") after this many failures            |
+The master switch and the two provider keys are **DB-backed runtime settings**
+(see the Settings page → "Suggest-to-block · reputation inspect"). The env vars
+below are just the initial defaults; once you set a value from the UI it
+survives restarts and overrides the env. Keys are stored as `Type: secret` —
+the API masks them to `••••<last 4>` and `/api/config/db/download` strips them
+from the exported snapshot.
+
+| Env var / setting key                       | Default | Meaning                                                                |
+| ------------------------------------------- | ------- | ---------------------------------------------------------------------- |
+| `DNS_FILTER_SUGGEST_INSPECT_ENABLED` / `suggest_inspect_enabled` | `false` | master switch — works only with at least one provider key set |
+| `DNS_FILTER_VT_KEY` / `virustotal_key`      | `""`    | VirusTotal v3 API key (secret — masked in UI / stripped from db dump)  |
+| `DNS_FILTER_SAFE_BROWSING_KEY` / `safebrowsing_key` | `""` | Google Safe Browsing v4 API key (secret — see above)                 |
+| `DNS_FILTER_SUGGEST_INSPECT_BUDGET`         | `5`     | domains inspected per tick — bounds the VirusTotal quota               |
+| `DNS_FILTER_SUGGEST_INSPECT_INTERVAL`       | `1h`    | worker tick period                                                     |
+| `DNS_FILTER_SUGGEST_INSPECT_CACHE_TTL`      | `168h`  | how long a verdict stays fresh before re-inspection                    |
+| `DNS_FILTER_SUGGEST_INSPECT_PAUSE`          | `20s`   | delay between external calls (stay under VirusTotal's 4/min)           |
+| `DNS_FILTER_SUGGEST_INSPECT_BACKOFF`        | `30m`   | retry delay for an undecided/failed domain                             |
+| `DNS_FILTER_SUGGEST_INSPECT_MAX_ERRORS`     | `3`     | give up (cache "unknown") after this many failures                     |
 
 Durations use Go's `time.ParseDuration` format: write `168h`, **not** `7d` —
 days are not supported. With the default budget (5) and interval (1h) the worker

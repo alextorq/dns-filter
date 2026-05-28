@@ -7,8 +7,10 @@ import (
 	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/dns"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
+	"github.com/alextorq/dns-filter/domain-inspect/checks"
 	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/settings"
+	suggest_inspect "github.com/alextorq/dns-filter/suggest-to-block/inspect"
 	traffic_prune "github.com/alextorq/dns-filter/traffic/business/use-cases/prune"
 )
 
@@ -100,6 +102,35 @@ func registerDynamicSettings(m *settings.Module, d dynamicSettingsDeps) {
 			Apply:    func(raw string) error { d.dnsServer.SetRefreshConcurrency(settings.ParseInt(raw)); return nil },
 		},
 		trafficRetentionSetting(c),
+		// suggest-inspect: master-тогл reputation-обогащения. Atomic читается
+		// и воркером (Worker.RunOnce), и сборщиком suggest (Module.Collect),
+		// поэтому переключение из UI вступает в силу со следующего тика
+		// suggest/inspect — без рестарта.
+		settings.Setting{
+			Key:      "suggest_inspect_enabled",
+			Type:     "bool",
+			Default:  strconv.FormatBool(c.SuggestInspectEnabled),
+			Validate: settings.ValidateBool,
+			Apply:    func(raw string) error { suggest_inspect.SetEnabled(settings.ParseBool(raw)); return nil },
+		},
+		// VT/SB ключи: тип "secret" — в API выдаются маскированными (последние
+		// 4 символа), сам провайдер-чек на каждом запросе читает свежий ключ
+		// через checks.GetVTKey/GetSBKey, так что Apply без рестарта.
+		// /api/config/db/download дополнительно вырезает эти строки из дампа.
+		settings.Setting{
+			Key:      "virustotal_key",
+			Type:     settings.SecretType,
+			Default:  c.VirusTotalKey,
+			Validate: settings.ValidateSecret,
+			Apply:    func(raw string) error { checks.SetVTKey(settings.ParseSecret(raw)); return nil },
+		},
+		settings.Setting{
+			Key:      "safebrowsing_key",
+			Type:     settings.SecretType,
+			Default:  c.SafeBrowsingKey,
+			Validate: settings.ValidateSecret,
+			Apply:    func(raw string) error { checks.SetSBKey(settings.ParseSecret(raw)); return nil },
+		},
 	)
 }
 

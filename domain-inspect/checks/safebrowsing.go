@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/alextorq/dns-filter/config"
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
@@ -63,9 +62,11 @@ type sbMatch struct {
 // "Google has nothing on this", which we surface as `clean` — that's a
 // real endorsement, not "unknown".
 func SafeBrowsing(ctx context.Context, domain string) domain_inspect.CheckResult {
-	key := config.GetConfig().SafeBrowsingKey
+	// Ключ держится в атомике (см. keys.go): дескриптор настройки
+	// safebrowsing_key обновляет его без рестарта.
+	key := GetSBKey()
 	if key == "" {
-		return skipped("DNS_FILTER_SAFE_BROWSING_KEY not set")
+		return skipped("safebrowsing_key not set")
 	}
 
 	body, err := json.Marshal(sbRequest{

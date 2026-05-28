@@ -743,3 +743,52 @@ func TestCollect_InspectQueueError_DoesNotBreakBatch(t *testing.T) {
 		t.Errorf("strong domain must still be suggested despite queue error, got %d rows", strongInSuggest)
 	}
 }
+
+// Gate=false (мастер-тогл выключен) — очередь подключена, но Collect не должен
+// в неё писать. Это эквивалентно «фича подключена, но рантайм-выключена через
+// UI» и нужно, чтобы кандидаты не копились в inspect_candidate во время паузы.
+func TestCollect_InspectQueueGatedOff_NoUpsert(t *testing.T) {
+	h := newHarness(t)
+	q := &fakeInspectQueue{}
+	h.module.SetInspectQueue(q)
+	h.module.SetInspectGate(func() bool { return false })
+
+	const weak = "ads.shop.xyz"
+	const strong = "x8z7c4kqjfpw9.example.click"
+	h.seedAllowed(weak)
+	h.seedAllowed(strong)
+
+	if err := h.module.Collect(); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	if len(q.calls) != 0 {
+		t.Errorf("inspect queue must not receive upserts when gate=false, got %+v", q.calls)
+	}
+	// Strong-band домен по-прежнему идёт в suggest_blocks — гейт inspect-а
+	// влияет только на маршрутизацию слабой группы.
+	var strongInSuggest int64
+	h.conn.Model(&suggest_to_block_db.SuggestBlock{}).Where("domain = ?", strong).Count(&strongInSuggest)
+	if strongInSuggest != 1 {
+		t.Errorf("strong domain must reach suggest list regardless of inspect gate, got %d rows", strongInSuggest)
+	}
+}
+
+// Зеркальный позитив: gate=true восстанавливает прежнее поведение
+// маршрутизации (страховка от инверсии условия в inspectActive).
+func TestCollect_InspectQueueGatedOn_RoutesWeak(t *testing.T) {
+	h := newHarness(t)
+	q := &fakeInspectQueue{}
+	h.module.SetInspectQueue(q)
+	h.module.SetInspectGate(func() bool { return true })
+
+	const weak = "ads.shop.xyz"
+	h.seedAllowed(weak)
+
+	if err := h.module.Collect(); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(q.calls) != 1 || q.calls[0].domain != weak {
+		t.Fatalf("expected exactly the weak domain queued, got %+v", q.calls)
+	}
+}

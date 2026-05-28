@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/alextorq/dns-filter/config"
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
@@ -35,9 +34,11 @@ type vtResponse struct {
 // Skipped silently when no API key is configured — the endpoint should still
 // run for environments that simply chose not to enable VT.
 func VirusTotal(ctx context.Context, domain string) domain_inspect.CheckResult {
-	key := config.GetConfig().VirusTotalKey
+	// Ключ держится в атомике (см. keys.go): дескриптор настройки
+	// virustotal_key обновляет его без рестарта.
+	key := GetVTKey()
 	if key == "" {
-		return skipped("DNS_FILTER_VT_KEY not set")
+		return skipped("virustotal_key not set")
 	}
 
 	u := vtEndpoint + url.PathEscape(domain)

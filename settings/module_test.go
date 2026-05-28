@@ -323,3 +323,105 @@ func TestModule_List_ReadErrorSurfaces(t *testing.T) {
 		t.Error("expected List to surface the read error")
 	}
 }
+
+// Secret-тип маскирует и текущее значение, и Default в выдаче List/Get —
+// иначе UI/скриншоты/dev-tools утащили бы plain-ключ. Сам Apply при этом
+// получает оригинальную строку (см. отдельный тест ниже).
+func TestModule_List_SecretIsMasked(t *testing.T) {
+	const realKey = "abcdef1234567890abcdef"
+	repo := newFakeRepo()
+	repo.data["virustotal_key"] = realKey
+	m := NewModule(repo)
+	m.Register(Setting{
+		Key:      "virustotal_key",
+		Type:     SecretType,
+		Default:  "envkey-fallback-1234",
+		Validate: ValidateSecret,
+	})
+
+	list, err := m.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 setting, got %d", len(list))
+	}
+	got := list[0]
+	if strings.Contains(got.Value, realKey[:len(realKey)-4]) {
+		t.Errorf("value must not leak the prefix, got %q", got.Value)
+	}
+	if !strings.HasSuffix(got.Value, realKey[len(realKey)-4:]) {
+		t.Errorf("value must keep last 4 chars for operator verification, got %q", got.Value)
+	}
+	if strings.Contains(got.Default, "envkey-fallback") {
+		t.Errorf("default must also be masked, got %q", got.Default)
+	}
+	if !got.Overridden {
+		t.Error("Overridden must reflect the DB override regardless of masking")
+	}
+}
+
+// Корткий секрет (<5 символов) маскируется целиком — последние 4 не торчат.
+// Эта граница важна: ValidateSecret отвергает значения короче 8, но Default
+// может приехать из env как "" или "x" в фейковом окружении/тесте.
+func TestModule_List_ShortSecretFullyMasked(t *testing.T) {
+	repo := newFakeRepo()
+	repo.data["k"] = "abc"
+	m := NewModule(repo)
+	m.Register(Setting{Key: "k", Type: SecretType, Default: ""})
+
+	list, _ := m.List()
+	if list[0].Value != "•••" {
+		t.Errorf("short secret must be fully masked, got %q", list[0].Value)
+	}
+}
+
+// Apply получает оригинальный (не маскированный) raw — иначе атомик ключа
+// заполнится мусором "••••abcd", и провайдер-чек ничего не отправит.
+func TestModule_Set_SecretApplyReceivesRaw(t *testing.T) {
+	const newKey = "freshly-pasted-vt-key-9999"
+	var applied []string
+	repo := newFakeRepo()
+	m := NewModule(repo)
+	m.Register(Setting{
+		Key:      "virustotal_key",
+		Type:     SecretType,
+		Default:  "",
+		Validate: ValidateSecret,
+		Apply:    spyApply(&applied),
+	})
+
+	if err := m.Set("virustotal_key", newKey); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if len(applied) != 1 || applied[0] != newKey {
+		t.Fatalf("Apply must receive raw secret value, got %v", applied)
+	}
+	if repo.data["virustotal_key"] != newKey {
+		t.Errorf("repo must persist the raw secret, got %q", repo.data["virustotal_key"])
+	}
+}
+
+// SecretKeys возвращает зарегистрированные secret-ключи в порядке регистрации
+// (использует /api/config/db/download для исключения из дампа БД). Non-secret
+// настройки сюда не попадают.
+func TestModule_SecretKeys_ReturnsRegisteredOrder(t *testing.T) {
+	m := NewModule(newFakeRepo())
+	m.Register(
+		Setting{Key: "log_level", Type: "enum", Default: "INFO"},
+		Setting{Key: "virustotal_key", Type: SecretType, Default: ""},
+		Setting{Key: "doh_upstream", Type: "url", Default: "https://x/"},
+		Setting{Key: "safebrowsing_key", Type: SecretType, Default: ""},
+	)
+
+	got := m.SecretKeys()
+	want := []string{"virustotal_key", "safebrowsing_key"}
+	if len(got) != len(want) {
+		t.Fatalf("SecretKeys = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("SecretKeys[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

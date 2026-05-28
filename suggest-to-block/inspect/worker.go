@@ -90,6 +90,11 @@ type Worker struct {
 	// sleep is the pacing primitive, injectable so tests run instantly. The
 	// default is ctx-aware so a pause aborts promptly on shutdown.
 	sleep func(context.Context, time.Duration)
+	// featureGate определяет, исполнять ли RunOnce. Nil = всегда исполнять
+	// (обратная совместимость с тестами, где Worker создаётся напрямую).
+	// В production main.go выставляет gate = IsEnabled, чтобы UI-тогл
+	// suggest_inspect_enabled управлял воркером без рестарта.
+	featureGate func() bool
 }
 
 func NewWorker(
@@ -133,10 +138,21 @@ func (w *Worker) Start(ctx context.Context) {
 	}
 }
 
+// SetFeatureGate подключает рантайм-гейт включения фичи. Вызывается в
+// composition root после NewWorker. Nil снимает гейт (тестовое поведение).
+func (w *Worker) SetFeatureGate(g func() bool) { w.featureGate = g }
+
 // RunOnce drains up to Budget candidates. It never returns an error — like the
 // collector, a worker run must not crash a serving process; every failure is
 // logged and the run continues (or pauses, for rate-limiting).
 func (w *Worker) RunOnce(ctx context.Context) {
+	// Рантайм-гейт: если фича выключена в БД-настройках, воркер ничего не
+	// делает (даже не дёргает QueueDepth — иначе метрика бы фальшиво
+	// уменьшалась/росла под идемпотентным no-op-тиком).
+	if w.featureGate != nil && !w.featureGate() {
+		return
+	}
+
 	if depth, err := w.repo.QueueDepth(); err == nil {
 		inspectQueueDepth.Set(float64(depth))
 	}

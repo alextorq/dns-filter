@@ -12,7 +12,10 @@ useHead({
     <UContainer class="py-8 space-y-6">
         <header class="space-y-1">
             <h1 class="text-2xl font-semibold text-highlighted">Settings</h1>
-            <p class="text-sm text-muted">Runtime configuration for the resolver.</p>
+            <p class="text-sm text-muted">
+                Runtime configuration grouped by feature. Persisted in the database — changes apply
+                immediately and survive a restart.
+            </p>
         </header>
 
         <RuntimeSettings />

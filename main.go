@@ -20,6 +20,7 @@ import (
 	"github.com/alextorq/dns-filter/clients/identifier"
 	"github.com/alextorq/dns-filter/config"
 	app_db "github.com/alextorq/dns-filter/db"
+	db_web "github.com/alextorq/dns-filter/db/web"
 	"github.com/alextorq/dns-filter/db/migrate"
 	"github.com/alextorq/dns-filter/dns"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
@@ -167,35 +168,38 @@ func main() {
 	suggestModule := suggest_to_block.NewModule(blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger)
 	domain_inspect_checks.SetAllowLookup(trafficRepo.IsAllowed)
 
-	// Reputation-enrichment worker (opt-in). It starts ONLY when explicitly
-	// enabled AND a reputation key is configured: without a key it adds nothing
-	// (RDAP alone never crosses the verdict threshold), and it sends observed
-	// domains to third parties, so it must be a deliberate choice. When wired,
-	// Collect feeds the weak-lexical candidate band into the queue the worker
-	// drains; otherwise SetInspectQueue is never called and Collect behaves
-	// exactly as before. SetInspectQueue must run before suggestModule.Start.
+	// Reputation-enrichment worker. Подключается всегда — мастер-тогл
+	// (suggest_inspect_enabled) и API-ключи (virustotal_key, safebrowsing_key)
+	// теперь — DB-настройки и могут включаться/выключаться без рестарта.
+	//
+	// inspectGate композирует два сигнала: мастер-тогл фичи (suggest_inspect.IsEnabled)
+	// И наличие хотя бы одного провайдер-ключа (checks.HasAnyKey). Без ключа
+	// RDAP/urlscan/dns_resolve всё равно стучатся наружу за каждым кандидатом
+	// и сливают наблюдённые домены LAN в публичные сервисы, а VT/SB отдают
+	// «skipped» — пользы ноль. Поэтому фича считается active, только когда оба
+	// условия истинны. Тот же gate используется и Worker.RunOnce, и
+	// suggestModule.Collect (отказ маршрутизировать в очередь).
+	//
+	// Запуск горутин suggest/inspect перенесён ниже HydrateAll, чтобы оба
+	// атомика уже соответствовали БД-override до первого тика; иначе zero-value
+	// gate (false) погасил бы первый Collect/RunOnce даже при включённой фиче.
 	inspectRepo := inspect_db.NewRepo(conn)
-	if conf.SuggestInspectEnabled && (conf.VirusTotalKey != "" || conf.SafeBrowsingKey != "") {
-		suggestModule.SetInspectQueue(inspectRepo)
-		inspectAdapter := suggest_inspect.NewAdapter(inspectRepo, conf.SuggestInspectCacheTTL)
-		inspectWorker := suggest_inspect.NewWorker(
-			inspectRepo, inspectAdapter, blockRepo, suggestRepo, sourceRepo, filterModule, chanLogger,
-			suggest_inspect.WorkerConfig{
-				Budget:    conf.SuggestInspectBudget,
-				Interval:  conf.SuggestInspectInterval,
-				CacheTTL:  conf.SuggestInspectCacheTTL,
-				Pause:     conf.SuggestInspectPause,
-				Backoff:   conf.SuggestInspectBackoff,
-				MaxErrors: conf.SuggestInspectMaxErrors,
-			},
-		)
-		go inspectWorker.Start(context.Background())
-		// Keep candidates for several TTLs: an active domain is re-inspected each
-		// TTL (refreshing its timestamp) so it is never pruned, while a domain
-		// that left the traffic set is eventually forgotten.
-		go suggest_inspect.StartPrune(inspectRepo, 4*conf.SuggestInspectCacheTTL)
-		chanLogger.Info("suggest-inspect worker enabled")
-	}
+	suggestModule.SetInspectQueue(inspectRepo)
+	inspectGate := func() bool { return suggest_inspect.IsEnabled() && domain_inspect_checks.HasAnyKey() }
+	suggestModule.SetInspectGate(inspectGate)
+	inspectAdapter := suggest_inspect.NewAdapter(inspectRepo, conf.SuggestInspectCacheTTL)
+	inspectWorker := suggest_inspect.NewWorker(
+		inspectRepo, inspectAdapter, blockRepo, suggestRepo, sourceRepo, filterModule, chanLogger,
+		suggest_inspect.WorkerConfig{
+			Budget:    conf.SuggestInspectBudget,
+			Interval:  conf.SuggestInspectInterval,
+			CacheTTL:  conf.SuggestInspectCacheTTL,
+			Pause:     conf.SuggestInspectPause,
+			Backoff:   conf.SuggestInspectBackoff,
+			MaxErrors: conf.SuggestInspectMaxErrors,
+		},
+	)
+	inspectWorker.SetFeatureGate(inspectGate)
 
 	// Daily retention prune over the unified domain_traffic table — now the sole
 	// retention task (the two legacy block/allow clear-events tasks were removed
@@ -203,7 +207,6 @@ func main() {
 	// dynamic setting; the loop reads its atomic fresh each tick, so a UI change
 	// applies on the next prune.
 	go traffic_prune_uc.Run(trafficRepo)
-	go suggestModule.Start(context.Background())
 	go authBusiness.ClearExpiredSessions()
 
 	// Start the ARP watcher only in LAN mode. Public mode has no LAN to
@@ -267,6 +270,22 @@ func main() {
 		// this just reports what it skipped.
 		chanLogger.Error(fmt.Errorf("settings hydrate: %w", err))
 	}
+
+	// /api/config/db/download должен вырезать VT/SB-ключи из выгружаемой копии.
+	// Поставщик возвращает актуальный список secret-ключей на момент запроса —
+	// безопасно, даже если в будущем добавим/уберём дескриптор.
+	db_web.SetSecretKeysProvider(settingsModule.SecretKeys)
+
+	// Запускаем suggest- и inspect-горутины только после HydrateAll: к этому
+	// моменту атомики suggest_inspect_enabled и VT/SB-ключей соответствуют
+	// БД-override, и inspectGate в первом же Collect/RunOnce читает их свежими.
+	// Иначе первый Module.Collect выполнялся бы с zero-value атомика (false) и
+	// дропал weak-band кандидатов даже при включённой фиче — следующий шанс был
+	// бы через Interval. StartPrune работает независимо, обслуживая retention
+	// `inspect_candidate`/`rdap_cache` даже когда воркер пассивен.
+	go suggestModule.Start(context.Background())
+	go inspectWorker.Start(context.Background())
+	go suggest_inspect.StartPrune(inspectRepo, 4*conf.SuggestInspectCacheTTL)
 
 	// Pull the block lists in the background and refresh the filter once done.
 	// The DNS server (started below via dnsServer.Serve) does not wait on this.

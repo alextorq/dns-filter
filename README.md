@@ -162,7 +162,7 @@ codebase is organised by feature (`dns/`, `filter/`, `blocked-domain/`,
 `traffic/`, `clients/`, `source/`, `suggest-to-block/`, `settings/`, `web/`, …).
 
 > 📖 For the full domain model, component diagrams, startup ordering and the
-> request flow, see **[ARCHITECTURE.md](ARCHITECTURE.md)** (in Russian).
+> request flow, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 ## Getting started
 

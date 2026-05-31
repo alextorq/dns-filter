@@ -38,7 +38,7 @@ dns-filter/
 
 ### 1. DNS Server (`dns/`)
 
-**Purpose:** Handle incoming DNS requests on port 53/UDP.
+**Purpose:** Handle incoming DNS requests on port 53 (UDP + TCP).
 
 **Key files:**
 - `server.go` — the main DNS server
@@ -353,7 +353,7 @@ A typed KV store of runtime configuration persisted in the DB. It solves the pro
 ```mermaid
 flowchart TB
     subgraph Client["Client (DNS request)"]
-        C["DNS client<br/>port 53/UDP"]
+        C["DNS client<br/>port 53 UDP+TCP"]
     end
 
     subgraph DNS_Server["DNS Server (dns/)"]

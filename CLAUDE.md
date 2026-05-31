@@ -41,7 +41,7 @@ These rules are mandatory for every change in this repo:
 
 ## Architecture
 
-This is a sinkhole DNS server with a management UI. The backend is a single Go binary that serves DNS on `:53` (UDP+TCP) and an HTTP management API on `:8080`; optional Prometheus metrics on `:2112`. Persistence is SQLite via GORM. The deeper architectural notes (in Russian) live in `ARCHITECTURE.md` — read it for the full domain model and component diagrams; the points below are what you need to navigate the code.
+This is a sinkhole DNS server with a management UI. The backend is a single Go binary that serves DNS on `:53` (UDP+TCP) and an HTTP management API on `:8080`; optional Prometheus metrics on `:2112`. Persistence is SQLite via GORM. The deeper architectural notes live in `ARCHITECTURE.md` — read it for the full domain model and component diagrams; the points below are what you need to navigate the code.
 
 ### Entry point and startup ordering (`main.go`)
 Order matters and is non-obvious:

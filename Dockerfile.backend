@@ -43,8 +43,10 @@ RUN apk add  ca-certificates
 RUN mkdir -p /app/bin
 # Копируем бинарник
 COPY --from=backend-builder /app/dns-filter /app/bin/
-# Копируем .env
-COPY .env .env
+# .env НЕ копируется в образ намеренно: секреты (пароль админа, API-ключи)
+# подаются в рантайме через docker-compose `env_file`, а не запекаются в слой
+# образа. На голом `docker compose up` без .env бэкенд берёт скомпилированные
+# дефолты из config/config.go (godotenv.Load просто логирует отсутствие файла).
 
 # Открываем порты
 EXPOSE 53/udp

@@ -33,6 +33,7 @@ These rules are mandatory for every change in this repo:
 - Lint: `npm run lint` (also runs in CI — keep it green; config in `web/front/eslint.config.mjs`)
 
 ### Docker
+- **Guided install (recommended): `./deploy.sh`** — portable interactive installer (works on any host, unlike the hardcoded `build.sh`): preflights Docker, offers to free `:53` from `systemd-resolved`, prompts for admin creds + optional reputation API keys, writes a chmod-600 `.env` (consumed by the `dns-filter` service via `env_file`, `required: false`), then builds + starts. Subcommands: `install` (default), `update`, `status`, `logs`, `down`. Non-interactive/`DF_DRY_RUN` mode is exercised by `deploy_test.sh` (`bash deploy_test.sh`, no Docker needed). Admin credentials can ONLY be set via `.env`, so this is the recommended bring-up.
 - Full stack (backend + frontend): `docker compose up --build` (Prometheus + Grafana services are present but commented out in `docker-compose.yml`)
 - Production-style rebuild from a tag: `./build.sh <tag>` (note: this script hardcodes `/home/balamut/projects/dns-filter` and is intended for the deploy host, not local use)
 

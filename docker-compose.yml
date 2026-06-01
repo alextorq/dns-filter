@@ -23,10 +23,22 @@ services:
       # /proc/net/arp read only — discovery still works, just less complete.
       - NET_RAW
       - NET_ADMIN
+    # Backend configuration. Secrets (admin password, reputation API keys) and
+    # all other knobs come from .env, which ./deploy.sh generates. env_file is
+    # `required: false` so the bare `docker compose up` path still works without
+    # a .env — the backend then falls back to the compiled defaults in
+    # config/config.go. NOTE: admin credentials can ONLY be set via .env, so
+    # ./deploy.sh is the recommended way to bring the stack up.
+    env_file:
+      - path: .env
+        required: false
+    # The non-secret tunables below are interpolated from .env when present
+    # (compose auto-loads it) and otherwise fall back to these defaults, so the
+    # bare `docker compose up` keeps the historical behaviour.
     environment:
-      - DNS_FILTER_DOH_UPSTREAM=https://cloudflare-dns.com/dns-query
-      - DNS_FILTER_DOH_BOOTSTRAP_IPS=1.1.1.1,1.0.0.1
-      - DNS_FILTER_MODE=lan
+      - DNS_FILTER_DOH_UPSTREAM=${DNS_FILTER_DOH_UPSTREAM:-https://cloudflare-dns.com/dns-query}
+      - DNS_FILTER_DOH_BOOTSTRAP_IPS=${DNS_FILTER_DOH_BOOTSTRAP_IPS:-1.1.1.1,1.0.0.1}
+      - DNS_FILTER_MODE=${DNS_FILTER_MODE:-lan}
     # Container resolver must NOT be the host (host points back at this filter
     # via :53 → infinite loop on startup before the filter is up). Use public
     # DNS so source-list downloads (and any other outbound HTTP) can resolve.
@@ -47,7 +59,7 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: frontend
     ports:
-      - "8090:8090"
+      - "${DNS_FILTER_UI_PORT:-8090}:8090"
     # dns-filter no longer resolves via Docker DNS (it's on the host's
     # namespace), so nginx proxies via host.docker.internal which Compose
     # rewrites to the host gateway IP on Linux thanks to extra_hosts. See

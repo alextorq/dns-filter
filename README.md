@@ -174,13 +174,27 @@ codebase is organised by feature (`dns/`, `filter/`, `blocked-domain/`,
 
 ### Run with Docker (recommended)
 
+The easiest path is the interactive installer — `./deploy.sh`. Anyone can run it:
+it checks Docker, offers to free port 53 from `systemd-resolved`, asks for the
+admin credentials and any optional reputation API keys, writes a locked-down
+`.env`, then builds and starts the stack.
+
 ```sh
-docker compose up --build
+git clone https://github.com/alextorq/dns-filter.git
+cd dns-filter
+./deploy.sh            # interactive first-time setup
 ```
+
+Manage it afterwards: `./deploy.sh update` (pull + rebuild + restart),
+`./deploy.sh status`, `./deploy.sh logs`, `./deploy.sh down`.
 
 This builds and starts the backend (DNS + API) and the frontend. See
 `docker-compose.yml` — note it uses `network_mode: host` on Linux so the DNS path
 sees real client IPs and LAN discovery works.
+
+Prefer to do it by hand? Run `docker compose up --build` directly — but note that
+without a `.env` you cannot set the admin login/password and therefore cannot log
+into the UI, so copy `.env.example` to `.env` and fill it in first.
 
 ### Run locally
 

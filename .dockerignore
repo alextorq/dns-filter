@@ -5,3 +5,6 @@
 **/dist
 **/build
 **/tmp
+# Keep secrets out of the build context — .env is injected at runtime via
+# docker-compose env_file, never baked into an image layer.
+.env

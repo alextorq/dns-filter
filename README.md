@@ -185,6 +185,9 @@ cd dns-filter
 ./deploy.sh            # interactive first-time setup
 ```
 
+Once it's up, open the web UI at `http://<host-ip>:8090` and log in with the
+admin credentials you set during setup (change the port with `DNS_FILTER_UI_PORT`).
+
 Manage it afterwards: `./deploy.sh update` (pull + rebuild + restart),
 `./deploy.sh status`, `./deploy.sh logs`, `./deploy.sh down`.
 
@@ -225,6 +228,7 @@ in [`config/config.go`](config/config.go); the load-bearing ones:
 | `DNS_FILTER_DOH_UPSTREAM` | `https://cloudflare-dns.com/dns-query` | Upstream DoH resolver (legacy `DNS_FILTER_UPSTREAM` accepted if it starts with `http(s)://`). |
 | `DNS_FILTER_DOH_BOOTSTRAP_IPS` | `1.1.1.1,1.0.0.1` | IPs of the DoH host, so the resolver can bootstrap without system DNS. |
 | `DNS_FILTER_DBPATH` | `./filter.sqlite` | SQLite path (`.env` uses `./data/filter.sqlite` to match the Docker volume). |
+| `DNS_FILTER_UI_PORT` | `8090` | Host port the web UI is published on (Docker frontend; interpolated by `docker-compose.yml`). |
 | `DNS_FILTER_LOG_LEVEL` | — | Log level (also a runtime setting — see below). |
 | `DNS_FILTER_METRIC_ENABLE` / `DNS_FILTER_METRIC_PORT` | `false` / `2112` | Prometheus metrics endpoint. |
 | `DNS_FILTER_ADMIN_LOGIN` / `DNS_FILTER_ADMIN_PASSWORD` | — | Bootstrap admin, **created on first run only**; change the password in the UI afterwards. |

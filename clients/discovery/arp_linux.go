@@ -27,18 +27,18 @@ const procNetARP = "/proc/net/arp"
 //	192.168.1.10     0x1         0x2         e8:de:27:d2:97:5e     *        eth0
 //
 // Rows with all-zero MAC are incomplete (kernel knows the IP but never got
-// an ARP reply) and skipped. When filterDocker is set, neighbours learned on a
-// Docker bridge (the Device column reads docker0 / br-<hash>) are also skipped —
-// those are container neighbours, not LAN devices, and they pollute both the
-// arpwatcher cache and the UI's discovery list. The first line is a header.
-func ReadARPTable(filterDocker bool) ([]ARPEntry, error) {
+// an ARP reply) and skipped. The first line is a header. This is a pure read —
+// Docker-bridge neighbours are filtered later, in one pass, by IP against the
+// host's real Docker subnets (see discovery.go's filterDockerDevices for the
+// scan path and FilterDockerARP for the arpwatcher).
+func ReadARPTable() ([]ARPEntry, error) {
 	f, err := os.Open(procNetARP)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", procNetARP, err)
 	}
 	defer f.Close()
 
-	entries, err := parseARPTable(f, filterDocker)
+	entries, err := parseARPTable(f)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", procNetARP, err)
 	}
@@ -47,7 +47,7 @@ func ReadARPTable(filterDocker bool) ([]ARPEntry, error) {
 
 // parseARPTable is the pure parsing core of ReadARPTable, split out so it can
 // be unit-tested against a fixture without touching /proc/net/arp.
-func parseARPTable(r io.Reader, filterDocker bool) ([]ARPEntry, error) {
+func parseARPTable(r io.Reader) ([]ARPEntry, error) {
 	var entries []ARPEntry
 	scanner := bufio.NewScanner(r)
 	first := true
@@ -57,18 +57,9 @@ func parseARPTable(r io.Reader, filterDocker bool) ([]ARPEntry, error) {
 			continue
 		}
 		fields := strings.Fields(scanner.Text())
-		// A valid data row always has all six columns (the Device in fields[5]).
-		// Requiring all six up front makes the Docker filter fail *closed*: a
-		// row we can't fully classify is dropped rather than leaking through as
-		// a fake LAN device.
+		// A complete /proc/net/arp data row has all six columns. Drop anything
+		// shorter rather than admit a half-parsed neighbour (fail closed).
 		if len(fields) < 6 {
-			continue
-		}
-		// fields[5] is the Device — the interface the neighbour was learned on.
-		// Drop Docker-bridge neighbours by interface (when filtering) so
-		// container networks in any subnet are excluded without guessing IP
-		// ranges (see isDockerBridgeIface).
-		if filterDocker && isDockerBridgeIface(fields[5]) {
 			continue
 		}
 		ip := net.ParseIP(fields[0]).To4()
@@ -183,13 +174,12 @@ func activeARPScan(ctx context.Context, subnet *LocalSubnet) ([]ARPEntry, error)
 // scan in parallel-ish (passive read first since it's instant, then active
 // during the remaining ctx budget). Errors from either phase are collected
 // into the result rather than returned, so a missing capability still lets
-// the passive entries reach the UI. opts.FilterDocker is forwarded to the
-// passive read; the active scan only ever targets the real LAN subnet, so it
-// surfaces no Docker neighbours regardless.
-func runARPDiscovery(ctx context.Context, subnet *LocalSubnet, opts DiscoverOptions) scanResult {
+// the passive entries reach the UI. Both phases return raw entries; Docker
+// filtering happens once, later, in Discover.
+func runARPDiscovery(ctx context.Context, subnet *LocalSubnet) scanResult {
 	var res scanResult
 
-	if passive, err := ReadARPTable(opts.FilterDocker); err != nil {
+	if passive, err := ReadARPTable(); err != nil {
 		res.Errors = append(res.Errors, fmt.Errorf("arp table: %w", err))
 	} else {
 		res.Entries = append(res.Entries, passive...)

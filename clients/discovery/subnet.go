@@ -118,6 +118,51 @@ func isDockerBridgeIface(name string) bool {
 	return true
 }
 
+// dockerBridgeNets returns the IPv4 subnets configured on the host's Docker
+// bridge interfaces (docker0 / br-<hash>). It is the IP-based companion to
+// isDockerBridgeIface: discovery collects every source raw, then drops anything
+// whose IP falls inside one of these subnets. Reading the subnets straight off
+// the bridge interfaces keeps the check exact (no guessed IP ranges) and lets a
+// single IP test cover all sources — ARP neighbours and mDNS self-answers alike.
+// Best-effort — any error yields nil (filter nothing) rather than failing the
+// sweep.
+func dockerBridgeNets() []*net.IPNet {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var nets []*net.IPNet
+	for _, iface := range ifaces {
+		if !isDockerBridgeIface(iface.Name) {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+				nets = append(nets, ipnet)
+			}
+		}
+	}
+	return nets
+}
+
+// ipInNets reports whether ip falls inside any of nets.
+func ipInNets(ip net.IP, nets []*net.IPNet) bool {
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return false
+	}
+	for _, n := range nets {
+		if n.Contains(ip4) {
+			return true
+		}
+	}
+	return false
+}
+
 // EnumerateHosts returns every usable IPv4 host in the subnet, skipping the
 // network address, the broadcast address, and the scanner's own IP. For a /24
 // that's 253 entries.

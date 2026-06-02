@@ -31,13 +31,12 @@ type Result struct {
 	Errors  []string `json:"errors,omitempty"`
 }
 
-// DiscoverOptions tunes a single sweep. FilterDocker hides neighbours learned
-// on a Docker bridge (docker0 / br-<hash>) from the passive ARP results —
-// surfaced in the UI as the "Filter Docker networks" checkbox. One name, one
-// polarity, all the way down to parseARPTable, so there is no inversion to track
-// across layers. Callers should set it explicitly (the HTTP handler defaults it
-// to true); the active scan always targets the real LAN, so this only affects
-// the passive /proc/net/arp read.
+// DiscoverOptions tunes a single sweep. FilterDocker drops devices that live on
+// the host's Docker bridges from the final result — applied once, after every
+// source (ARP, mDNS, active scan) has been collected and merged, by matching
+// each device's IP against the host's real bridge subnets. Surfaced in the UI
+// as the "Filter Docker networks" checkbox; the HTTP handler defaults it to true.
+// Callers should set it explicitly.
 type DiscoverOptions struct {
 	FilterDocker bool
 }
@@ -73,7 +72,7 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
 
 	if subnet != nil {
 		wg.Go(func() {
-			r := runARPDiscovery(ctx, subnet, opts)
+			r := runARPDiscovery(ctx, subnet)
 			mu.Lock()
 			arpRes = r
 			mu.Unlock()
@@ -97,10 +96,10 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
 
 	res.Devices = merge(arpRes.Entries, mdnsRes)
 	if opts.FilterDocker {
-		// The ARP read already drops Docker neighbours by interface, but mDNS
-		// results carry only an IP — on host networking the box answers the
-		// browse on every docker0/br-* address it owns (172.18.0.1, 172.24.0.1,
-		// …). Filter those by Docker subnet, derived from the host's bridges.
+		// Collect from every source first, then drop Docker in one pass: any
+		// device whose IP falls in one of the host's real bridge subnets. One
+		// exact check catches both ARP container neighbours and the box's own
+		// mDNS self-answers on docker0/br-* (172.18.0.1, 172.24.0.1, …).
 		res.Devices = filterDockerDevices(res.Devices, dockerBridgeNets())
 	}
 	annotateRegistered(res.Devices)
@@ -109,10 +108,8 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
 }
 
 // filterDockerDevices drops devices whose IP falls inside one of the host's
-// Docker bridge subnets (dockerNets). It's the IP-based companion to the ARP
-// read's interface-name filter, needed for sources that only surface an IP
-// (mDNS). An empty dockerNets is a no-op, so a host with no Docker bridges (or
-// a failed interface read) keeps every device.
+// Docker bridge subnets (dockerNets). An empty dockerNets is a no-op, so a host
+// with no Docker bridges (or a failed interface read) keeps every device.
 func filterDockerDevices(devices []Device, dockerNets []*net.IPNet) []Device {
 	if len(dockerNets) == 0 {
 		return devices
@@ -123,6 +120,27 @@ func filterDockerDevices(devices []Device, dockerNets []*net.IPNet) []Device {
 			continue
 		}
 		out = append(out, d)
+	}
+	return out
+}
+
+// FilterDockerARP drops ARP entries whose IP falls inside a host Docker bridge
+// subnet. The arpwatcher reads the table directly (not via Discover) and wants
+// its IP↔MAC cache free of container neighbours, so it filters on every tick.
+func FilterDockerARP(entries []ARPEntry) []ARPEntry {
+	return filterDockerARP(entries, dockerBridgeNets())
+}
+
+func filterDockerARP(entries []ARPEntry, dockerNets []*net.IPNet) []ARPEntry {
+	if len(dockerNets) == 0 {
+		return entries
+	}
+	out := make([]ARPEntry, 0, len(entries))
+	for _, e := range entries {
+		if ipInNets(e.IP, dockerNets) {
+			continue
+		}
+		out = append(out, e)
 	}
 	return out
 }

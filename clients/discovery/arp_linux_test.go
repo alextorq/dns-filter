@@ -9,9 +9,7 @@ import (
 
 // realProcNetARP mirrors the column layout of /proc/net/arp on a Docker host:
 // container neighbours learned on docker0 / br-<hash> interfaces, plus a couple
-// of genuine LAN hosts on eth0. Only the eth0 rows should survive — this is the
-// regression for the leak where Docker bridges outside the old 172.17–172.23
-// prefix list (e.g. 172.24/172.25) showed up in the network-scan UI.
+// of genuine LAN hosts on eth0.
 const realProcNetARP = `IP address       HW type     Flags       HW address            Mask     Device
 172.17.0.3       0x1         0x2         66:86:f1:2f:db:3d     *        docker0
 172.25.0.6       0x1         0x2         12:0f:22:78:2a:06     *        br-78f9ca1f4f18
@@ -20,30 +18,16 @@ const realProcNetARP = `IP address       HW type     Flags       HW address     
 192.168.88.45    0x1         0x2         5a:ca:8d:d8:05:f9     *        eth0
 `
 
-func TestParseARPTable_SkipsDockerBridges(t *testing.T) {
-	entries, err := parseARPTable(strings.NewReader(realProcNetARP), true) // filterDocker on
-	if err != nil {
-		t.Fatalf("parseARPTable: %v", err)
-	}
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 LAN entries, got %d: %+v", len(entries), entries)
-	}
-	for _, e := range entries {
-		if !strings.HasPrefix(e.IP.String(), "192.168.88.") {
-			t.Errorf("Docker neighbour leaked into results: %s (source %s)", e.IP, e.Source)
-		}
-	}
-}
-
-// With filterDocker off the "show Docker networks" path keeps every complete
-// row, including the docker0 / br-<hash> neighbours.
-func TestParseARPTable_NoFilterKeepsAll(t *testing.T) {
-	entries, err := parseARPTable(strings.NewReader(realProcNetARP), false) // filterDocker off
+// parseARPTable is a pure reader: every complete row comes back, Docker rows
+// included. The Docker filtering is a separate, single pass (see
+// TestFilterDockerARP / TestFilterDockerDevices in discovery_test.go).
+func TestParseARPTable_ReadsAllCompleteRows(t *testing.T) {
+	entries, err := parseARPTable(strings.NewReader(realProcNetARP))
 	if err != nil {
 		t.Fatalf("parseARPTable: %v", err)
 	}
 	if len(entries) != 5 {
-		t.Fatalf("expected all 5 rows with filterDocker off, got %d: %+v", len(entries), entries)
+		t.Fatalf("expected all 5 rows, got %d: %+v", len(entries), entries)
 	}
 }
 
@@ -56,7 +40,7 @@ short line
 not_an_ip        0x1         0x2         aa:bb:cc:dd:ee:ff     *        eth0
 10.0.0.9         0x1         0x2         aa:bb:cc:dd:ee:ff     *        eth0
 `
-	entries, err := parseARPTable(strings.NewReader(data), true)
+	entries, err := parseARPTable(strings.NewReader(data))
 	if err != nil {
 		t.Fatalf("parseARPTable: %v", err)
 	}

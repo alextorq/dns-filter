@@ -120,11 +120,12 @@ func isDockerBridgeIface(name string) bool {
 
 // dockerBridgeNets returns the IPv4 subnets configured on the host's Docker
 // bridge interfaces (docker0 / br-<hash>). It is the IP-based companion to
-// isDockerBridgeIface: discovery sources that only surface an IP and not a
-// learning interface (mDNS) can't be filtered by the Device-column trick the
-// ARP read uses, so we instead check whether their IP falls in a real Docker
-// subnet. Best-effort — any error yields nil (filter nothing) rather than
-// failing the sweep.
+// isDockerBridgeIface: discovery collects every source raw, then drops anything
+// whose IP falls inside one of these subnets. Reading the subnets straight off
+// the bridge interfaces keeps the check exact (no guessed IP ranges) and lets a
+// single IP test cover all sources — ARP neighbours and mDNS self-answers alike.
+// Best-effort — any error yields nil (filter nothing) rather than failing the
+// sweep.
 func dockerBridgeNets() []*net.IPNet {
 	ifaces, err := net.Interfaces()
 	if err != nil {

@@ -63,9 +63,7 @@ func Run(ctx context.Context, log Logger, interval time.Duration) {
 // returns false to signal "give up the loop" — currently only when the
 // platform doesn't support ARP reading.
 func tick(log Logger) bool {
-	// The watcher's IP↔MAC cache only backfills real client MACs, so Docker
-	// neighbours are pure noise here — always filter them out.
-	entries, err := discovery.ReadARPTable(true)
+	entries, err := discovery.ReadARPTable()
 	if err != nil {
 		if errors.Is(err, discovery.ErrUnsupported) {
 			log.Warn("arpwatcher: platform unsupported, stopping watcher loop")
@@ -74,6 +72,10 @@ func tick(log Logger) bool {
 		log.Error(err)
 		return true
 	}
+
+	// The watcher's IP↔MAC cache only backfills real client MACs, so Docker
+	// neighbours are pure noise here — drop them.
+	entries = discovery.FilterDockerARP(entries)
 
 	res := Get().Update(entries)
 	if res.NewPairs == 0 && res.ChangedIPs == 0 && res.ChangedMACs == 0 {

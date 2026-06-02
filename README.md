@@ -125,6 +125,10 @@ A high-level list — deeper notes for the more involved features are in
   knobs and retention window are editable from the UI and survive a restart
   ([details](#persistent-runtime-settings)).
 - **Per-client exclusions** — skip filtering for specific devices by IP.
+- **LAN device discovery** (Clients → *Network scan*) — an on-demand ARP + mDNS
+  sweep that lists devices on the local network, ready to add as clients. Docker
+  bridge neighbours (`docker0` / `br-*`) are hidden by default; untick *Filter
+  Docker networks* to include them.
 - **Monitoring** — Prometheus metrics, Grafana dashboards and Loki logging
   ([details](#monitoring--logging)).
 - **Single Go binary, SQLite, Docker** — pure Go (no CGO), easy to deploy.

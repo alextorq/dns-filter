@@ -130,8 +130,10 @@ class Api {
 
     deleteClient = (id: number) => this.client.clientsDeleteCreate({ id });
 
-    discoverNetwork = (abortSignal: AbortSignal) =>
-        this.client.clientsDiscoverCreate({ signal: abortSignal });
+    // filterDocker=true (default) hides Docker bridge neighbours (docker0 /
+    // br-<hash>) from the scan; pass false to include them.
+    discoverNetwork = (filterDocker: boolean, abortSignal: AbortSignal) =>
+        this.client.clientsDiscoverCreate({ filter_docker: filterDocker }, { signal: abortSignal });
 
     inspectDomain = (domain: string, abortSignal: AbortSignal) =>
         this.client.domainInspectList({ domain }, { signal: abortSignal });

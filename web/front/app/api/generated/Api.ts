@@ -39,6 +39,7 @@ import type {
   WebDeleteClientRequest,
   WebDeviceDomainsResponse,
   WebDevicesResponse,
+  WebDiscoverRequest,
   WebDiscoverResponse,
   WebFilterStatusResponse,
   WebGetAllDnsRecordsRequest,
@@ -213,13 +214,18 @@ export class Api<
    * @summary Scan LAN for devices
    * @request POST:/api/clients/discover
    */
-  clientsDiscoverCreate = (params: RequestParams = {}) =>
+  clientsDiscoverCreate = (
+    body: WebDiscoverRequest,
+    params: RequestParams = {},
+  ) =>
     this.request<
       WebDiscoverResponse,
-      GithubComAlextorqDnsFilterClientsWebErrorResponse
+      WebBadRequestResponse | GithubComAlextorqDnsFilterClientsWebErrorResponse
     >({
       path: `/api/clients/discover`,
       method: "POST",
+      body: body,
+      type: ContentType.Json,
       format: "json",
       ...params,
     });
@@ -255,7 +261,7 @@ export class Api<
    * @request GET:/api/config/db/download
    */
   configDbDownloadList = (params: RequestParams = {}) =>
-    this.request<Blob, any>({
+    this.request<Blob, Record<string, string>>({
       path: `/api/config/db/download`,
       method: "GET",
       ...params,

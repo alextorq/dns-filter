@@ -23,21 +23,6 @@ type LocalSubnet struct {
 	CIDR      *net.IPNet
 }
 
-// dockerBridgePrefixes are the IPv4 prefixes Docker hands out for its default
-// and user-defined bridges. We exclude them when picking a scan target so the
-// scan doesn't enumerate the in-container bridge network instead of the real
-// LAN. If the host's LAN happens to live in the same range (uncommon for home
-// setups), an env-var override hook would be the next extension point.
-var dockerBridgePrefixes = []string{
-	"172.17.",
-	"172.18.",
-	"172.19.",
-	"172.20.",
-	"172.21.",
-	"172.22.",
-	"172.23.",
-}
-
 // ErrNoSubnet means we couldn't find an interface plausible to scan. The
 // most common cause is running the dns-filter container on a Docker bridge
 // instead of host networking — discovery is documented as requiring host net.
@@ -57,6 +42,13 @@ func FindLocalSubnet() (*LocalSubnet, error) {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
 			continue
 		}
+		// Skip Docker-managed bridges (docker0 / br-<hash>). Identifying them by
+		// interface name — not by IP range — means a real LAN that happens to
+		// sit in 172.16.0.0/12 is still scanned, and Docker networks in any pool
+		// (including its 192.168 secondary range) are still skipped.
+		if isDockerBridgeIface(iface.Name) {
+			continue
+		}
 		addrs, err := iface.Addrs()
 		if err != nil {
 			continue
@@ -70,7 +62,7 @@ func FindLocalSubnet() (*LocalSubnet, error) {
 			if ip4 == nil {
 				continue
 			}
-			if !ip4.IsPrivate() || ip4.IsLoopback() || isDockerBridge(ip4) {
+			if !ip4.IsPrivate() || ip4.IsLoopback() {
 				continue
 			}
 			if ones, _ := ipnet.Mask.Size(); ones < 20 {
@@ -90,14 +82,40 @@ func FindLocalSubnet() (*LocalSubnet, error) {
 	return nil, ErrNoSubnet
 }
 
-func isDockerBridge(ip net.IP) bool {
-	s := ip.String()
-	for _, prefix := range dockerBridgePrefixes {
-		if strings.HasPrefix(s, prefix) {
-			return true
+// isDockerBridgeIface reports whether an interface name belongs to a Docker
+// bridge. Docker names its default bridge "docker0" and every user-defined
+// (compose) network "br-<12 hex>" (the first 12 hex digits of the network ID).
+// We match on the interface rather than on a guessed IP range so that:
+//   - container neighbours are skipped no matter which subnet Docker assigned
+//     them — the default pool is the whole 172.16.0.0/12 and Docker falls back
+//     to a 192.168 pool once that fills, so a fixed prefix list misses the tail;
+//   - a real LAN interface (eth0/wlan0) is never mistaken for a Docker bridge.
+//
+// The "br-" check is deliberately exact (prefix + exactly 12 lowercase hex)
+// rather than a bare "br-" prefix: non-Docker Linux bridges are commonly named
+// "br-lan"/"br-wan"/"br-guest" (OpenWrt, libvirt, netplan), and a loose prefix
+// would wrongly exclude such a host's real LAN, making discovery return nothing.
+//
+// The kernel records the learning interface in the Device column of
+// /proc/net/arp, so the passive ARP read (parseARPTable) filters on the same
+// predicate. (A Docker network created with an explicit
+// com.docker.network.bridge.name gets an operator-chosen interface name that no
+// name heuristic can recognise; such neighbours are surfaced like any LAN host,
+// and the "show Docker networks" toggle is the escape hatch.)
+func isDockerBridgeIface(name string) bool {
+	if name == "docker0" {
+		return true
+	}
+	rest, ok := strings.CutPrefix(name, "br-")
+	if !ok || len(rest) != 12 {
+		return false
+	}
+	for _, c := range rest {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // EnumerateHosts returns every usable IPv4 host in the subnet, skipping the

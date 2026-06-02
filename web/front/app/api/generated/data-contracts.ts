@@ -282,6 +282,10 @@ export interface WebDevicesResponse {
   devices?: WebDeviceDTO[];
 }
 
+export interface WebDiscoverRequest {
+  filter_docker?: boolean;
+}
+
 export interface WebDiscoverResponse {
   devices?: DiscoveryDevice[];
   errors?: string[];

@@ -31,11 +31,22 @@ type Result struct {
 	Errors  []string `json:"errors,omitempty"`
 }
 
+// DiscoverOptions tunes a single sweep. FilterDocker hides neighbours learned
+// on a Docker bridge (docker0 / br-<hash>) from the passive ARP results —
+// surfaced in the UI as the "Filter Docker networks" checkbox. One name, one
+// polarity, all the way down to parseARPTable, so there is no inversion to track
+// across layers. Callers should set it explicitly (the HTTP handler defaults it
+// to true); the active scan always targets the real LAN, so this only affects
+// the passive /proc/net/arp read.
+type DiscoverOptions struct {
+	FilterDocker bool
+}
+
 // Discover runs the LAN sweep and returns merged results. The default budget
 // is short on purpose — discovery is invoked synchronously from a UI button
 // click, so a 5-second hard cap keeps the user from staring at a spinner if
 // any technique hangs. Pass a tighter ctx if needed.
-func Discover(ctx context.Context) (*Result, error) {
+func Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
@@ -62,7 +73,7 @@ func Discover(ctx context.Context) (*Result, error) {
 
 	if subnet != nil {
 		wg.Go(func() {
-			r := runARPDiscovery(ctx, subnet)
+			r := runARPDiscovery(ctx, subnet, opts)
 			mu.Lock()
 			arpRes = r
 			mu.Unlock()

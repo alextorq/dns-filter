@@ -96,9 +96,35 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
 	}
 
 	res.Devices = merge(arpRes.Entries, mdnsRes)
+	if opts.FilterDocker {
+		// The ARP read already drops Docker neighbours by interface, but mDNS
+		// results carry only an IP — on host networking the box answers the
+		// browse on every docker0/br-* address it owns (172.18.0.1, 172.24.0.1,
+		// …). Filter those by Docker subnet, derived from the host's bridges.
+		res.Devices = filterDockerDevices(res.Devices, dockerBridgeNets())
+	}
 	annotateRegistered(res.Devices)
 	res.Total = len(res.Devices)
 	return res, nil
+}
+
+// filterDockerDevices drops devices whose IP falls inside one of the host's
+// Docker bridge subnets (dockerNets). It's the IP-based companion to the ARP
+// read's interface-name filter, needed for sources that only surface an IP
+// (mDNS). An empty dockerNets is a no-op, so a host with no Docker bridges (or
+// a failed interface read) keeps every device.
+func filterDockerDevices(devices []Device, dockerNets []*net.IPNet) []Device {
+	if len(dockerNets) == 0 {
+		return devices
+	}
+	out := make([]Device, 0, len(devices))
+	for _, d := range devices {
+		if ip := net.ParseIP(d.IP); ip != nil && ipInNets(ip, dockerNets) {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 // merge keys ARP entries and mDNS entries by IP. ARP is the source of truth

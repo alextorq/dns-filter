@@ -61,3 +61,12 @@ type ChangeFilterRequest struct {
 type DeleteClientRequest struct {
 	ID uint `json:"id"`
 }
+
+// DiscoverRequest controls a LAN scan. FilterDocker is a pointer so an absent
+// field defaults to true (hide Docker bridges) rather than Go's false zero
+// value — the UI checkbox defaults to on, and a client that omits the field
+// should get the same safe default. Set it to false to include Docker
+// neighbours (the "show Docker networks" toggle).
+type DiscoverRequest struct {
+	FilterDocker *bool `json:"filter_docker,omitempty"`
+}

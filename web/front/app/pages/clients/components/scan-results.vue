@@ -15,6 +15,10 @@ const devices = ref<DiscoveryDevice[]>([]);
 const errors = ref<string[]>([]);
 const hasScanned = ref(false);
 
+// On by default: hide Docker bridge neighbours (docker0 / br-<hash>), which are
+// containers on the host, not real LAN devices. Uncheck to list everything.
+const filterDocker = ref(true);
+
 // Track which devices are mid-add so we can disable the row's Add button.
 // Keyed by IP because that's the canonical identifier in LAN mode.
 const adding = reactive<Record<string, boolean>>({});
@@ -27,7 +31,7 @@ const scan = async () => {
     if (lastScanController) lastScanController.abort();
     lastScanController = new AbortController();
     try {
-        const response = await api.discoverNetwork(lastScanController.signal);
+        const response = await api.discoverNetwork(filterDocker.value, lastScanController.signal);
         devices.value = response.devices ?? [];
         errors.value = response.errors ?? [];
         hasScanned.value = true;
@@ -161,13 +165,20 @@ const columns: TableColumn<DiscoveryDevice>[] = [
                     Found {{ devices.length }} device{{ devices.length === 1 ? "" : "s" }}.
                 </template>
             </div>
-            <UButton
-                size="lg"
-                icon="i-lucide-radar"
-                :loading="isLoading"
-                :label="hasScanned ? 'Rescan' : 'Scan'"
-                @click="scanWithLoading"
-            />
+            <div class="flex items-center gap-4">
+                <UCheckbox
+                    v-model="filterDocker"
+                    label="Filter Docker networks"
+                    :disabled="isLoading"
+                />
+                <UButton
+                    size="lg"
+                    icon="i-lucide-radar"
+                    :loading="isLoading"
+                    :label="hasScanned ? 'Rescan' : 'Scan'"
+                    @click="scanWithLoading"
+                />
+            </div>
         </div>
 
         <UAlert

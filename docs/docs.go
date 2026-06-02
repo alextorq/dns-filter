@@ -278,6 +278,9 @@ const docTemplate = `{
         },
         "/api/clients/discover": {
             "post": {
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -285,11 +288,27 @@ const docTemplate = `{
                     "clients"
                 ],
                 "summary": "Scan LAN for devices",
+                "parameters": [
+                    {
+                        "description": "Scan options",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/web.DiscoverRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/web.DiscoverResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "malformed request body",
+                        "schema": {
+                            "$ref": "#/definitions/web.BadRequestResponse"
                         }
                     },
                     "409": {
@@ -372,6 +391,15 @@ const docTemplate = `{
                         "description": "filter.sqlite",
                         "schema": {
                             "type": "file"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -1895,6 +1923,14 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/web.DeviceDTO"
                     }
+                }
+            }
+        },
+        "web.DiscoverRequest": {
+            "type": "object",
+            "properties": {
+                "filter_docker": {
+                    "type": "boolean"
                 }
             }
         },

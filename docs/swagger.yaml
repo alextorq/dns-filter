@@ -420,6 +420,11 @@ definitions:
           $ref: '#/definitions/web.DeviceDTO'
         type: array
     type: object
+  web.DiscoverRequest:
+    properties:
+      filter_docker:
+        type: boolean
+    type: object
   web.DiscoverResponse:
     properties:
       devices:
@@ -764,6 +769,14 @@ paths:
       - clients
   /api/clients/discover:
     post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Scan options
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/web.DiscoverRequest'
       produces:
       - application/json
       responses:
@@ -771,6 +784,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/web.DiscoverResponse'
+        "400":
+          description: malformed request body
+          schema:
+            $ref: '#/definitions/web.BadRequestResponse'
         "409":
           description: discovery is not supported in the current deployment mode
           schema:
@@ -824,6 +841,12 @@ paths:
           description: filter.sqlite
           schema:
             type: file
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: Download database file
       tags:
       - config

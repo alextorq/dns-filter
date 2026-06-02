@@ -25,8 +25,11 @@ type DiscoverResponse struct {
 // Discover scans the LAN for devices.
 // @Summary      Scan LAN for devices
 // @Tags         clients
+// @Accept       json
 // @Produce      json
+// @Param        body body     DiscoverRequest false "Scan options"
 // @Success      200 {object} DiscoverResponse
+// @Failure      400 {object} BadRequestResponse "malformed request body"
 // @Failure      409 {object} ErrorResponse "discovery is not supported in the current deployment mode"
 // @Failure      500 {object} ErrorResponse
 // @Router       /api/clients/discover [post]
@@ -41,10 +44,23 @@ func Discover(c *gin.Context) {
 		return
 	}
 
+	// The body is optional (the scanner runs with no options too). But when a
+	// body IS sent it must be valid: a malformed or wrong-typed field is a
+	// client error, not silently the default — same contract as CreateClient.
+	var req DiscoverRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, BadRequestResponse{Message: err.Error()})
+			return
+		}
+	}
+	// Absent field → hide Docker (matches the UI checkbox default).
+	filterDocker := boolOr(req.FilterDocker, true)
+
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	res, err := discovery.Discover(ctx)
+	res, err := discovery.Discover(ctx, discovery.DiscoverOptions{FilterDocker: filterDocker})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return

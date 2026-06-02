@@ -52,10 +52,7 @@ func CreateClient(c *gin.Context) {
 	// Default to Filtered=true (matches the schema default) when the field is
 	// omitted. The pointer indirection in the request DTO exists for exactly
 	// this distinction — see the CreateClientRequest doc comment.
-	filtered := true
-	if req.Filtered != nil {
-		filtered = *req.Filtered
-	}
+	filtered := boolOr(req.Filtered, true)
 	row, err := clients.Create(create.Input{
 		IP:       req.IP,
 		MAC:      req.MAC,

@@ -226,9 +226,9 @@ The refresh context is *not* tied to the client's — the client already got a s
 
 **Self-routing.** `web/server.go` is thin — it owns only cross-cutting concerns: CORS, the public/protected split, Swagger. Each feature registers its own paths:
 
-- DI features (`blocked-domain`, `filter`, `suggest-to-block`, `source`) expose a method `(h *Handlers) RegisterRoutes(rg *gin.RouterGroup)`.
-- Non-DI features (`auth`, `clients`, `db`, `dns-cache`, `domain-inspect`, `logger`) expose a package function `Register(rg *gin.RouterGroup)`.
-- `auth/web` is a special case: `RegisterPublic(r gin.IRouter)` mounts `POST /api/auth/login` outside `RequireAuth()`, while everything else goes through the usual `Register(rg)` under protection.
+- DI features (`auth`, `blocked-domain`, `db`, `filter`, `logger`, `settings`, `source`, `suggest-to-block`, `traffic`) expose methods on `*Handlers`.
+- Non-DI features (`clients`, `dns-cache`, `domain-inspect`) expose a package function `Register(rg *gin.RouterGroup)`.
+- `auth/web` additionally exposes `RegisterPublic(r gin.IRouter)`, which mounts `POST /api/auth/login` outside its `RequireAuth()` middleware; protected auth routes use `RegisterRoutes(rg)`.
 
 The contract is pinned by the regression test `web/server_test.go::TestBuildRouter_RegistersAllExpectedRoutes` — a snapshot of the full `(method, path)` set is compared with what `gin.Engine.Routes()` returns after `buildRouter`. Any accidental route removal/rename fails in CI.
 
@@ -538,17 +538,17 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ## Entry point (main.go)
 
-`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. Auth, clients and parts of domain-inspect still use legacy package-level access and remain separate DI work:
+`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. Clients, dns-cache and parts of domain-inspect still use legacy package-level access and remain separate DI work:
 
 ```go
 func main() {
     // 1. DB migration and admin bootstrap
     conn := app_db.GetConnection()
     migrate.Migrate(conn)
-    authBusiness.BootstrapAdmin()
-
     conf := config.GetConfig()
     chanLogger := logger.GetLogger()
+    authModule := authBusiness.NewModule(auth_db.NewRepo(conn), conf.AdminLogin, conf.AdminPassword)
+    if err := authModule.BootstrapAdmin(); err != nil { panic(err) }
 
     // 2. Repos (one per feature) — the only place where *gorm.DB appears
     blockRepo    := blocked_domain_db.NewRepo(conn)
@@ -579,7 +579,7 @@ func main() {
     )
     domain_inspect_checks.SetAllowLookup(trafficRepo.IsAllowed)
     go suggestModule.Start(context.Background())
-    go authBusiness.ClearExpiredSessions()
+    go authModule.ClearExpiredSessions()
     // LAN mode: arpwatcher (IP↔MAC) + the hostname collector (mDNS → host_names).
     if conf.Mode == config.ModeLAN {
         go arpwatcher.Run(context.Background(), chanLogger, arpwatcher.DefaultInterval)
@@ -655,7 +655,8 @@ Load-bearing ordering:
 
 5. **Singleton pattern** — for the logger, bloom filter, LRU cache, DNS cache, config (sync.Once). These singletons are wrapped in a `*Module` with explicit dependencies; new modules do not call them directly — the `*Module` is composed in `main.go` and passed to wherever the singleton used to be poked.
 
-6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`blocked-domain/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. Auth, clients and parts of domain-inspect still use package-level DB access and are not yet covered by this claim:
+6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. Clients, dns-cache and parts of domain-inspect still use legacy package-level dependencies and are not yet covered by this claim:
+   - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.
    - `suggest_to_block.Module` — `Collect` and `Start(ctx)` (12h ticker).

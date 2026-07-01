@@ -3,7 +3,6 @@ package web
 import (
 	"net/http"
 
-	"github.com/alextorq/dns-filter/auth/business"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,15 +14,19 @@ const (
 
 // RequireAuth aborts the request with 401 when the session cookie is missing
 // or invalid. On success, the user is attached to the context.
-func RequireAuth() gin.HandlerFunc {
+func (h *Handlers) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if h == nil || h.Service == nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: "unauthorized"})
+			return
+		}
 		token, err := c.Cookie(SessionCookieName)
 		if err != nil || token == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: "unauthorized"})
 			return
 		}
 
-		session, user, err := business.ResolveSession(token)
+		session, user, err := h.Service.ResolveSession(token)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{Error: "unauthorized"})
 			return

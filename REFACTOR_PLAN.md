@@ -53,8 +53,7 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 (`filter/cache`), DNS-кэша (`dns-cache`), логгера (`logger`), конфига
 (`config`) и `db.GetConnection()`. **Все они впитываются `*Module` в
 `main.go`** — фичи их сами не вызывают. На singleton-коннекшене всё ещё
-живут `auth/db` и `domain-inspect/checks/local_stats.go` — отдельные
-точечные PR.
+живёт `domain-inspect/checks/local_stats.go` — отдельный точечный PR.
 
 ---
 
@@ -181,13 +180,13 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 ### Этап 4 — каждая фича сама регистрирует роуты
 
 - **DI-фичи** получили метод `(h *Handlers) RegisterRoutes(rg *gin.RouterGroup)`:
-  `blocked-domain/web`, `filter/web`, `suggest-to-block/web`, `source/web`.
+  `auth/web`, `blocked-domain/web`, `db/web`, `filter/web`, `logger/web`,
+  `settings/web`, `suggest-to-block/web`, `source/web`, `traffic/web`.
 - **Package-level фичи** получили функцию пакета `Register(rg *gin.RouterGroup)`:
-  `clients/web`, `db/web`, `dns-cache/web`, `domain-inspect/web`,
-  `logger/web`.
-- **`auth/web`** разнесён на два экспорта: `RegisterPublic(r gin.IRouter)` —
-  только `POST /api/auth/login`; `Register(rg)` — `/auth/logout`,
-  `/auth/me`. Middleware `RequireAuth()` остаётся отдельным экспортом.
+  `clients/web`, `dns-cache/web`, `domain-inspect/web`.
+- **`auth/web`** разнесён на два instance-метода: `RegisterPublic(r gin.IRouter)` —
+  только `POST /api/auth/login`; `RegisterRoutes(rg)` — `/auth/logout`,
+  `/auth/me`. Middleware `RequireAuth()` также использует injected service.
 - **`suggest-to-block/web.GetSignalCodes`** конвертирован из package-level
   функции в метод `*Handlers` — фича теперь регистрируется унифицированно.
 - **`web/server.go`** ужат до cross-cutting wiring: CORS, public/protected
@@ -254,7 +253,7 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
    defer stop()
    ```
    - Передать `ctx` в `arpwatcher.Run`, `suggestModule.Start`,
-     `authBusiness.ClearExpiredSessions` (последний сейчас не принимает ctx —
+     `authModule.ClearExpiredSessions` (последний сейчас не принимает ctx —
      придётся протащить).
 
 3. **DNS — graceful Shutdown**
@@ -362,8 +361,6 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 - `domain-inspect/checks/local_stats.go` — дёргает `db.GetConnection()`
   напрямую (не через `blocked-domain` / `allow-domain` Repo). DI там —
   отдельный захват.
-- `auth` использует `db.GetConnection()` через `auth/db` package-level
-  функции. Также singleton-зависимый.
 
 ---
 
@@ -373,7 +370,7 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core + allow-domain**. Остатки: `auth`, `domain-inspect`, `dns-cache` — отдельные PR |
+| 3 | DI вместо singleton'ов | **готово для core, db/web и auth**. Остатки: `clients`, `domain-inspect`, `dns-cache` — отдельные PR |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes`/`Register` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |

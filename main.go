@@ -10,6 +10,8 @@ import (
 	"time"
 
 	authBusiness "github.com/alextorq/dns-filter/auth/business"
+	auth_db "github.com/alextorq/dns-filter/auth/db"
+	authWeb "github.com/alextorq/dns-filter/auth/web"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	blockedWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	"github.com/alextorq/dns-filter/clients"
@@ -126,16 +128,16 @@ func runBackgroundSync(sync, refresh func() error, log syncLogger, sleep func(ti
 func main() {
 	conn := app_db.GetConnection()
 	migrate.Migrate(conn)
-	if err := authBusiness.BootstrapAdmin(); err != nil {
+	conf := config.GetConfig()
+	chanLogger := logger.GetLogger()
+	authModule := authBusiness.NewModule(auth_db.NewRepo(conn), conf.AdminLogin, conf.AdminPassword)
+	if err := authModule.BootstrapAdmin(); err != nil {
 		panic(err)
 	}
 
-	conf := config.GetConfig()
-	chanLogger := logger.GetLogger()
-
 	// Composition root for the DI-enabled features: each gets its own *Repo over
 	// the single connection, then *Module / *Handlers wired from those repos.
-	// Auth, clients and domain-inspect still contain legacy service-locator
+	// Clients, dns-cache and domain-inspect still contain legacy service-locator
 	// reads; they are migrated separately rather than hidden by this wiring.
 	blockRepo := blocked_domain_db.NewRepo(conn)
 	sourceRepo := source_db.NewRepo(conn)
@@ -203,7 +205,7 @@ func main() {
 	)
 	inspectWorker.SetFeatureGate(inspectGate)
 
-	go authBusiness.ClearExpiredSessions()
+	go authModule.ClearExpiredSessions()
 
 	// Start the ARP watcher only in LAN mode. Public mode has no LAN to
 	// observe; the watcher would just spam ErrUnsupported (or, in a hosted
@@ -307,6 +309,11 @@ func main() {
 	go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
 	web.CreateServer(web.Handlers{
+		Auth: &authWeb.Handlers{
+			Service:        authModule,
+			CookieSecure:   conf.CookieSecure,
+			CookieSameSite: conf.CookieSameSite,
+		},
 		Blocked: &blockedWeb.Handlers{
 			Repo:          blockRepo,
 			Log:           chanLogger,

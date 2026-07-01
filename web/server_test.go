@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	authWeb "github.com/alextorq/dns-filter/auth/web"
 	blockedWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	dbWeb "github.com/alextorq/dns-filter/db/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
@@ -82,6 +83,7 @@ func TestBuildRouter_RegistersAllExpectedRoutes(t *testing.T) {
 
 func testHandlers() Handlers {
 	return Handlers{
+		Auth:     &authWeb.Handlers{},
 		Blocked:  &blockedWeb.Handlers{},
 		Filter:   &filterWeb.Handlers{},
 		Suggest:  &suggestWeb.Handlers{},

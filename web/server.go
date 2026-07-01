@@ -25,6 +25,7 @@ import (
 // composition-root step for the HTTP API. Feature packages without DI
 // register themselves via package-level Register(rg) functions instead.
 type Handlers struct {
+	Auth     *authWeb.Handlers
 	Blocked  *eventsWeb.Handlers
 	Filter   *filterWeb.Handlers
 	Suggest  *suggestWeb.Handlers
@@ -65,11 +66,11 @@ func buildRouter(h Handlers) *gin.Engine {
 	}))
 
 	// Public auth endpoints — login is the only way in.
-	authWeb.RegisterPublic(r)
+	h.Auth.RegisterPublic(r)
 
 	// Everything else under /api/* requires a valid session.
-	api := r.Group("/api", authWeb.RequireAuth())
-	authWeb.Register(api)
+	api := r.Group("/api", h.Auth.RequireAuth())
+	h.Auth.RegisterRoutes(api)
 	h.Blocked.RegisterRoutes(api)
 	h.Filter.RegisterRoutes(api)
 	h.Suggest.RegisterRoutes(api)

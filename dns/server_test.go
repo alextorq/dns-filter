@@ -114,6 +114,64 @@ type noopClientStore struct{}
 
 func (noopClientStore) IsExcluded(_ identifier.Lookup) bool { return false }
 
+func TestNewServerUsesExplicitRuntimeDependencies(t *testing.T) {
+	cache := newMemoryCache()
+	resolver := &staticResolver{}
+	clients := &noopClientStore{}
+	filter := func(string) bool { return false }
+
+	server := NewServer(ServerDeps{
+		Logger:             noopLogger{},
+		Cache:              cache,
+		Filter:             filter,
+		Metric:             noopMetric{},
+		Identifier:         identifier.IPIdentifier{},
+		Clients:            clients,
+		Upstream:           resolver,
+		SWREnabled:         true,
+		RefreshConcurrency: 7,
+	})
+
+	if server.Cache != cache {
+		t.Fatal("server must use the injected cache")
+	}
+	if server.Clients != clients {
+		t.Fatal("server must use the injected client store")
+	}
+	if server.Upstream != resolver {
+		t.Fatal("server must use the injected upstream resolver")
+	}
+	if !server.swrEnabled.Load() {
+		t.Fatal("server must use the injected SWR setting")
+	}
+	if server.Refresh == nil {
+		t.Fatal("server must create the refresh worker")
+	}
+	if got := cap(server.Refresh.limiter.Load().tokens); got != 7 {
+		t.Fatalf("refresh concurrency = %d, want 7", got)
+	}
+}
+
+func TestNewServerClampsInvalidRefreshConcurrency(t *testing.T) {
+	server := NewServer(ServerDeps{
+		Logger:             noopLogger{},
+		Cache:              newMemoryCache(),
+		Filter:             func(string) bool { return false },
+		Metric:             noopMetric{},
+		Identifier:         identifier.IPIdentifier{},
+		Clients:            noopClientStore{},
+		Upstream:           &staticResolver{},
+		RefreshConcurrency: 0,
+	})
+
+	if server.swrEnabled.Load() {
+		t.Fatal("SWR must remain disabled when the injected setting is false")
+	}
+	if got := cap(server.Refresh.limiter.Load().tokens); got != 1 {
+		t.Fatalf("refresh concurrency = %d, want clamp to 1", got)
+	}
+}
+
 type captureResponseWriter struct {
 	msg    *dnsLib.Msg
 	local  net.Addr

@@ -538,15 +538,15 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ## Entry point (main.go)
 
-`main.go` is the single composition root. `db.GetConnection()` is called exactly once; the other packages receive their dependencies through constructors:
+`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. Auth, clients and parts of domain-inspect still use legacy package-level access and remain separate DI work:
 
 ```go
 func main() {
     // 1. DB migration and admin bootstrap
-    migrate.Migrate()
+    conn := app_db.GetConnection()
+    migrate.Migrate(conn)
     authBusiness.BootstrapAdmin()
 
-    conn := app_db.GetConnection()
     conf := config.GetConfig()
     chanLogger := logger.GetLogger()
 
@@ -592,10 +592,13 @@ func main() {
     metricInstance := dns.CreateMetric()
     trafficWorker := traffic_record.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
     resolver := dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)
-    dnsServer := dns.CreateServerWithResolver(
-        chanLogger, cacheWithMetric, filterModule.CheckExist, metricInstance,
-        buildIdentifier(conf.Mode), resolver,
-    )
+    dnsServer := dns.NewServer(dns.ServerDeps{
+        Logger: chanLogger, Cache: cacheWithMetric,
+        Filter: filterModule.CheckExist, Metric: metricInstance,
+        Identifier: buildIdentifier(conf.Mode), Clients: clients_store.Get(),
+        Upstream: resolver, SWREnabled: conf.CacheSWR,
+        RefreshConcurrency: conf.CacheRefreshConcurrency,
+    })
     dnsServer.Traffic = trafficWorker
 
     // 8. settings: descriptor declaration (incl. traffic_retention_days), restore
@@ -626,12 +629,12 @@ func main() {
 ```
 
 Load-bearing ordering:
-- `migrate.Migrate()` must run before `NewRepo(conn)` — a Repo silently breaks on its first write without a schema.
+- `migrate.Migrate(conn)` must run before `NewRepo(conn)` — a Repo silently breaks on its first write without a schema. The connection is resolved once in `main` and passed into migration explicitly; the migration package no longer calls `db.GetConnection()` itself.
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
 - `sourceModule.Sync()` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds.
 - `clients.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
 - `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(trafficRepo)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. suggest/domain-inspect get "allowed domains" from `trafficRepo` via adapters (`NewAllowFilterAdapter`, `SetAllowLookup(trafficRepo.IsAllowed)`), and block stats via `NewBlockStatsAdapter`; the ports did not change.
-- The upstream is built as `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` and passed to `dns.CreateServerWithResolver` — a single instance for the hot path and the refresh worker, so a runtime swap re-points both.
+- The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.
 - **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
 - HTTP starts in a goroutine inside `web.CreateServer`, and the blocking `dnsServer.Serve()` keeps main alive.
 
@@ -652,8 +655,8 @@ Load-bearing ordering:
 
 5. **Singleton pattern** — for the logger, bloom filter, LRU cache, DNS cache, config (sync.Once). These singletons are wrapped in a `*Module` with explicit dependencies; new modules do not call them directly — the `*Module` is composed in `main.go` and passed to wherever the singleton used to be poked.
 
-6. **Dependency injection.** `main.go` is the single composition root. `db.GetConnection()` is called exactly once there; from then on each feature gets its own `*Repo` (`blocked-domain/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`:
-   - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.CreateServer` directly.
+6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`blocked-domain/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. Auth, clients and parts of domain-inspect still use package-level DB access and are not yet covered by this claim:
+   - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.
    - `suggest_to_block.Module` — `Collect` and `Start(ctx)` (12h ticker).
 

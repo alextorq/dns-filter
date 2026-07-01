@@ -5,7 +5,6 @@ import (
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	clients_db "github.com/alextorq/dns-filter/clients/db"
 	hostnames_db "github.com/alextorq/dns-filter/clients/hostnames/db"
-	"github.com/alextorq/dns-filter/db"
 	settings_db "github.com/alextorq/dns-filter/settings/db"
 	syncDb "github.com/alextorq/dns-filter/source/db"
 	suggest_db "github.com/alextorq/dns-filter/suggest-to-block/db"
@@ -14,9 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func Migrate() {
-	connect := db.GetConnection()
-
+func Migrate(connect *gorm.DB) {
 	// One-shot reset of suggest tables when the legacy schema is detected.
 	// Pre-refactor SuggestBlock had a `reason` TEXT column with concatenated
 	// human-readable strings; the new schema replaces it with a normalized
@@ -125,11 +122,20 @@ func migrateExcludeClients(con *gorm.DB) error {
 		return err
 	}
 	for _, r := range rows {
+		filtered := !r.Active
 		c := clients_db.Client{
 			IP:       r.UserId,
-			Filtered: !r.Active,
+			Filtered: filtered,
 		}
 		if err := con.Create(&c).Error; err != nil {
+			return err
+		}
+		// Client.Filtered has gorm:"default:true". On Create, GORM replaces a
+		// false zero value with that default, which would invert an active legacy
+		// exclusion into a normally filtered client. UpdateColumn writes the
+		// migrated boolean explicitly; the surrounding transaction keeps the
+		// insert and correction atomic.
+		if err := con.Model(&c).UpdateColumn("filtered", filtered).Error; err != nil {
 			return err
 		}
 	}

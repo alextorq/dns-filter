@@ -18,10 +18,11 @@ import (
 	"github.com/alextorq/dns-filter/clients/hostnames"
 	hostnames_db "github.com/alextorq/dns-filter/clients/hostnames/db"
 	"github.com/alextorq/dns-filter/clients/identifier"
+	clients_store "github.com/alextorq/dns-filter/clients/store"
 	"github.com/alextorq/dns-filter/config"
 	app_db "github.com/alextorq/dns-filter/db"
-	db_web "github.com/alextorq/dns-filter/db/web"
 	"github.com/alextorq/dns-filter/db/migrate"
+	db_web "github.com/alextorq/dns-filter/db/web"
 	"github.com/alextorq/dns-filter/dns"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
 	domain_inspect_checks "github.com/alextorq/dns-filter/domain-inspect/checks"
@@ -123,18 +124,19 @@ func runBackgroundSync(sync, refresh func() error, log syncLogger, sleep func(ti
 }
 
 func main() {
-	migrate.Migrate()
+	conn := app_db.GetConnection()
+	migrate.Migrate(conn)
 	if err := authBusiness.BootstrapAdmin(); err != nil {
 		panic(err)
 	}
 
-	conn := app_db.GetConnection()
 	conf := config.GetConfig()
 	chanLogger := logger.GetLogger()
 
-	// Composition root: every feature gets its own *Repo over the single
-	// connection, then *Module / *Handlers wired from those repos. After this
-	// point no feature reads db.GetConnection() — wiring is explicit.
+	// Composition root for the DI-enabled features: each gets its own *Repo over
+	// the single connection, then *Module / *Handlers wired from those repos.
+	// Auth, clients and domain-inspect still contain legacy service-locator
+	// reads; they are migrated separately rather than hidden by this wiring.
 	blockRepo := blocked_domain_db.NewRepo(conn)
 	sourceRepo := source_db.NewRepo(conn)
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
@@ -238,7 +240,17 @@ func main() {
 	resolver := dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)
 
 	ident := buildIdentifier(conf.Mode)
-	dnsServer := dns.CreateServerWithResolver(chanLogger, cacheWithMetric, filterModule.CheckExist, metricInstance, ident, resolver)
+	dnsServer := dns.NewServer(dns.ServerDeps{
+		Logger:             chanLogger,
+		Cache:              cacheWithMetric,
+		Filter:             filterModule.CheckExist,
+		Metric:             metricInstance,
+		Identifier:         ident,
+		Clients:            clients_store.Get(),
+		Upstream:           resolver,
+		SWREnabled:         conf.CacheSWR,
+		RefreshConcurrency: conf.CacheRefreshConcurrency,
+	})
 	dnsServer.Traffic = trafficWorker
 
 	// Runtime settings store. Every sink (logger, resolver, cache, server) now

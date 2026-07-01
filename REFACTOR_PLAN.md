@@ -26,7 +26,7 @@ main.go
 └── suggest_to_block.NewModule(blockRepo, allowRepo,
         sourceRepo, filterModule, suggestRepo, log)       → suggestModule
                             │
-                            ├── dns.CreateServer(..., filterModule.CheckExist, ...)
+                            ├── dns.NewServer(ServerDeps{Filter: filterModule.CheckExist, ...})
                             └── web.CreateServer(web.Handlers{
                                     Blocked, Filter, Suggest, Source})
 ```
@@ -103,7 +103,8 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
   пакетом и не читает singleton'ов.
 - **`main.go`** — composition root: `db.GetConnection()` вызывается ровно
   один раз. Все `*Repo`, `*Module`, `*Handlers` конструируются здесь и
-  пробрасываются явно.
+  пробрасываются явно. Schema migration также получает это соединение явно:
+  `migrate.Migrate(conn)` не обращается к DB singleton самостоятельно.
 
 **Удалено:**
 - `blocked-domain/blocked_domain.go` (shim) и 4 deprecated package-level
@@ -259,7 +260,7 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 3. **DNS — graceful Shutdown**
    - Запустить `dnsServer.Serve()` в горутине (через `errCh chan error`).
    - В main `select { case <-ctx.Done(): dnsServer.Shutdown(); case err := <-errCh: panic(err) }`.
-   - `dns.CreateServer` уже создаёт `*dns.Server` для UDP+TCP; `Shutdown()`
+   - `dns.NewServer` уже создаёт `*DnsServer`, который поднимает UDP+TCP; `Shutdown()`
      корректно дренирует TCP, UDP просто перестаёт читать.
 
 4. **Background workers — flush на shutdown**
@@ -353,7 +354,9 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 - Legacy-миграция `exclude_clients` → `clients` гейтится через `HasTable`
   + `Count == 0`. One-shot, идемпотентный. **Нельзя сломать** при
   любом рефакторинге `clients/db` — операторы потеряют IP-исключения из
-  старой версии.
+  старой версии. Значение `filtered` записывается явно после `Create`, потому
+  что GORM-тег `default:true` иначе заменяет `false` и инвертирует активное
+  legacy-исключение.
 
 ### Внешние потребители не из scope DI
 - `domain-inspect/checks/local_stats.go` — дёргает `db.GetConnection()`

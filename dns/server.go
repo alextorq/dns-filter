@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/alextorq/dns-filter/clients/identifier"
-	"github.com/alextorq/dns-filter/clients/store"
-	"github.com/alextorq/dns-filter/config"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
 	"github.com/alextorq/dns-filter/metric"
 	"github.com/alextorq/dns-filter/utils"
@@ -315,26 +313,39 @@ func (s *DnsServer) Shutdown() error {
 	return err
 }
 
-// CreateServerWithResolver builds the DNS server with an explicit upstream
-// resolver. main passes a *ReloadableResolver so the upstream can be swapped at
-// runtime via the settings module; the same instance backs both the hot path
-// and the refresh worker.
-func CreateServerWithResolver(logger Logger, cache Cache, filter func(string2 string) bool, metric Metric, ident identifier.Identifier, upstream UpstreamResolver) *DnsServer {
-	conf := config.GetConfig()
+// ServerDeps is the complete construction contract for DnsServer. Runtime
+// settings and the client exclusion store are explicit here so the DNS package
+// never reaches into application singletons while it is being wired.
+type ServerDeps struct {
+	Logger             Logger
+	Cache              Cache
+	Filter             func(string) bool
+	Metric             Metric
+	Identifier         identifier.Identifier
+	Clients            ClientStore
+	Upstream           UpstreamResolver
+	SWREnabled         bool
+	RefreshConcurrency int
+}
+
+// NewServer builds the DNS server from explicit dependencies. The same
+// Upstream instance backs both the synchronous hot path and the SWR refresh
+// worker, so a runtime resolver swap remains visible to both.
+func NewServer(deps ServerDeps) *DnsServer {
 	s := &DnsServer{
-		Logger:     logger,
-		Cache:      cache,
-		Filter:     filter,
-		Upstream:   upstream,
-		Metric:     metric,
-		Identifier: ident,
-		Clients:    store.Get(),
+		Logger:     deps.Logger,
+		Cache:      deps.Cache,
+		Filter:     deps.Filter,
+		Upstream:   deps.Upstream,
+		Metric:     deps.Metric,
+		Identifier: deps.Identifier,
+		Clients:    deps.Clients,
 	}
-	s.swrEnabled.Store(conf.CacheSWR)
+	s.swrEnabled.Store(deps.SWREnabled)
 	// Refresh worker shares the singleflight group with the synchronous hot
 	// path, so a refresh that fires while a client miss is in flight (or vice
 	// versa) collapses to a single upstream call.
-	s.Refresh = newRefreshWorker(cache, upstream, &s.upstream, logger, conf.CacheRefreshConcurrency)
+	s.Refresh = newRefreshWorker(deps.Cache, deps.Upstream, &s.upstream, deps.Logger, deps.RefreshConcurrency)
 	return s
 }
 

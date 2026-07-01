@@ -32,6 +32,7 @@ type Handlers struct {
 	Logger   *loggerWeb.Handlers
 	Settings *settingsWeb.Handlers
 	Traffic  *trafficWeb.Handlers
+	Database *dbWeb.Handlers
 }
 
 // CreateServer wires HTTP routes onto a fresh gin.Engine and starts it on
@@ -74,7 +75,7 @@ func buildRouter(h Handlers) *gin.Engine {
 	h.Suggest.RegisterRoutes(api)
 	h.Source.RegisterRoutes(api)
 	clientsWeb.Register(api)
-	dbWeb.Register(api)
+	h.Database.RegisterRoutes(api)
 	dnsCacheWeb.Register(api)
 	inspectWeb.Register(api)
 	h.Logger.RegisterRoutes(api)

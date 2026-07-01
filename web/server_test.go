@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	blockedWeb "github.com/alextorq/dns-filter/blocked-domain/web"
+	dbWeb "github.com/alextorq/dns-filter/db/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
 	settingsWeb "github.com/alextorq/dns-filter/settings/web"
@@ -88,6 +89,7 @@ func testHandlers() Handlers {
 		Logger:   &loggerWeb.Handlers{},
 		Settings: &settingsWeb.Handlers{},
 		Traffic:  &trafficWeb.Handlers{},
+		Database: &dbWeb.Handlers{},
 	}
 }
 

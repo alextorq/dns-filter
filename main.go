@@ -277,11 +277,6 @@ func main() {
 		chanLogger.Error(fmt.Errorf("settings hydrate: %w", err))
 	}
 
-	// /api/config/db/download должен вырезать VT/SB-ключи из выгружаемой копии.
-	// Поставщик возвращает актуальный список secret-ключей на момент запроса —
-	// безопасно, даже если в будущем добавим/уберём дескриптор.
-	db_web.SetSecretKeysProvider(settingsModule.SecretKeys)
-
 	// Запускаем suggest- и inspect-горутины только после HydrateAll: к этому
 	// моменту атомики suggest_inspect_enabled и VT/SB-ключей соответствуют
 	// БД-override, и inspectGate в первом же Collect/RunOnce читает их свежими.
@@ -338,6 +333,12 @@ func main() {
 			GetLogLevel: chanLogger.GetLogLevel,
 		},
 		Settings: &settingsWeb.Handlers{Service: settingsModule},
+		Database: &db_web.Handlers{
+			DB:         conn,
+			DBPath:     conf.DbPath,
+			Log:        chanLogger,
+			SecretKeys: settingsModule.SecretKeys,
+		},
 		// Per-device traffic dashboard (read-only). Vendor enrichment uses the
 		// pure, local OUI lookup; hostname enrichment reads the mDNS collector's
 		// MAC→hostname table (empty in public mode, where no collector runs).

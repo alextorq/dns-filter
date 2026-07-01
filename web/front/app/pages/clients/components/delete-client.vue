@@ -62,7 +62,11 @@ const confirmDelete = createLoadingRequest(deleteClient);
                     color="neutral"
                     variant="ghost"
                     :disabled="isLoading"
-                    @click="open = false"
+                    @click="
+                        () => {
+                            open = false;
+                        }
+                    "
                 >
                     Cancel
                 </UButton>

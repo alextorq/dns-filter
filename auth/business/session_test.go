@@ -1,117 +1,201 @@
 package business
 
 import (
-	"os"
+	"errors"
 	"testing"
 	"time"
 
 	authDb "github.com/alextorq/dns-filter/auth/db"
-	app_db "github.com/alextorq/dns-filter/db"
+	"gorm.io/gorm"
 )
 
-func TestMain(m *testing.M) {
-	// Same trick as create-domain tests: chdir into a temp dir so the default
-	// ./filter.sqlite path resolves locally.
-	tmp, err := os.MkdirTemp("", "auth-session-test-*")
+type fakeRepo struct {
+	usersByLogin map[string]*authDb.User
+	usersByID    map[uint]*authDb.User
+	sessions     map[string]*authDb.Session
+	lookupErr    error
+	createErr    error
+	deleteErr    error
+	deleted      []string
+	createdUsers int
+}
+
+func newFakeRepo() *fakeRepo {
+	return &fakeRepo{
+		usersByLogin: map[string]*authDb.User{},
+		usersByID:    map[uint]*authDb.User{},
+		sessions:     map[string]*authDb.Session{},
+	}
+}
+
+func (r *fakeRepo) GetUserByLogin(login string) (*authDb.User, error) {
+	if r.lookupErr != nil {
+		return nil, r.lookupErr
+	}
+	user, ok := r.usersByLogin[login]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return user, nil
+}
+
+func (r *fakeRepo) GetUserByID(id uint) (*authDb.User, error) {
+	if r.lookupErr != nil {
+		return nil, r.lookupErr
+	}
+	user, ok := r.usersByID[id]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return user, nil
+}
+
+func (r *fakeRepo) CreateUser(login, passwordHash string) (*authDb.User, error) {
+	if r.createErr != nil {
+		return nil, r.createErr
+	}
+	r.createdUsers++
+	user := &authDb.User{ID: uint(r.createdUsers), Login: login, PasswordHash: passwordHash}
+	r.usersByLogin[login] = user
+	r.usersByID[user.ID] = user
+	return user, nil
+}
+
+func (r *fakeRepo) CreateSession(session *authDb.Session) error {
+	if r.createErr != nil {
+		return r.createErr
+	}
+	r.sessions[session.Token] = session
+	return nil
+}
+
+func (r *fakeRepo) GetSessionByToken(token string) (*authDb.Session, error) {
+	if r.lookupErr != nil {
+		return nil, r.lookupErr
+	}
+	session, ok := r.sessions[token]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return session, nil
+}
+
+func (r *fakeRepo) DeleteSession(token string) error {
+	if r.deleteErr != nil {
+		return r.deleteErr
+	}
+	delete(r.sessions, token)
+	r.deleted = append(r.deleted, token)
+	return nil
+}
+
+func (r *fakeRepo) DeleteExpiredSessions(time.Time) error { return nil }
+
+func (r *fakeRepo) addUser(t *testing.T, login, password string) *authDb.User {
+	t.Helper()
+	hash, err := HashPassword(password)
 	if err != nil {
-		panic(err)
+		t.Fatalf("hash password: %v", err)
 	}
-	if err := os.Chdir(tmp); err != nil {
-		os.RemoveAll(tmp)
-		panic(err)
-	}
-
-	code := m.Run()
-	os.RemoveAll(tmp)
-	os.Exit(code)
+	user := &authDb.User{ID: uint(len(r.usersByID) + 1), Login: login, PasswordHash: hash}
+	r.usersByLogin[login] = user
+	r.usersByID[user.ID] = user
+	return user
 }
 
-// Locks in #36: if DeleteSession fails, the in-memory cache must NOT be
-// dropped — otherwise logout looks succeeded but the session still
-// resolves on next request.
+func TestAuthenticate_IssuesSession(t *testing.T) {
+	repo := newFakeRepo()
+	user := repo.addUser(t, "admin", "correct")
+	module := NewModule(repo, "", "")
+
+	gotUser, session, err := module.Authenticate("admin", "correct")
+	if err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if gotUser.ID != user.ID || session.UserID != user.ID || len(session.Token) != 64 {
+		t.Fatalf("unexpected auth result: user=%+v session=%+v", gotUser, session)
+	}
+	if _, ok := repo.sessions[session.Token]; !ok {
+		t.Fatal("session was not persisted")
+	}
+	if _, ok := module.lookupCachedSession(session.Token); !ok {
+		t.Fatal("session was not cached")
+	}
+}
+
+func TestAuthenticate_RejectsInvalidCredentials(t *testing.T) {
+	repo := newFakeRepo()
+	repo.addUser(t, "admin", "correct")
+	module := NewModule(repo, "", "")
+
+	for _, tc := range []struct{ login, password string }{
+		{login: "missing", password: "correct"},
+		{login: "admin", password: "wrong"},
+	} {
+		if _, _, err := module.Authenticate(tc.login, tc.password); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("Authenticate(%q): got %v, want ErrInvalidCredentials", tc.login, err)
+		}
+	}
+	if len(repo.sessions) != 0 {
+		t.Fatalf("invalid credentials created sessions: %d", len(repo.sessions))
+	}
+}
+
 func TestRevokeSession_DBFailureKeepsCache(t *testing.T) {
-	conn := app_db.GetConnection()
+	repo := newFakeRepo()
+	repo.deleteErr = errors.New("db unavailable")
+	module := NewModule(repo, "", "")
+	module.cacheSession(&authDb.Session{Token: "tok", UserID: 42, ExpiresAt: time.Now().Add(time.Hour)})
 
-	// Ensure the sessions table is gone so DeleteSession returns an error.
-	if err := conn.Migrator().DropTable(&authDb.Session{}); err != nil {
-		t.Fatalf("drop sessions table: %v", err)
+	if err := module.RevokeSession("tok"); err == nil {
+		t.Fatal("expected delete error")
 	}
-
-	const token = "tok-db-fail"
-	cacheSession(&authDb.Session{
-		Token:     token,
-		UserID:    42,
-		ExpiresAt: time.Now().Add(time.Hour),
-	})
-
-	if err := RevokeSession(token); err == nil {
-		t.Fatal("expected error from RevokeSession when DB delete fails, got nil")
-	}
-
-	if _, ok := lookupCachedSession(token); !ok {
-		t.Fatal("cache was dropped despite DB delete failure — logout would be falsely effective")
-	}
-
-	// Restore for any subsequent tests.
-	if err := conn.AutoMigrate(&authDb.Session{}); err != nil {
-		t.Fatalf("restore sessions table: %v", err)
+	if _, ok := module.lookupCachedSession("tok"); !ok {
+		t.Fatal("cache was dropped despite DB failure")
 	}
 }
 
-// Locks in the #36 follow-up: ResolveSession's expired-cache branch must
-// also delete the DB row before dropping the cache. If the DB delete fails,
-// the cache must keep the entry so a subsequent ResolveSession will retry
-// the delete instead of going through DB lookup and re-caching it.
-func TestResolveSession_ExpiredKeepsCacheOnDBFailure(t *testing.T) {
-	conn := app_db.GetConnection()
-	if err := conn.Migrator().DropTable(&authDb.Session{}); err != nil {
-		t.Fatalf("drop sessions table: %v", err)
+func TestResolveSession_ExpiredCacheKeepsEntryOnDeleteFailure(t *testing.T) {
+	repo := newFakeRepo()
+	repo.deleteErr = errors.New("db unavailable")
+	module := NewModule(repo, "", "")
+	module.cacheSession(&authDb.Session{Token: "expired", UserID: 7, ExpiresAt: time.Now().Add(-time.Hour)})
+
+	if _, _, err := module.ResolveSession("expired"); !errors.Is(err, ErrSessionExpired) {
+		t.Fatalf("ResolveSession: got %v, want ErrSessionExpired", err)
 	}
-	t.Cleanup(func() {
-		_ = conn.AutoMigrate(&authDb.Session{})
-	})
-
-	const token = "tok-expired"
-	cacheSession(&authDb.Session{
-		Token:     token,
-		UserID:    7,
-		ExpiresAt: time.Now().Add(-time.Hour),
-	})
-
-	_, _, err := ResolveSession(token)
-	if err == nil {
-		t.Fatal("expected ErrSessionExpired, got nil")
-	}
-
-	if _, ok := lookupCachedSession(token); !ok {
-		t.Fatal("cache was dropped despite DB delete failure on expired branch")
+	if _, ok := module.lookupCachedSession("expired"); !ok {
+		t.Fatal("cache was dropped despite DB failure")
 	}
 }
 
 func TestRevokeSession_HappyPathDropsCache(t *testing.T) {
-	conn := app_db.GetConnection()
-	if err := conn.AutoMigrate(&authDb.Session{}); err != nil {
-		t.Fatalf("migrate sessions: %v", err)
-	}
-	t.Cleanup(func() {
-		conn.Where("token = ?", "tok-ok").Delete(&authDb.Session{})
-	})
+	repo := newFakeRepo()
+	module := NewModule(repo, "", "")
+	module.cacheSession(&authDb.Session{Token: "tok", UserID: 1, ExpiresAt: time.Now().Add(time.Hour)})
 
-	s := &authDb.Session{
-		Token:     "tok-ok",
-		UserID:    1,
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(time.Hour),
+	if err := module.RevokeSession("tok"); err != nil {
+		t.Fatalf("RevokeSession: %v", err)
 	}
-	if err := authDb.CreateSession(s); err != nil {
-		t.Fatalf("seed session: %v", err)
-	}
-	cacheSession(s)
-
-	if err := RevokeSession(s.Token); err != nil {
-		t.Fatalf("RevokeSession returned %v", err)
-	}
-	if _, ok := lookupCachedSession(s.Token); ok {
+	if _, ok := module.lookupCachedSession("tok"); ok {
 		t.Fatal("cache should be empty after successful revoke")
+	}
+}
+
+func TestBootstrapAdmin_CreatesHashedUserOnce(t *testing.T) {
+	repo := newFakeRepo()
+	module := NewModule(repo, "admin", "secret")
+
+	if err := module.BootstrapAdmin(); err != nil {
+		t.Fatalf("first BootstrapAdmin: %v", err)
+	}
+	if err := module.BootstrapAdmin(); err != nil {
+		t.Fatalf("second BootstrapAdmin: %v", err)
+	}
+	if repo.createdUsers != 1 {
+		t.Fatalf("created users = %d, want 1", repo.createdUsers)
+	}
+	if !CheckPassword(repo.usersByLogin["admin"].PasswordHash, "secret") {
+		t.Fatal("bootstrap password was not hashed correctly")
 	}
 }

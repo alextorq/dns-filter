@@ -1,7 +1,6 @@
 package business
 
 import (
-	"sync"
 	"time"
 
 	authDb "github.com/alextorq/dns-filter/auth/db"
@@ -15,29 +14,21 @@ type cachedSession struct {
 	ExpiresAt time.Time
 }
 
-var (
-	sessionCache     *lru.LRUCache[cachedSession]
-	sessionCacheOnce sync.Once
-)
-
-func getSessionCache() *lru.LRUCache[cachedSession] {
-	sessionCacheOnce.Do(func() {
-		sessionCache = lru.CreateCache[cachedSession](sessionCacheCapacity)
-	})
-	return sessionCache
+func newSessionCache() *lru.LRUCache[cachedSession] {
+	return lru.CreateCache[cachedSession](sessionCacheCapacity)
 }
 
-func cacheSession(s *authDb.Session) {
-	getSessionCache().Add(s.Token, cachedSession{
+func (m *Module) cacheSession(s *authDb.Session) {
+	m.cache.Add(s.Token, cachedSession{
 		UserID:    s.UserID,
 		ExpiresAt: s.ExpiresAt,
 	})
 }
 
-func dropCachedSession(token string) {
-	getSessionCache().Delete(token)
+func (m *Module) dropCachedSession(token string) {
+	m.cache.Delete(token)
 }
 
-func lookupCachedSession(token string) (cachedSession, bool) {
-	return getSessionCache().Get(token)
+func (m *Module) lookupCachedSession(token string) (cachedSession, bool) {
+	return m.cache.Get(token)
 }

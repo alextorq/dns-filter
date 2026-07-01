@@ -22,7 +22,7 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func IssueSession(userID uint) (*authDb.Session, error) {
+func (m *Module) IssueSession(userID uint) (*authDb.Session, error) {
 	token, err := generateToken()
 	if err != nil {
 		return nil, err
@@ -34,29 +34,29 @@ func IssueSession(userID uint) (*authDb.Session, error) {
 		CreatedAt: now,
 		ExpiresAt: now.Add(SessionTTL),
 	}
-	if err := authDb.CreateSession(s); err != nil {
+	if err := m.repo.CreateSession(s); err != nil {
 		return nil, err
 	}
-	cacheSession(s)
+	m.cacheSession(s)
 	return s, nil
 }
 
 // ResolveSession returns the user behind a session token. The token → (userID,
 // expiry) mapping is cached in an LRU so the DNS-style hot-path-off-the-DB
 // convention is preserved; the user record itself is still loaded fresh.
-func ResolveSession(token string) (*authDb.Session, *authDb.User, error) {
+func (m *Module) ResolveSession(token string) (*authDb.Session, *authDb.User, error) {
 	if token == "" {
 		return nil, nil, gorm.ErrRecordNotFound
 	}
 
-	if cached, ok := lookupCachedSession(token); ok {
+	if cached, ok := m.lookupCachedSession(token); ok {
 		if time.Now().After(cached.ExpiresAt) {
-			if err := authDb.DeleteSession(token); err == nil {
-				dropCachedSession(token)
+			if err := m.repo.DeleteSession(token); err == nil {
+				m.dropCachedSession(token)
 			}
 			return nil, nil, ErrSessionExpired
 		}
-		user, err := authDb.GetUserByID(cached.UserID)
+		user, err := m.repo.GetUserByID(cached.UserID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -67,26 +67,26 @@ func ResolveSession(token string) (*authDb.Session, *authDb.User, error) {
 		}, user, nil
 	}
 
-	s, err := authDb.GetSessionByToken(token)
+	s, err := m.repo.GetSessionByToken(token)
 	if err != nil {
 		return nil, nil, err
 	}
 	if time.Now().After(s.ExpiresAt) {
-		_ = authDb.DeleteSession(token)
+		_ = m.repo.DeleteSession(token)
 		return nil, nil, ErrSessionExpired
 	}
-	cacheSession(s)
-	user, err := authDb.GetUserByID(s.UserID)
+	m.cacheSession(s)
+	user, err := m.repo.GetUserByID(s.UserID)
 	if err != nil {
 		return nil, nil, err
 	}
 	return s, user, nil
 }
 
-func RevokeSession(token string) error {
-	if err := authDb.DeleteSession(token); err != nil {
+func (m *Module) RevokeSession(token string) error {
+	if err := m.repo.DeleteSession(token); err != nil {
 		return err
 	}
-	dropCachedSession(token)
+	m.dropCachedSession(token)
 	return nil
 }

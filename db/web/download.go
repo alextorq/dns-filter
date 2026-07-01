@@ -7,24 +7,27 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alextorq/dns-filter/config"
-	app_db "github.com/alextorq/dns-filter/db"
-	"github.com/alextorq/dns-filter/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
-// secretKeysProvider возвращает ключи секретных настроек, которые нужно
-// вырезать из выгружаемой копии БД. Выставляется в main.go через
-// SetSecretKeysProvider; nil-значение трактуется как "секретов нет".
-//
-// Тип-хук, а не зависимость в Handlers, чтобы оставить пакет в текущем
-// package-level-Register-стиле (см. ARCHITECTURE.md «Самонастройка маршрутов»).
-var secretKeysProvider func() []string
+// Logger is the narrow logging port used by the database download handler.
+type Logger interface {
+	Info(args ...any)
+	Error(err error)
+}
 
-// SetSecretKeysProvider — точка инжекции из composition root.
-func SetSecretKeysProvider(f func() []string) { secretKeysProvider = f }
+// Handlers owns every dependency needed by the database HTTP feature. Keeping
+// the live connection and the secret-key provider here avoids package globals
+// in a security-sensitive endpoint: every exported snapshot is sanitized with
+// the settings registry wired by the composition root.
+type Handlers struct {
+	DB         *gorm.DB
+	DBPath     string
+	Log        Logger
+	SecretKeys func() []string
+}
 
 // DownloadDb streams a sanitized snapshot of the SQLite database as an
 // attachment. Дамп идёт через `VACUUM INTO` во временный файл, в копии
@@ -42,9 +45,14 @@ func SetSecretKeysProvider(f func() []string) { secretKeysProvider = f }
 // @Success      200 {file} binary "filter.sqlite"
 // @Failure      500 {object} map[string]string
 // @Router       /api/config/db/download [get]
-func DownloadDb(c *gin.Context) {
-	l := logger.GetLogger()
-	conf := config.GetConfig()
+func (h *Handlers) DownloadDb(c *gin.Context) {
+	if err := h.validate(); err != nil {
+		if h != nil && h.Log != nil {
+			h.Log.Error(fmt.Errorf("download db: invalid handler wiring: %w", err))
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "snapshot failed"})
+		return
+	}
 
 	// MkdirTemp создаёт каталог с правами 0700 в TMPDIR. Все артефакты дампа
 	// (snapshot + потенциальные `-journal`/`-wal`/`-shm` от второго GORM-
@@ -52,31 +60,39 @@ func DownloadDb(c *gin.Context) {
 	// каталог целиком — sidecar-файлы не утекают в TMPDIR между запросами.
 	tmpDir, err := os.MkdirTemp("", "filter-snapshot-")
 	if err != nil {
-		l.Error(fmt.Errorf("download db: создание tmp-каталога: %w", err))
+		h.Log.Error(fmt.Errorf("download db: создание tmp-каталога: %w", err))
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "snapshot failed"})
 		return
 	}
 	defer os.RemoveAll(tmpDir)
 	tmpPath := filepath.Join(tmpDir, "filter.sqlite")
 
-	if err := snapshotWithoutSecrets(app_db.GetConnection(), tmpPath, secretKeysSafe()); err != nil {
-		l.Error(fmt.Errorf("download db: snapshot: %w", err))
+	if err := snapshotWithoutSecrets(h.DB, tmpPath, h.SecretKeys()); err != nil {
+		h.Log.Error(fmt.Errorf("download db: snapshot: %w", err))
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "snapshot failed"})
 		return
 	}
 
-	l.Info("Downloading database file: " + conf.DbPath + " (sanitized snapshot)")
+	h.Log.Info("Downloading database file: " + h.DBPath + " (sanitized snapshot)")
 	c.FileAttachment(tmpPath, "filter.sqlite")
 }
 
-// secretKeysSafe защищается от nil-провайдера: если main.go не подключил его,
-// возвращаем пустой срез — никакие строки не удаляются, поведение совместимо
-// с прежним эндпоинтом.
-func secretKeysSafe() []string {
-	if secretKeysProvider == nil {
-		return nil
+// validate makes incomplete DI fail closed. In particular, a missing
+// SecretKeys provider must never degrade to exporting an unsanitized database.
+func (h *Handlers) validate() error {
+	if h == nil {
+		return fmt.Errorf("handlers are nil")
 	}
-	return secretKeysProvider()
+	if h.DB == nil {
+		return fmt.Errorf("database is nil")
+	}
+	if h.Log == nil {
+		return fmt.Errorf("logger is nil")
+	}
+	if h.SecretKeys == nil {
+		return fmt.Errorf("secret keys provider is nil")
+	}
+	return nil
 }
 
 // snapshotWithoutSecrets делает атомарную копию live-БД через `VACUUM INTO` и

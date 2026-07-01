@@ -66,7 +66,11 @@ const confirmClear = createLoadingRequest(doClear);
                     color="neutral"
                     variant="ghost"
                     :disabled="isLoading"
-                    @click="open = false"
+                    @click="
+                        () => {
+                            open = false;
+                        }
+                    "
                 >
                     Cancel
                 </UButton>

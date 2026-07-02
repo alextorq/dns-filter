@@ -18,11 +18,12 @@ import (
 // push their values into. It is assembled at the composition root where every
 // sink already exists.
 type dynamicSettingsDeps struct {
-	conf      *config.Config
-	logr      *logger.ChanLogger
-	resolver  *dns.ReloadableResolver
-	cache     *dns_cache.CacheWithMetrics
-	dnsServer *dns.DnsServer
+	conf               *config.Config
+	logr               *logger.ChanLogger
+	resolver           *dns.ReloadableResolver
+	cache              *dns_cache.CacheWithMetrics
+	dnsServer          *dns.DnsServer
+	inspectCredentials *checks.Credentials
 }
 
 // registerDynamicSettings declares the canonical set of DB-backed runtime
@@ -115,21 +116,21 @@ func registerDynamicSettings(m *settings.Module, d dynamicSettingsDeps) {
 		},
 		// VT/SB ключи: тип "secret" — в API выдаются маскированными (последние
 		// 4 символа), сам провайдер-чек на каждом запросе читает свежий ключ
-		// через checks.GetVTKey/GetSBKey, так что Apply без рестарта.
+		// из injected Credentials, так что Apply работает без рестарта.
 		// /api/config/db/download дополнительно вырезает эти строки из дампа.
 		settings.Setting{
 			Key:      "virustotal_key",
 			Type:     settings.SecretType,
 			Default:  c.VirusTotalKey,
 			Validate: settings.ValidateSecret,
-			Apply:    func(raw string) error { checks.SetVTKey(settings.ParseSecret(raw)); return nil },
+			Apply:    func(raw string) error { d.inspectCredentials.SetVirusTotal(settings.ParseSecret(raw)); return nil },
 		},
 		settings.Setting{
 			Key:      "safebrowsing_key",
 			Type:     settings.SecretType,
 			Default:  c.SafeBrowsingKey,
 			Validate: settings.ValidateSecret,
-			Apply:    func(raw string) error { checks.SetSBKey(settings.ParseSecret(raw)); return nil },
+			Apply:    func(raw string) error { d.inspectCredentials.SetSafeBrowsing(settings.ParseSecret(raw)); return nil },
 		},
 	)
 }

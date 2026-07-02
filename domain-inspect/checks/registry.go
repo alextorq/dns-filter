@@ -5,8 +5,10 @@ import (
 )
 
 type DefaultDeps struct {
-	LocalStats domain_inspect.CheckFunc
-	URLScan    domain_inspect.CheckFunc
+	LocalStats   domain_inspect.CheckFunc
+	URLScan      domain_inspect.CheckFunc
+	VirusTotal   domain_inspect.CheckFunc
+	SafeBrowsing domain_inspect.CheckFunc
 }
 
 // Default returns the full catalog of inspection checks. The map shape lets
@@ -19,13 +21,19 @@ func Default(deps DefaultDeps) map[string]domain_inspect.CheckFunc {
 	if deps.URLScan == nil {
 		panic("domain-inspect/checks: urlscan check is required")
 	}
+	if deps.VirusTotal == nil {
+		panic("domain-inspect/checks: VirusTotal check is required")
+	}
+	if deps.SafeBrowsing == nil {
+		panic("domain-inspect/checks: Safe Browsing check is required")
+	}
 	return map[string]domain_inspect.CheckFunc{
 		"local_stats":   deps.LocalStats,
 		"dns_resolve":   DNSResolve,
 		"rdap":          RDAPAge,
 		"crtsh":         CrtSh,
-		"virustotal":    VirusTotal,
+		"virustotal":    deps.VirusTotal,
 		"urlscan":       deps.URLScan,
-		"safe_browsing": SafeBrowsing,
+		"safe_browsing": deps.SafeBrowsing,
 	}
 }

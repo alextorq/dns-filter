@@ -31,6 +31,37 @@ func fakeCheck(status domain_inspect.CheckStatus, verdict domain_inspect.Verdict
 	}
 }
 
+func newTestAdapter(t *testing.T) *Adapter {
+	t.Helper()
+	noop := fakeCheck(domain_inspect.StatusSkipped, domain_inspect.VerdictUnknown, nil)
+	return NewAdapter(newRepo(t), time.Hour, ProviderChecks{
+		VirusTotal:   noop,
+		SafeBrowsing: noop,
+	})
+}
+
+func TestNewAdapter_RejectsMissingProviderChecks(t *testing.T) {
+	check := fakeCheck(domain_inspect.StatusSkipped, domain_inspect.VerdictUnknown, nil)
+	cases := []struct {
+		name      string
+		providers ProviderChecks
+	}{
+		{name: "VirusTotal", providers: ProviderChecks{SafeBrowsing: check}},
+		{name: "Safe Browsing", providers: ProviderChecks{VirusTotal: check}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("expected missing provider check to panic")
+				}
+			}()
+			NewAdapter(newRepo(t), time.Hour, tc.providers)
+		})
+	}
+}
+
 func hasReason(reasons []collect.Reason, code string) (collect.Reason, bool) {
 	for _, r := range reasons {
 		if r.Code == code {
@@ -43,7 +74,7 @@ func hasReason(reasons []collect.Reason, code string) (collect.Reason, bool) {
 // Two providers calling "malicious" push the summary over the malicious
 // threshold; both must surface as distinct inspect_* reasons.
 func TestInspect_Malicious(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	a.checks = map[string]domain_inspect.CheckFunc{
 		"virustotal":    fakeCheck(domain_inspect.StatusOK, domain_inspect.VerdictMalicious, map[string]any{"malicious": 6}),
 		"safe_browsing": fakeCheck(domain_inspect.StatusOK, domain_inspect.VerdictMalicious, nil),
@@ -69,7 +100,7 @@ func TestInspect_Malicious(t *testing.T) {
 // A rate-limited provider short-circuits the whole inspection so the worker can
 // pause — even if another check already produced a verdict.
 func TestInspect_RateLimitedShortCircuits(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	a.checks = map[string]domain_inspect.CheckFunc{
 		"virustotal":    fakeCheck(domain_inspect.StatusRateLimited, "", nil),
 		"safe_browsing": fakeCheck(domain_inspect.StatusOK, domain_inspect.VerdictMalicious, nil),
@@ -85,7 +116,7 @@ func TestInspect_RateLimitedShortCircuits(t *testing.T) {
 // "unknown"), but the inspect_rdap_young reason MUST still be recorded so the
 // worker sees the signal. This pins the "reasons independent of summary" rule.
 func TestInspect_YoungDomain_ReasonRecordedDespiteUnknownSummary(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	a.checks = map[string]domain_inspect.CheckFunc{
 		"rdap": fakeCheck(domain_inspect.StatusOK, domain_inspect.VerdictSuspicious, map[string]any{"age_days": 5}),
 	}
@@ -107,7 +138,7 @@ func TestInspect_YoungDomain_ReasonRecordedDespiteUnknownSummary(t *testing.T) {
 // An actively-clean summary is recorded as an endorsement so the worker can
 // drop the candidate rather than leave it pending.
 func TestInspect_CleanEndorsed(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	a.checks = map[string]domain_inspect.CheckFunc{
 		"safe_browsing": fakeCheck(domain_inspect.StatusOK, domain_inspect.VerdictClean, nil),
 	}
@@ -130,7 +161,7 @@ func TestInspect_CleanEndorsed(t *testing.T) {
 // retry-vs-drop branch in M4 depends on it: "unknown" means "could not decide",
 // not "clean" and not a failure.
 func TestInspect_AllNonOK_UnknownNoReasons(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	a.checks = map[string]domain_inspect.CheckFunc{
 		"virustotal":    fakeCheck(domain_inspect.StatusSkipped, "", nil),
 		"safe_browsing": fakeCheck(domain_inspect.StatusError, "", nil),
@@ -153,7 +184,7 @@ func TestInspect_AllNonOK_UnknownNoReasons(t *testing.T) {
 // (network) check runs once, the second sibling is served from cache with the
 // same verdict re-derived from the stored age.
 func TestWithRDAPCache_SiblingServedFromCache(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	calls := 0
 	inner := func(context.Context, string) domain_inspect.CheckResult {
 		calls++
@@ -186,7 +217,7 @@ func TestWithRDAPCache_SiblingServedFromCache(t *testing.T) {
 // RDAPVerdictForAge — exercising the >365d branch that the suspicious-age test
 // does not.
 func TestWithRDAPCache_CleanAgeFromCache(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	calls := 0
 	inner := func(context.Context, string) domain_inspect.CheckResult {
 		calls++
@@ -212,7 +243,7 @@ func TestWithRDAPCache_CleanAgeFromCache(t *testing.T) {
 // A non-OK inner result must NOT be cached: a transient RDAP error should be
 // re-tried on the next sibling, not frozen as a bogus age.
 func TestWithRDAPCache_InnerErrorNotCached(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	calls := 0
 	inner := func(context.Context, string) domain_inspect.CheckResult {
 		calls++
@@ -231,7 +262,7 @@ func TestWithRDAPCache_InnerErrorNotCached(t *testing.T) {
 // An OK result that carries no age_days (registrar 404 / unregistered) must not
 // be cached as age=0 — otherwise siblings would inherit a false "young" verdict.
 func TestWithRDAPCache_MissingAgeNotCached(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	calls := 0
 	inner := func(context.Context, string) domain_inspect.CheckResult {
 		calls++
@@ -254,7 +285,7 @@ func TestWithRDAPCache_MissingAgeNotCached(t *testing.T) {
 // A non-registrable input (bare TLD) is delegated to inner every time and never
 // cached — otherwise we would poison the cache under a meaningless key.
 func TestWithRDAPCache_NonRegistrableDelegatesUncached(t *testing.T) {
-	a := NewAdapter(newRepo(t), time.Hour)
+	a := newTestAdapter(t)
 	calls := 0
 	inner := func(context.Context, string) domain_inspect.CheckResult {
 		calls++

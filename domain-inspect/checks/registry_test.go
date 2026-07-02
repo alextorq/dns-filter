@@ -15,7 +15,12 @@ func TestDefault_UsesInjectedChecks(t *testing.T) {
 		return domain_inspect.CheckResult{Status: domain_inspect.StatusOK, Verdict: domain_inspect.VerdictSuspicious}
 	}
 
-	catalog := Default(DefaultDeps{LocalStats: local, URLScan: urlScan})
+	catalog := Default(DefaultDeps{
+		LocalStats:   local,
+		URLScan:      urlScan,
+		VirusTotal:   local,
+		SafeBrowsing: local,
+	})
 	if got := catalog["local_stats"](context.Background(), "example.com"); got.Verdict != domain_inspect.VerdictClean {
 		t.Errorf("catalog did not use injected local_stats check: got %q", got.Verdict)
 	}
@@ -30,8 +35,10 @@ func TestDefault_RejectsMissingInjectedChecks(t *testing.T) {
 		name string
 		deps DefaultDeps
 	}{
-		{name: "local stats", deps: DefaultDeps{URLScan: check}},
-		{name: "urlscan", deps: DefaultDeps{LocalStats: check}},
+		{name: "local stats", deps: DefaultDeps{URLScan: check, VirusTotal: check, SafeBrowsing: check}},
+		{name: "urlscan", deps: DefaultDeps{LocalStats: check, VirusTotal: check, SafeBrowsing: check}},
+		{name: "VirusTotal", deps: DefaultDeps{LocalStats: check, URLScan: check, SafeBrowsing: check}},
+		{name: "Safe Browsing", deps: DefaultDeps{LocalStats: check, URLScan: check, VirusTotal: check}},
 	}
 
 	for _, tc := range cases {

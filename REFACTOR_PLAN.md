@@ -362,7 +362,8 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 ### Внешние потребители не из scope DI
 - `domain-inspect/checks` больше не читает singleton DB: `local_stats` получает
   `blocked-domain/db.Repo` и `traffic/db.Repo` через узкие порты. URLScan
-  получает env-only ключ через `NewURLScan`; остались VT/SB runtime keys.
+  получает env-only ключ через `NewURLScan`; VT/SB получают общий instance
+  `Credentials`, связанный с settings и обоими потребителями в `main`.
 
 ---
 
@@ -372,7 +373,7 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients, dns-cache, domain-inspect/web, local_stats и URLScan**. Остаток: VT/SB runtime state, затем process-level singleton-конструкторы |
+| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients, dns-cache и domain-inspect**. Остаток: observability/background helpers и process-level singleton-конструкторы |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |

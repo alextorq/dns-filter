@@ -19,8 +19,9 @@ import (
 // нужен. Это безопасный синглтон, инициализированный пакетом.
 func wiringDepsForRegister(c *config.Config) dynamicSettingsDeps {
 	return dynamicSettingsDeps{
-		conf: c,
-		logr: logger.GetLogger(),
+		conf:               c,
+		logr:               logger.GetLogger(),
+		inspectCredentials: checks.NewCredentials(),
 	}
 }
 
@@ -243,13 +244,14 @@ func TestVTSBSecrets_DefaultMaskedFromConfig(t *testing.T) {
 }
 
 // Set отвергает пустую строку и слишком короткие значения; принимает обычный
-// ключ — и Apply записывает оригинальное (не маскированное) значение в атомик
+// ключ — и Apply записывает оригинальное (не маскированное) значение в credentials
 // провайдер-чека. Без этой проверки маска протекала бы в hot-path.
 func TestVTSBSecrets_SetRoundTrip(t *testing.T) {
 	const realKey = "fresh-paste-of-vt-key-abcdefgh"
 	repo := newFakeSettingsRepo()
 	m := settings.NewModule(repo)
-	registerDynamicSettings(m, wiringDepsForRegister(&config.Config{}))
+	deps := wiringDepsForRegister(&config.Config{})
+	registerDynamicSettings(m, deps)
 
 	// Пустое значение: только Reset, не Set.
 	if err := m.Set("virustotal_key", ""); err == nil {
@@ -263,24 +265,24 @@ func TestVTSBSecrets_SetRoundTrip(t *testing.T) {
 	if err := m.Set("virustotal_key", "  "+realKey+"\n"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	if checks.GetVTKey() != realKey {
-		t.Errorf("атомик VT должен содержать trim-нутый исходник, got %q", checks.GetVTKey())
+	if deps.inspectCredentials.VirusTotalKey() != realKey {
+		t.Errorf("credentials VT должны содержать trim-нутый исходник, got %q", deps.inspectCredentials.VirusTotalKey())
 	}
 
 	if err := m.Set("safebrowsing_key", realKey); err != nil {
 		t.Fatalf("set sb: %v", err)
 	}
-	if checks.GetSBKey() != realKey {
-		t.Errorf("атомик SB должен содержать ключ, got %q", checks.GetSBKey())
+	if deps.inspectCredentials.SafeBrowsingKey() != realKey {
+		t.Errorf("credentials SB должны содержать ключ, got %q", deps.inspectCredentials.SafeBrowsingKey())
 	}
 
 	// Reset — освобождает override; Apply отправляет env-default (пустую
-	// строку в этом тесте) в атомик.
+	// строку в этом тесте) в credentials.
 	if err := m.Reset("virustotal_key"); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	if checks.GetVTKey() != "" {
-		t.Errorf("после Reset атомик должен совпадать с env-default (\"\"), got %q", checks.GetVTKey())
+	if deps.inspectCredentials.VirusTotalKey() != "" {
+		t.Errorf("после Reset credentials должны совпадать с env-default (\"\"), got %q", deps.inspectCredentials.VirusTotalKey())
 	}
 }
 

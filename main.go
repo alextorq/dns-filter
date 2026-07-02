@@ -181,10 +181,15 @@ func main() {
 	suggestModule := suggest_to_block.NewModule(blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger)
 	localStatsCheck := domain_inspect_checks.NewLocalStats(blockRepo, trafficRepo)
 	urlScanCheck := domain_inspect_checks.NewURLScan(conf.URLScanKey)
+	inspectCredentials := domain_inspect_checks.NewCredentials()
+	virusTotalCheck := domain_inspect_checks.NewVirusTotal(inspectCredentials)
+	safeBrowsingCheck := domain_inspect_checks.NewSafeBrowsing(inspectCredentials)
 	inspectChecks := func() map[string]domain_inspect.CheckFunc {
 		return domain_inspect_checks.Default(domain_inspect_checks.DefaultDeps{
-			LocalStats: localStatsCheck,
-			URLScan:    urlScanCheck,
+			LocalStats:   localStatsCheck,
+			URLScan:      urlScanCheck,
+			VirusTotal:   virusTotalCheck,
+			SafeBrowsing: safeBrowsingCheck,
 		})
 	}
 
@@ -193,7 +198,7 @@ func main() {
 	// теперь — DB-настройки и могут включаться/выключаться без рестарта.
 	//
 	// inspectGate композирует два сигнала: мастер-тогл фичи (suggest_inspect.IsEnabled)
-	// И наличие хотя бы одного провайдер-ключа (checks.HasAnyKey). Без ключа
+	// И наличие хотя бы одного провайдер-ключа (inspectCredentials.HasAnyKey). Без ключа
 	// RDAP/urlscan/dns_resolve всё равно стучатся наружу за каждым кандидатом
 	// и сливают наблюдённые домены LAN в публичные сервисы, а VT/SB отдают
 	// «skipped» — пользы ноль. Поэтому фича считается active, только когда оба
@@ -205,9 +210,12 @@ func main() {
 	// gate (false) погасил бы первый Collect/RunOnce даже при включённой фиче.
 	inspectRepo := inspect_db.NewRepo(conn)
 	suggestModule.SetInspectQueue(inspectRepo)
-	inspectGate := func() bool { return suggest_inspect.IsEnabled() && domain_inspect_checks.HasAnyKey() }
+	inspectGate := func() bool { return suggest_inspect.IsEnabled() && inspectCredentials.HasAnyKey() }
 	suggestModule.SetInspectGate(inspectGate)
-	inspectAdapter := suggest_inspect.NewAdapter(inspectRepo, conf.SuggestInspectCacheTTL)
+	inspectAdapter := suggest_inspect.NewAdapter(inspectRepo, conf.SuggestInspectCacheTTL, suggest_inspect.ProviderChecks{
+		VirusTotal:   virusTotalCheck,
+		SafeBrowsing: safeBrowsingCheck,
+	})
 	inspectWorker := suggest_inspect.NewWorker(
 		inspectRepo, inspectAdapter, blockRepo, suggestRepo, sourceRepo, filterModule, chanLogger,
 		suggest_inspect.WorkerConfig{
@@ -278,11 +286,12 @@ func main() {
 	// dnsServer.Serve() starts accepting queries.
 	settingsModule := settings.NewModule(settingsRepo)
 	registerDynamicSettings(settingsModule, dynamicSettingsDeps{
-		conf:      conf,
-		logr:      chanLogger,
-		resolver:  resolver,
-		cache:     cacheWithMetric,
-		dnsServer: dnsServer,
+		conf:               conf,
+		logr:               chanLogger,
+		resolver:           resolver,
+		cache:              cacheWithMetric,
+		dnsServer:          dnsServer,
+		inspectCredentials: inspectCredentials,
 	})
 	filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
 	if err := filter.RestoreState(settingsRepo, conf); err != nil {
@@ -297,7 +306,7 @@ func main() {
 	}
 
 	// Запускаем suggest- и inspect-горутины только после HydrateAll: к этому
-	// моменту атомики suggest_inspect_enabled и VT/SB-ключей соответствуют
+	// моменту атомик suggest_inspect_enabled и injected VT/SB credentials соответствуют
 	// БД-override, и inspectGate в первом же Collect/RunOnce читает их свежими.
 	// Иначе первый Module.Collect выполнялся бы с zero-value атомика (false) и
 	// дропал weak-band кандидатов даже при включённой фиче — следующий шанс был

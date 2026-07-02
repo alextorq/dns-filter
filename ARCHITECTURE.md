@@ -234,8 +234,8 @@ The refresh context is *not* tied to the client's — the client already got a s
 
 **Self-routing.** `web/server.go` is thin — it owns only cross-cutting concerns: CORS, the public/protected split, Swagger. Each feature registers its own paths:
 
-- DI features (`auth`, `blocked-domain`, `clients`, `db`, `filter`, `logger`, `settings`, `source`, `suggest-to-block`, `traffic`) expose methods on `*Handlers`.
-- Non-DI features (`dns-cache`, `domain-inspect`) expose a package function `Register(rg *gin.RouterGroup)`.
+- DI features (`auth`, `blocked-domain`, `clients`, `db`, `dns-cache`, `filter`, `logger`, `settings`, `source`, `suggest-to-block`, `traffic`) expose methods on `*Handlers`.
+- The remaining non-DI feature (`domain-inspect`) exposes a package function `Register(rg *gin.RouterGroup)`.
 - `auth/web` additionally exposes `RegisterPublic(r gin.IRouter)`, which mounts `POST /api/auth/login` outside its `RequireAuth()` middleware; protected auth routes use `RegisterRoutes(rg)`.
 
 The contract is pinned by the regression test `web/server_test.go::TestBuildRouter_RegistersAllExpectedRoutes` — a snapshot of the full `(method, path)` set is compared with what `gin.Engine.Routes()` returns after `buildRouter`. Any accidental route removal/rename fails in CI.
@@ -546,7 +546,7 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ## Entry point (main.go)
 
-`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. DNS cache and parts of domain-inspect still use legacy package-level access and remain separate DI work:
+`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. Parts of domain-inspect still use legacy package-level access and remain separate DI work:
 
 ```go
 func main() {
@@ -601,7 +601,7 @@ func main() {
 
     // 7. DNS server: filter.CheckExist as a method value; trafficWorker is the single
     //    verdict recorder (the event stores were removed).
-    cacheWithMetric := dns_cache.GetCacheWithMetric()
+    cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL)
     metricInstance := dns.CreateMetric()
     trafficWorker := traffic_record.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
     resolver := dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)
@@ -666,9 +666,9 @@ Load-bearing ordering:
 
 4. **In-memory maps** — for the Bloom filter and the client exclusion list (fast synchronized access)
 
-5. **Singleton pattern** — for the logger, bloom filter, LRU cache, DNS cache, config (sync.Once). These singletons are wrapped in a `*Module` with explicit dependencies; new modules do not call them directly — the `*Module` is composed in `main.go` and passed to wherever the singleton used to be poked.
+5. **Singleton pattern** — for the logger, bloom filter, filter verdict LRU and config (sync.Once). The DNS response cache is an explicit per-process instance composed in `main.go` and shared by DNS, settings and its HTTP handler.
 
-6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. DNS cache and parts of domain-inspect still use legacy package-level dependencies and are not yet covered by this claim:
+6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. DNS cache is explicitly instantiated and injected; parts of domain-inspect still use legacy package-level dependencies and are not yet covered by this claim:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.

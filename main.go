@@ -29,6 +29,7 @@ import (
 	db_web "github.com/alextorq/dns-filter/db/web"
 	"github.com/alextorq/dns-filter/dns"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
+	dns_cache_web "github.com/alextorq/dns-filter/dns-cache/web"
 	domain_inspect_checks "github.com/alextorq/dns-filter/domain-inspect/checks"
 	"github.com/alextorq/dns-filter/filter"
 	filter_cache "github.com/alextorq/dns-filter/filter/cache"
@@ -139,8 +140,8 @@ func main() {
 
 	// Composition root for the DI-enabled features: each gets its own *Repo over
 	// the single connection, then *Module / *Handlers wired from those repos.
-	// dns-cache and domain-inspect still contain legacy service-locator reads;
-	// they are migrated separately rather than hidden by this wiring.
+	// Parts of domain-inspect still contain legacy service-locator reads and are
+	// migrated separately rather than hidden by this wiring.
 	blockRepo := blocked_domain_db.NewRepo(conn)
 	sourceRepo := source_db.NewRepo(conn)
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
@@ -234,7 +235,7 @@ func main() {
 		}).Run(context.Background())
 	}
 
-	cacheWithMetric := dns_cache.GetCacheWithMetric()
+	cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL)
 	metricInstance := dns.CreateMetric()
 	// Per-device traffic counter (the unified table). It is the sole recorder of
 	// block/allow verdicts now that the legacy event stores are gone. Capacity
@@ -325,6 +326,10 @@ func main() {
 			Service: clientModule,
 			Log:     chanLogger,
 			Mode:    conf.Mode,
+		},
+		DNSCache: &dns_cache_web.Handlers{
+			Cache: cacheWithMetric,
+			Log:   chanLogger,
 		},
 		Blocked: &blockedWeb.Handlers{
 			Repo:          blockRepo,

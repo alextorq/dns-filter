@@ -31,9 +31,9 @@ type cachedEntry struct {
 	staleUntil time.Time
 }
 
-// Cache is a TTL-aware DNS response cache built on the generic LRU. It is
-// not exported as a global — callers wrap it for metrics (see metric.go)
-// and the wrapper is the singleton.
+// Cache is a TTL-aware DNS response cache built on the generic LRU. Callers
+// wrap it for metrics (see metric.go); main constructs and shares the single
+// runtime wrapper explicitly.
 //
 // staleGrace=0 disables the stale-window entirely (Get never returns Stale)
 // — this is the back-compat default used by NewCache. staleTTL is the value

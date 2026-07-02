@@ -27,6 +27,7 @@ import (
 type Handlers struct {
 	Auth     *authWeb.Handlers
 	Clients  *clientsWeb.Handlers
+	DNSCache *dnsCacheWeb.Handlers
 	Blocked  *eventsWeb.Handlers
 	Filter   *filterWeb.Handlers
 	Suggest  *suggestWeb.Handlers
@@ -78,7 +79,7 @@ func buildRouter(h Handlers) *gin.Engine {
 	h.Source.RegisterRoutes(api)
 	h.Clients.RegisterRoutes(api)
 	h.Database.RegisterRoutes(api)
-	dnsCacheWeb.Register(api)
+	h.DNSCache.RegisterRoutes(api)
 	inspectWeb.Register(api)
 	h.Logger.RegisterRoutes(api)
 	h.Settings.RegisterRoutes(api)

@@ -30,6 +30,7 @@ import (
 	"github.com/alextorq/dns-filter/dns"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
 	dns_cache_web "github.com/alextorq/dns-filter/dns-cache/web"
+	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 	domain_inspect_checks "github.com/alextorq/dns-filter/domain-inspect/checks"
 	domainInspectWeb "github.com/alextorq/dns-filter/domain-inspect/web"
 	"github.com/alextorq/dns-filter/filter"
@@ -178,7 +179,10 @@ func main() {
 	// only from traffic.
 	trafficAllowAdapter := traffic_db.NewAllowFilterAdapter(trafficRepo)
 	suggestModule := suggest_to_block.NewModule(blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger)
-	domain_inspect_checks.SetAllowLookup(trafficRepo.IsAllowed)
+	localStatsCheck := domain_inspect_checks.NewLocalStats(blockRepo, trafficRepo)
+	inspectChecks := func() map[string]domain_inspect.CheckFunc {
+		return domain_inspect_checks.Default(localStatsCheck)
+	}
 
 	// Reputation-enrichment worker. Подключается всегда — мастер-тогл
 	// (suggest_inspect_enabled) и API-ключи (virustotal_key, safebrowsing_key)
@@ -332,7 +336,7 @@ func main() {
 			Cache: cacheWithMetric,
 			Log:   chanLogger,
 		},
-		Inspect: domainInspectWeb.NewHandlers(domain_inspect_checks.Default, chanLogger),
+		Inspect: domainInspectWeb.NewHandlers(inspectChecks, chanLogger),
 		Blocked: &blockedWeb.Handlers{
 			Repo:          blockRepo,
 			Log:           chanLogger,

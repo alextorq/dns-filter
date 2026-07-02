@@ -88,6 +88,22 @@ func TestAccumulatesDuplicateKeys(t *testing.T) {
 	}
 }
 
+func TestRecordCanonicalizesDomain(t *testing.T) {
+	repo := &fakeRepo{}
+	store := newWithChannelSize(repo, &recordingLog{}, 1000, 100)
+
+	store.Record("mac", "aa:bb", "10.0.0.5", " Ads.Example.. ", false)
+	store.flushNow()
+
+	rows := repo.allRows()
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d", len(rows))
+	}
+	if rows[0].Domain != "ads.example." {
+		t.Errorf("domain must be stored as canonical FQDN: got %q", rows[0].Domain)
+	}
+}
+
 // TestDistinctKeysSeparateRows: events differing in any key dimension produce
 // separate rows.
 func TestDistinctKeysSeparateRows(t *testing.T) {

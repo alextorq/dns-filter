@@ -11,6 +11,7 @@ import (
 	"time"
 
 	traffic_db "github.com/alextorq/dns-filter/traffic/db"
+	"github.com/alextorq/dns-filter/utils"
 )
 
 // Repo is the output port: additively upserting batched traffic counters.
@@ -242,7 +243,7 @@ func (s *TrafficEventStore) Record(kind, value, ip, domain string, blocked bool)
 		Kind:    kind,
 		Value:   value,
 		IP:      ip,
-		Domain:  domain,
+		Domain:  utils.CanonicalDomain(domain),
 		Blocked: blocked,
 		At:      time.Now(),
 	})

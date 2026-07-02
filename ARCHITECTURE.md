@@ -235,7 +235,7 @@ The refresh context is *not* tied to the client's — the client already got a s
 **Self-routing.** `web/server.go` is thin — it owns only cross-cutting concerns: CORS, the public/protected split, Swagger. Each feature registers its own paths:
 
 - Every feature, including `domain-inspect`, exposes `RegisterRoutes` on an injected `*Handlers` value.
-- `domain-inspect/web.Handlers` receives the check-catalog factory and logger explicitly; the checks layer still has legacy package-level dependencies tracked separately below.
+- `domain-inspect/web.Handlers` receives the check-catalog factory and logger explicitly. `local_stats` receives block-list and traffic readers explicitly too and canonicalizes the UI hostname to the stored FQDN form before both local lookups; provider credentials/config still contain package-level runtime state tracked separately below.
 - `auth/web` additionally exposes `RegisterPublic(r gin.IRouter)`, which mounts `POST /api/auth/login` outside its `RequireAuth()` middleware; protected auth routes use `RegisterRoutes(rg)`.
 
 The contract is pinned by the regression test `web/server_test.go::TestBuildRouter_RegistersAllExpectedRoutes` — a snapshot of the full `(method, path)` set is compared with what `gin.Engine.Routes()` returns after `buildRouter`. Any accidental route removal/rename fails in CI.
@@ -546,7 +546,7 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ## Entry point (main.go)
 
-`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. The domain-inspect HTTP handler is composed here too; parts of its checks layer still use legacy package-level access and remain separate DI work:
+`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. The domain-inspect HTTP handler and its local-stats check are composed here too; provider config/key state remains separate DI work:
 
 ```go
 func main() {
@@ -589,7 +589,10 @@ func main() {
     suggestModule := suggest_to_block.NewModule(
         blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger,
     )
-    domain_inspect_checks.SetAllowLookup(trafficRepo.IsAllowed)
+    localStatsCheck := domain_inspect_checks.NewLocalStats(blockRepo, trafficRepo)
+    inspectChecks := func() map[string]domain_inspect.CheckFunc {
+        return domain_inspect_checks.Default(localStatsCheck)
+    }
     go suggestModule.Start(context.Background())
     go authModule.ClearExpiredSessions()
     // LAN mode: arpwatcher (IP↔MAC) + the hostname collector (mDNS → host_names).
@@ -646,7 +649,7 @@ Load-bearing ordering:
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
 - `sourceModule.Sync()` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds.
 - `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
-- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(trafficRepo)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. suggest/domain-inspect get "allowed domains" from `trafficRepo` via adapters (`NewAllowFilterAdapter`, `SetAllowLookup(trafficRepo.IsAllowed)`), and block stats via `NewBlockStatsAdapter`; the ports did not change.
+- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(trafficRepo)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.
 - **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
 - HTTP starts in a goroutine inside `web.CreateServer`, and the blocking `dnsServer.Serve()` keeps main alive.
@@ -662,13 +665,13 @@ Load-bearing ordering:
 
 2. **Channel-based logger** — async logging does not block DNS requests
 
-3. **Asynchronous traffic accounting** — each request's verdict (blocked/allowed) is written into the unified `domain_traffic` counter via the channel-based `TrafficRecorder`: one row per (device, domain, verdict, day), additive upsert in batches, drop-on-full. The DNS reply never waits on a DB write. On an `UpsertBatch` error (e.g. `SQLITE_BUSY`) the `flush` **does not drop the buffer** but keeps the counts and retries them on the next tick (one flush = one atomic batch, so a retry is idempotent); buffer growth during a prolonged DB outage is bounded by `capacity` — new keys are shed, as in the drop-on-full queue. It replaced the two former event tables (`block_domain_events`/`allow_domain_events`).
+3. **Asynchronous traffic accounting** — each request's verdict (blocked/allowed) is canonicalized to the shared lowercase FQDN form and written into the unified `domain_traffic` counter via the channel-based `TrafficRecorder`: one row per (device, domain, verdict, day), additive upsert in batches, drop-on-full. The DNS reply never waits on a DB write. On an `UpsertBatch` error (e.g. `SQLITE_BUSY`) the `flush` **does not drop the buffer** but keeps the counts and retries them on the next tick (one flush = one atomic batch, so a retry is idempotent); buffer growth during a prolonged DB outage is bounded by `capacity` — new keys are shed, as in the drop-on-full queue. It replaced the two former event tables (`block_domain_events`/`allow_domain_events`).
 
 4. **In-memory maps** — for the Bloom filter and the client exclusion list (fast synchronized access)
 
 5. **Singleton pattern** — for the logger, bloom filter, filter verdict LRU and config (sync.Once). The DNS response cache is an explicit per-process instance composed in `main.go` and shared by DNS, settings and its HTTP handler.
 
-6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. DNS cache and the domain-inspect HTTP handler are explicitly instantiated and injected; parts of the domain-inspect checks layer still use legacy package-level dependencies and are not yet covered by this claim:
+6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. DNS cache, the domain-inspect HTTP handler and `local_stats` check are explicitly instantiated and injected; provider credentials/config in the remaining checks still use package-level state:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.

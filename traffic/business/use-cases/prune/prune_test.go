@@ -1,6 +1,7 @@
 package traffic_use_cases_prune
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -16,6 +17,10 @@ type fakeRepo struct {
 	cutoff time.Time
 	err    error
 }
+
+type pruneTestLogger struct{}
+
+func (pruneTestLogger) Error(error) {}
 
 func (f *fakeRepo) DeleteOlderThan(cutoff time.Time) error {
 	f.calls++
@@ -183,5 +188,18 @@ func TestSetGetRetentionDays_RoundTrip(t *testing.T) {
 	SetRetentionDays(1)
 	if got := GetRetentionDays(); got != 1 {
 		t.Errorf("GetRetentionDays = %d, want 1", got)
+	}
+}
+
+func TestRun_PreCanceledContextSkipsRepo(t *testing.T) {
+	SetRetentionDays(30)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	repo := &fakeRepo{}
+
+	Run(ctx, repo, pruneTestLogger{})
+
+	if repo.calls != 0 {
+		t.Fatalf("DeleteOlderThan calls = %d, want 0", repo.calls)
 	}
 }

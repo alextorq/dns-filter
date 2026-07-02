@@ -1,6 +1,7 @@
 package business
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ type fakeRepo struct {
 	deleteErr    error
 	deleted      []string
 	createdUsers int
+	expiredCalls int
 }
 
 func newFakeRepo() *fakeRepo {
@@ -89,7 +91,10 @@ func (r *fakeRepo) DeleteSession(token string) error {
 	return nil
 }
 
-func (r *fakeRepo) DeleteExpiredSessions(time.Time) error { return nil }
+func (r *fakeRepo) DeleteExpiredSessions(time.Time) error {
+	r.expiredCalls++
+	return nil
+}
 
 func (r *fakeRepo) addUser(t *testing.T, login, password string) *authDb.User {
 	t.Helper()
@@ -199,3 +204,20 @@ func TestBootstrapAdmin_CreatesHashedUserOnce(t *testing.T) {
 		t.Fatal("bootstrap password was not hashed correctly")
 	}
 }
+
+func TestClearExpiredSessions_PreCanceledContextSkipsRepo(t *testing.T) {
+	repo := newFakeRepo()
+	module := NewModule(repo, "", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	module.ClearExpiredSessions(ctx, cleanupTestLogger{})
+
+	if repo.expiredCalls != 0 {
+		t.Fatalf("DeleteExpiredSessions calls = %d, want 0", repo.expiredCalls)
+	}
+}
+
+type cleanupTestLogger struct{}
+
+func (cleanupTestLogger) Error(error) {}

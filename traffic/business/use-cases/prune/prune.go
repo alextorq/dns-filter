@@ -11,6 +11,7 @@
 package traffic_use_cases_prune
 
 import (
+	"context"
 	"sync/atomic"
 	"time"
 
@@ -52,9 +53,10 @@ type Repo interface {
 }
 
 // Run prunes once immediately and then every 24h (matching the legacy
-// clear-events cadence). Blocks forever — call from a goroutine.
-func Run(repo Repo) {
-	periodic.Run("prune old domain_traffic rows", 24*time.Hour, func() error {
+// clear-events cadence). Cancellation stops future runs after any in-flight DB
+// cleanup finishes; call from a goroutine.
+func Run(ctx context.Context, repo Repo, log periodic.Logger) {
+	periodic.Run(ctx, "prune old domain_traffic rows", 24*time.Hour, log, func() error {
 		return pruneTaskAt(repo, time.Now())
 	})
 }

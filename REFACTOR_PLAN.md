@@ -49,10 +49,11 @@ in-memory `:memory:`-sqlite.
 5. `Repo.IsActivelyBlocked` — авторитетная проверка с учётом `Active=true`.
    На любую DB-ошибку — fail-open (false), без записи в кэш (#25).
 
-Singleton'ы остались для bloom (`filter/filter`), LRU
-(`filter/cache`), логгера (`logger`), конфига
-(`config`) и `db.GetConnection()`. **Все они впитываются `*Module` в
-`main.go`** — фичи их сами не вызывают. `domain-inspect/checks/local_stats.go`
+Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь создаются
+обычными конструкторами в `main.go`; package-level singleton state в них
+удалён. Singleton'ы остались для логгера (`logger`), конфига (`config`) и
+`db.GetConnection()`. **Все они впитываются `*Module` в `main.go`** — фичи
+их сами не вызывают. `domain-inspect/checks/local_stats.go`
 тоже больше не читает singleton-коннекшен: check создаётся через
 `NewLocalStats(blockRepo, trafficRepo)` в composition root.
 
@@ -235,11 +236,13 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
   in-flight `Collect()` (HTTP-запросы к источникам через `easy-list`,
   upsert в DB) **не прерывается** — `easy_list.LoadFromURL` использует
   свой `http.Get` без context.
-- `block_domain_uc.NewBlockDomainEventStore` (и аналогичный allow worker)
-  — горутины с буфером, который сбрасывается на ticker'е 20s. На SIGTERM
-  буфер теряется (≤ 100 событий на worker).
-- `arpwatcher.Run(context.Background(), ...)` — уже принимает ctx, но
-  передаётся `Background()` без cancel.
+- `TrafficEventStore.Stop(ctx)` уже останавливает admission, дожидается
+  конкурентных senders, дренирует FIFO и делает финальный flush. Метод
+  идемпотентен и безопасен для конкурентных вызовов. Осталось вызвать его из
+  общего shutdown-блока после остановки DNS.
+- Все периодические cleanup-задачи уже принимают context и logger явно через
+  `periodic.Run`, но composition root пока передаёт общий `backgroundCtx` без
+  cancel. Его нужно заменить signal-derived application context.
 
 ### Порядок шагов
 
@@ -254,9 +257,9 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
    defer stop()
    ```
-   - Передать `ctx` в `arpwatcher.Run`, `suggestModule.Start`,
-     `authModule.ClearExpiredSessions` (последний сейчас не принимает ctx —
-     придётся протащить).
+   - Передать `ctx` вместо текущего `backgroundCtx` в `arpwatcher.Run`,
+     `suggestModule.Start`, `authModule.ClearExpiredSessions`, inspect/prune и
+     traffic/prune. Сигнатуры periodic-задач уже context-aware.
 
 3. **DNS — graceful Shutdown**
    - Запустить `dnsServer.Serve()` в горутине (через `errCh chan error`).
@@ -264,13 +267,10 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
    - `dns.NewServer` уже создаёт `*DnsServer`, который поднимает UDP+TCP; `Shutdown()`
      корректно дренирует TCP, UDP просто перестаёт читать.
 
-4. **Background workers — flush на shutdown**
-   - `*BlockDomainEventStore` и `*AllowDomainEventStore` получают метод
-     `Stop(ctx)`, который останавливает worker и делает финальный flush
-     буфера. main вызывает `Stop` после `dnsServer.Shutdown()` — гарантия,
-     что больше событий не придёт.
-   - Альтернатива: оставить как есть, принять потерю ≤ 100 событий на
-     worker. Это event-логи, не CRUD. Зависит от приоритета — обсудить.
+4. **Traffic worker — подключить готовый Stop к shutdown**
+   - `TrafficEventStore.Stop(ctx)` уже реализован и протестирован. main должен
+     вызвать его после `dnsServer.Shutdown()` — это гарантирует, что новые DNS
+     verdicts больше не придут до финального flush.
 
 5. **`source.LoadAndParseActiveSources` — context для HTTP**
    - `easy_list.LoadFromURL` и `LoadHostsFromURL` сейчас используют
@@ -287,8 +287,7 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
    defer cancel()
    _ = httpSrv.Shutdown(shutdownCtx)
    _ = dnsServer.Shutdown()
-   blockWorker.Stop(shutdownCtx)
-   allowWorker.Stop(shutdownCtx)
+   trafficWorker.Stop(shutdownCtx)
    logger.GetLogger().Close()  // последним — иначе потеряем логи shutdown
    ```
 
@@ -300,9 +299,9 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
   200 OK (а не получил RST).
 - DNS: аналог через UDP/TCP — медленный upstream, проверяем что
   in-flight запрос завершается.
-- Workers: `TestBlockDomainEventStore_StopFlushesBuffer` — наполняем
+- Worker: `TestTrafficEventStore_StopFlushesBuffer` — наполняем
   буфер ниже capacity, вызываем `Stop(ctx)`, проверяем что репо получил
-  все события.
+  все агрегированные verdicts.
 
 ---
 
@@ -335,9 +334,9 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 - **Порядок shutdown.** HTTP первым (он трогает БД) → DNS (он трогает
   filter+cache) → workers (flush буферов) → logger (последним). Иначе
   логи финальной фазы не дойдут до Loki.
-- **`block_domain_uc.NewBlockDomainEventStore`** хранит `e.buf` под
-  одной горутиной — `Stop` нужно реализовать через канал-сигнал, не
-  через мьютекс над buf, иначе race с `start()` loop.
+- **`TrafficEventStore`** хранит буфер под одной горутиной; реализованный
+  `Stop` сигнализирует worker'у и не читает `buf` снаружи, сохраняя single-owner
+  инвариант без мьютекса над агрегатами.
 
 ### Поведение существующих функций (актуально для любых будущих PR)
 - **`Repo.CreateDNSRecordsByDomains`** сохраняет дедуп + batchSize=4000
@@ -373,7 +372,7 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients, dns-cache и domain-inspect**. Остаток: observability/background helpers и process-level singleton-конструкторы |
+| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU**. Остаток: observability/background helpers и process-level constructors config/logger/db |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |

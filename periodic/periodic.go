@@ -1,28 +1,51 @@
 package periodic
 
 import (
+	"context"
 	"fmt"
 	"time"
-
-	"github.com/alextorq/dns-filter/logger"
 )
+
+// Logger is the narrow logging port used by periodic jobs.
+type Logger interface {
+	Error(error)
+}
 
 // Run invokes cleanup once immediately, then on every tick of interval.
 // Errors are logged with name as the prefix and never stop the loop.
-// Blocks forever — call from a goroutine.
-func Run(name string, interval time.Duration, cleanup func() error) {
-	l := logger.GetLogger()
+// Cancellation stops scheduling new cleanups; an already-running cleanup is
+// allowed to finish before Run returns. Call it from a goroutine when the
+// caller must continue doing other work.
+func Run(ctx context.Context, name string, interval time.Duration, log Logger, cleanup func() error) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	tick := func() {
 		if err := cleanup(); err != nil {
-			l.Error(fmt.Errorf("%s: %w", name, err))
+			log.Error(fmt.Errorf("%s: %w", name, err))
 		}
 	}
 
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
 	tick()
-	for range ticker.C {
-		tick()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Re-check cancellation when it raced with a tick already waiting in
+			// the ticker channel, reducing the chance of starting extra work.
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				tick()
+			}
+		}
 	}
 }

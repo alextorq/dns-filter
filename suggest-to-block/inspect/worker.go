@@ -121,8 +121,9 @@ func NewWorker(
 }
 
 // Start runs one batch immediately, then on the configured ticker until ctx is
-// done. Block forever — call from a goroutine. Mirrors suggest_to_block.Start;
-// we do NOT use periodic.Run because it ignores context (no clean shutdown).
+// done. Block forever — call from a goroutine. This worker keeps its own loop
+// because each tick runs a context-aware, rate-limited batch rather than a
+// single cleanup callback.
 func (w *Worker) Start(ctx context.Context) {
 	ticker := time.NewTicker(w.cfg.Interval)
 	defer ticker.Stop()

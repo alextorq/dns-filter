@@ -69,6 +69,46 @@ func TestRepo_GetByID_NotFound(t *testing.T) {
 	}
 }
 
+// ----- LookupByDomain -----
+
+func TestRepo_LookupByDomain(t *testing.T) {
+	r := newTestRepo(t)
+	if err := r.CreateDomain("known.example.", "test"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, found, err := r.LookupByDomain("known.example.")
+	if err != nil {
+		t.Fatalf("LookupByDomain: %v", err)
+	}
+	if !found || got == nil {
+		t.Fatalf("expected found record, got found=%v record=%v", found, got)
+	}
+	if got.Source != "test" || !got.Active {
+		t.Errorf("unexpected record: %+v", got)
+	}
+
+	got, found, err = r.LookupByDomain("missing.example")
+	if err != nil || found || got != nil {
+		t.Errorf("missing lookup: got record=%v found=%v err=%v", got, found, err)
+	}
+}
+
+func TestRepo_LookupByDomain_PropagatesDatabaseError(t *testing.T) {
+	r := newTestRepo(t)
+	sqlDB, err := r.db.DB()
+	if err != nil {
+		t.Fatalf("sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	if _, _, err := r.LookupByDomain("any.example"); err == nil {
+		t.Fatal("expected database error")
+	}
+}
+
 // ----- GetRecordsByFilter -----
 
 func TestRepo_GetRecordsByFilter_PaginationAndFilters(t *testing.T) {

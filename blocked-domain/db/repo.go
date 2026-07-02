@@ -33,6 +33,21 @@ func (r *Repo) GetByID(id uint) (*BlockList, error) {
 	return &rec, nil
 }
 
+// LookupByDomain returns the exact block-list row for canonical domain. A
+// missing row is represented as (nil, false, nil); storage failures remain
+// distinguishable and are propagated to the caller. Callers must pass the
+// utils.CanonicalDomain form stored in block_lists.
+func (r *Repo) LookupByDomain(domain string) (*BlockList, bool, error) {
+	var rec BlockList
+	if err := r.db.Where("url = ?", domain).First(&rec).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return &rec, true, nil
+}
+
 func (r *Repo) GetRecordsByFilter(filter GetAllParams) (GetRecordsResult, error) {
 	var lists []BlockList
 	query := r.db.Model(&BlockList{})

@@ -234,8 +234,8 @@ The refresh context is *not* tied to the client's — the client already got a s
 
 **Self-routing.** `web/server.go` is thin — it owns only cross-cutting concerns: CORS, the public/protected split, Swagger. Each feature registers its own paths:
 
-- DI features (`auth`, `blocked-domain`, `clients`, `db`, `dns-cache`, `filter`, `logger`, `settings`, `source`, `suggest-to-block`, `traffic`) expose methods on `*Handlers`.
-- The remaining non-DI feature (`domain-inspect`) exposes a package function `Register(rg *gin.RouterGroup)`.
+- Every feature, including `domain-inspect`, exposes `RegisterRoutes` on an injected `*Handlers` value.
+- `domain-inspect/web.Handlers` receives the check-catalog factory and logger explicitly. `local_stats` receives block-list and traffic readers explicitly too and canonicalizes the UI hostname to the stored FQDN form before both local lookups. URLScan captures its env-only key through `NewURLScan`; VT/SB checks share an injected, runtime-updatable `checks.Credentials` instance.
 - `auth/web` additionally exposes `RegisterPublic(r gin.IRouter)`, which mounts `POST /api/auth/login` outside its `RequireAuth()` middleware; protected auth routes use `RegisterRoutes(rg)`.
 
 The contract is pinned by the regression test `web/server_test.go::TestBuildRouter_RegistersAllExpectedRoutes` — a snapshot of the full `(method, path)` set is compared with what `gin.Engine.Routes()` returns after `buildRouter`. Any accidental route removal/rename fails in CI.
@@ -344,13 +344,13 @@ A typed KV store of runtime configuration persisted in the DB. It solves the pro
   - `HydrateAll()` — at startup, for each key, applies the effective value (`DB override → env default`). Both hydration and a runtime change go **through the single** `Apply` path. A broken value in the DB (e.g. an enum narrowed between versions) does not break startup: the default is substituted and the problem is returned in an aggregated error.
 - `settings/web` — `GET /api/settings` (effective values + type metadata for the UI), `PUT /api/settings/:key`, `DELETE /api/settings/:key` (reset). The module's sentinel errors are mapped: unknown key → 404, invalid value → 400.
 
-**Apply hooks (inversion of control).** The module knows nothing about logger/dns/cache. In `main.go` (the composition root, file `settings_wiring.go`) the descriptors are wired to runtime sinks: `log_level`→`ChanLogger.UpdateLogLevel`; `doh_upstream`/`doh_bootstrap_ips`→`dns.ReloadableResolver.SetEndpoint/SetBootstrapIPs` (+ a dns-cache flush); `cache_swr`→`DnsServer.SetSWR`; `cache_stale_grace`/`cache_stale_ttl`→`CacheWithMetrics.SetStaleGrace/SetStaleTTL`; `cache_refresh_concurrency`→`DnsServer.SetRefreshConcurrency`; `traffic_retention_days`→`traffic_prune.SetRetentionDays` (writes the atomic that the prune loop reads fresh on every tick); `suggest_inspect_enabled`→`suggest_inspect.SetEnabled` (read by `Worker.RunOnce` and `suggestModule.Collect`); `virustotal_key`/`safebrowsing_key`→`checks.SetVTKey`/`SetSBKey` (read by the provider check on every HTTP request).
+**Apply hooks (inversion of control).** The module knows nothing about logger/dns/cache. In `main.go` (the composition root, file `settings_wiring.go`) the descriptors are wired to runtime sinks: `log_level`→`ChanLogger.UpdateLogLevel`; `doh_upstream`/`doh_bootstrap_ips`→`dns.ReloadableResolver.SetEndpoint/SetBootstrapIPs` (+ a dns-cache flush); `cache_swr`→`DnsServer.SetSWR`; `cache_stale_grace`/`cache_stale_ttl`→`CacheWithMetrics.SetStaleGrace/SetStaleTTL`; `cache_refresh_concurrency`→`DnsServer.SetRefreshConcurrency`; `traffic_retention_days`→`traffic_prune.SetRetentionDays` (writes the atomic that the prune loop reads fresh on every tick); `suggest_inspect_enabled`→`suggest_inspect.SetEnabled` (read by `Worker.RunOnce` and `suggestModule.Collect`); `virustotal_key`/`safebrowsing_key`→the injected `checks.Credentials` instance (read by provider closures on every HTTP request).
 
 **Secrets in KV (`Type: "secret"`).** The pipeline above does not scale to API keys directly: dumps and UI screenshots leak the plain value. So the secret type gets two protections:
 - in `effectiveViewLocked` the value and default are masked to `••••<last 4 characters>`; the UI renders a password input, the mask goes into the placeholder, and the draft starts empty (nothing to submit "by accident");
 - `db/web/download.go::DownloadDb` does a `VACUUM INTO` to a temp file and a `DELETE FROM settings WHERE key IN (m.SecretKeys())` in the copy. The live DB is untouched; secret keys never leave the host via `/api/config/db/download`. `Apply` itself receives the original raw — the provider check reads the atomic without the mask.
 
-**A DB-free hot path.** All dynamic settings are read on the hot path from memory (atomics), the DB is persistence only. Specifically: `ChanLogger.level` (`atomic.Int32`, which also removed a race with the logger goroutine), `DnsServer.swrEnabled` (`atomic.Bool`), `Cache.staleGrace/staleTTL` (`atomic.Int64`), the upstream — via `dns.ReloadableResolver` (`atomic.Pointer[DoHResolver]`, swapped without a restart; the same instance is visible to both the server and the refresh worker), the refresh pool — a rebuildable semaphore behind an `atomic.Pointer` (an in-flight refresh releases its token back into the semaphore it took it from).
+**A DB-free hot path.** All dynamic settings are read on the hot path from memory (atomics), the DB is persistence only. Specifically: `ChanLogger.level` (`atomic.Int32`, which also removed a race with the logger goroutine), `DnsServer.swrEnabled` (`atomic.Bool`), `Cache.staleGrace/staleTTL` (`atomic.Int64`), provider keys in the injected `checks.Credentials` (`atomic.Pointer[string]`), the upstream — via `dns.ReloadableResolver` (`atomic.Pointer[DoHResolver]`, swapped without a restart; the same instance is visible to both the server and the refresh worker), the refresh pool — a rebuildable semaphore behind an `atomic.Pointer` (an in-flight refresh releases its token back into the semaphore it took it from).
 
 **Adding a new dynamic setting** = one `settings.Setting{...}` entry in `registerDynamicSettings` + a setter on the relevant sink. No migration and no `web/server.go` edit are needed.
 
@@ -526,8 +526,8 @@ Parameters are read from environment variables (or `.env`):
 Configuration falls into three classes — this is an explicit architectural decision, not an accident:
 
 1. **Boot-time static (env only).** `DNS_FILTER_DBPATH`, `DNS_FILTER_MODE`, the ports (`:53`/`:8080`/metrics). By nature they require a restart (chicken-and-egg with the DB, socket binding, wiring branching at startup) — they are not moved to the DB.
-2. **Secrets (env only).** `DNS_FILTER_ADMIN_PASSWORD`, `DNS_FILTER_VT_KEY`, `DNS_FILTER_URLSCAN_KEY`, `DNS_FILTER_SAFE_BROWSING_KEY`. Storing them as plaintext in SQLite would lower security, so they stay in the environment.
-3. **Dynamic (env → DB).** `DNS_FILTER_LOG_LEVEL`, `DNS_FILTER_DOH_UPSTREAM`, `DNS_FILTER_DOH_BOOTSTRAP_IPS`, all `DNS_FILTER_CACHE_*`, `DNS_FILTER_TRAFFIC_RETENTION_DAYS`. They can be changed at runtime via `/api/settings`; the value is **persisted in the DB and survives a restart**. Precedence: `DB (if an override exists) → env → compiled default`. The env variable serves as the primary default; once a setting is changed through the UI, the DB becomes the source of truth until the override is deleted (`DELETE /api/settings/:key` → back to env). See the **`settings/`** component below.
+2. **Secrets (env only).** `DNS_FILTER_ADMIN_PASSWORD` and `DNS_FILTER_URLSCAN_KEY`. They are read at composition time and require a restart; neither is exposed through generic runtime settings.
+3. **Dynamic (env → DB).** `DNS_FILTER_LOG_LEVEL`, `DNS_FILTER_DOH_UPSTREAM`, `DNS_FILTER_DOH_BOOTSTRAP_IPS`, all `DNS_FILTER_CACHE_*`, `DNS_FILTER_TRAFFIC_RETENTION_DAYS`, plus the secret-typed `DNS_FILTER_VT_KEY` and `DNS_FILTER_SAFE_BROWSING_KEY`. They can be changed at runtime via `/api/settings`; the value is **persisted in the DB and survives a restart**. Precedence: `DB (if an override exists) → env → compiled default`. Secret values are masked in settings responses and excluded from DB downloads. The env variable serves as the primary default; once a setting is changed through the UI, the DB becomes the source of truth until the override is deleted (`DELETE /api/settings/:key` → back to env). See the **`settings/`** component below.
 
 The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV table (keys `filter_enabled`/`filter_paused_until`), but not via the generic registry — instead write-through from the filter use-cases, which have their own endpoints (`change-status`/`pause`/`resume`) and pause-duration validation.
 
@@ -546,7 +546,7 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ## Entry point (main.go)
 
-`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. Parts of domain-inspect still use legacy package-level access and remain separate DI work:
+`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. The domain-inspect HTTP handler, all injected checks and their shared runtime credentials are composed here too:
 
 ```go
 func main() {
@@ -589,7 +589,14 @@ func main() {
     suggestModule := suggest_to_block.NewModule(
         blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger,
     )
-    domain_inspect_checks.SetAllowLookup(trafficRepo.IsAllowed)
+    localStatsCheck := domain_inspect_checks.NewLocalStats(blockRepo, trafficRepo)
+    urlScanCheck := domain_inspect_checks.NewURLScan(conf.URLScanKey)
+    inspectChecks := func() map[string]domain_inspect.CheckFunc {
+        return domain_inspect_checks.Default(domain_inspect_checks.DefaultDeps{
+            LocalStats: localStatsCheck,
+            URLScan:    urlScanCheck,
+        })
+    }
     go suggestModule.Start(context.Background())
     go authModule.ClearExpiredSessions()
     // LAN mode: arpwatcher (IP↔MAC) + the hostname collector (mDNS → host_names).
@@ -646,7 +653,7 @@ Load-bearing ordering:
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
 - `sourceModule.Sync()` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds.
 - `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
-- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(trafficRepo)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. suggest/domain-inspect get "allowed domains" from `trafficRepo` via adapters (`NewAllowFilterAdapter`, `SetAllowLookup(trafficRepo.IsAllowed)`), and block stats via `NewBlockStatsAdapter`; the ports did not change.
+- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(trafficRepo)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.
 - **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
 - HTTP starts in a goroutine inside `web.CreateServer`, and the blocking `dnsServer.Serve()` keeps main alive.
@@ -662,13 +669,13 @@ Load-bearing ordering:
 
 2. **Channel-based logger** — async logging does not block DNS requests
 
-3. **Asynchronous traffic accounting** — each request's verdict (blocked/allowed) is written into the unified `domain_traffic` counter via the channel-based `TrafficRecorder`: one row per (device, domain, verdict, day), additive upsert in batches, drop-on-full. The DNS reply never waits on a DB write. On an `UpsertBatch` error (e.g. `SQLITE_BUSY`) the `flush` **does not drop the buffer** but keeps the counts and retries them on the next tick (one flush = one atomic batch, so a retry is idempotent); buffer growth during a prolonged DB outage is bounded by `capacity` — new keys are shed, as in the drop-on-full queue. It replaced the two former event tables (`block_domain_events`/`allow_domain_events`).
+3. **Asynchronous traffic accounting** — each request's verdict (blocked/allowed) is canonicalized to the shared lowercase FQDN form and written into the unified `domain_traffic` counter via the channel-based `TrafficRecorder`: one row per (device, domain, verdict, day), additive upsert in batches, drop-on-full. The DNS reply never waits on a DB write. On an `UpsertBatch` error (e.g. `SQLITE_BUSY`) the `flush` **does not drop the buffer** but keeps the counts and retries them on the next tick (one flush = one atomic batch, so a retry is idempotent); buffer growth during a prolonged DB outage is bounded by `capacity` — new keys are shed, as in the drop-on-full queue. It replaced the two former event tables (`block_domain_events`/`allow_domain_events`).
 
 4. **In-memory maps** — for the Bloom filter and the client exclusion list (fast synchronized access)
 
 5. **Singleton pattern** — for the logger, bloom filter, filter verdict LRU and config (sync.Once). The DNS response cache is an explicit per-process instance composed in `main.go` and shared by DNS, settings and its HTTP handler.
 
-6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. DNS cache is explicitly instantiated and injected; parts of domain-inspect still use legacy package-level dependencies and are not yet covered by this claim:
+6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. DNS cache and domain-inspect (handler, local readers, URLScan, VT/SB credentials and provider checks) are explicitly instantiated and injected:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.

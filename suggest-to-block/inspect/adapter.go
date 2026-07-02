@@ -42,16 +42,24 @@ type Adapter struct {
 	checks  map[string]domain_inspect.CheckFunc
 }
 
+type ProviderChecks struct {
+	VirusTotal   domain_inspect.CheckFunc
+	SafeBrowsing domain_inspect.CheckFunc
+}
+
 // NewAdapter builds the production adapter: RDAP (cache-wrapped), VirusTotal and
 // Safe Browsing only. crt.sh / urlscan / dns_resolve / local_stats are
 // deliberately excluded — for an already-allowed candidate they return
 // "unknown" and add nothing but latency and quota pressure.
-func NewAdapter(repo *inspect_db.Repo, rdapTTL time.Duration) *Adapter {
+func NewAdapter(repo *inspect_db.Repo, rdapTTL time.Duration, providers ProviderChecks) *Adapter {
+	if providers.VirusTotal == nil || providers.SafeBrowsing == nil {
+		panic("suggest-to-block/inspect: provider checks are required")
+	}
 	a := &Adapter{repo: repo, rdapTTL: rdapTTL}
 	a.checks = map[string]domain_inspect.CheckFunc{
 		"rdap":          a.withRDAPCache(checks.RDAPAge),
-		"virustotal":    checks.VirusTotal,
-		"safe_browsing": checks.SafeBrowsing,
+		"virustotal":    providers.VirusTotal,
+		"safe_browsing": providers.SafeBrowsing,
 	}
 	return a
 }

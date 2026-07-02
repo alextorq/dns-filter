@@ -30,13 +30,19 @@ type vtResponse struct {
 	} `json:"data"`
 }
 
-// VirusTotal asks VT v3 for the aggregated verdict of ~90 antivirus engines.
+func NewVirusTotal(keys *Credentials) domain_inspect.CheckFunc {
+	if keys == nil {
+		panic("domain-inspect/checks: credentials are required for VirusTotal")
+	}
+	return func(ctx context.Context, domain string) domain_inspect.CheckResult {
+		return virusTotal(ctx, domain, keys.VirusTotalKey())
+	}
+}
+
+// virusTotal asks VT v3 for the aggregated verdict of ~90 antivirus engines.
 // Skipped silently when no API key is configured — the endpoint should still
 // run for environments that simply chose not to enable VT.
-func VirusTotal(ctx context.Context, domain string) domain_inspect.CheckResult {
-	// Ключ держится в атомике (см. keys.go): дескриптор настройки
-	// virustotal_key обновляет его без рестарта.
-	key := GetVTKey()
+func virusTotal(ctx context.Context, domain, key string) domain_inspect.CheckResult {
 	if key == "" {
 		return skipped("virustotal_key not set")
 	}

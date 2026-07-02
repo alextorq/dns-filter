@@ -55,16 +55,22 @@ type sbMatch struct {
 	Threat       sbThreatEntryInput `json:"threat"`
 }
 
-// SafeBrowsing checks the domain against Google's Safe Browsing v4 list.
+func NewSafeBrowsing(keys *Credentials) domain_inspect.CheckFunc {
+	if keys == nil {
+		panic("domain-inspect/checks: credentials are required for Safe Browsing")
+	}
+	return func(ctx context.Context, domain string) domain_inspect.CheckResult {
+		return safeBrowsing(ctx, domain, keys.SafeBrowsingKey())
+	}
+}
+
+// safeBrowsing checks the domain against Google's Safe Browsing v4 list.
 // A non-empty matches[] is treated as a strong "malicious" signal because
 // the list is conservative: Google only adds confirmed malware, phishing,
 // or unwanted-software endpoints. An empty matches[] from a 200 means
 // "Google has nothing on this", which we surface as `clean` — that's a
 // real endorsement, not "unknown".
-func SafeBrowsing(ctx context.Context, domain string) domain_inspect.CheckResult {
-	// Ключ держится в атомике (см. keys.go): дескриптор настройки
-	// safebrowsing_key обновляет его без рестарта.
-	key := GetSBKey()
+func safeBrowsing(ctx context.Context, domain, key string) domain_inspect.CheckResult {
 	if key == "" {
 		return skipped("safebrowsing_key not set")
 	}

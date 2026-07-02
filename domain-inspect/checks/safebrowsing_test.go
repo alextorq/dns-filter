@@ -11,28 +11,23 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-func withSafeBrowsingEndpointAndKey(t *testing.T, ts *httptest.Server, key string) {
+func withSafeBrowsingEndpoint(t *testing.T, ts *httptest.Server) {
 	t.Helper()
 	prev := sbEndpoint
 	sbEndpoint = ts.URL + "/"
+	t.Cleanup(func() { sbEndpoint = prev })
+}
 
-	prevKey := GetSBKey()
-	SetSBKey(key)
-
-	t.Cleanup(func() {
-		sbEndpoint = prev
-		SetSBKey(prevKey)
-	})
+func newSafeBrowsingCheck(key string) domain_inspect.CheckFunc {
+	keys := NewCredentials()
+	keys.SetSafeBrowsing(key)
+	return NewSafeBrowsing(keys)
 }
 
 // Without a key the check must be skipped (not errored). Operators who don't
 // have a Google Cloud project should still see a sensible aggregated result.
 func TestSafeBrowsing_NoKey_Skipped(t *testing.T) {
-	prev := GetSBKey()
-	SetSBKey("")
-	t.Cleanup(func() { SetSBKey(prev) })
-
-	res := SafeBrowsing(context.Background(), "x.example")
+	res := newSafeBrowsingCheck("")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusSkipped {
 		t.Errorf("expected skipped, got %s", res.Status)
 	}
@@ -66,9 +61,9 @@ func TestSafeBrowsing_MaliciousMatch(t *testing.T) {
 		]}`))
 	}))
 	defer ts.Close()
-	withSafeBrowsingEndpointAndKey(t, ts, apiKey)
+	withSafeBrowsingEndpoint(t, ts)
 
-	res := SafeBrowsing(context.Background(), "x.example")
+	res := newSafeBrowsingCheck(apiKey)(context.Background(), "x.example")
 
 	if res.Status != domain_inspect.StatusOK {
 		t.Fatalf("status: got %s, want OK", res.Status)
@@ -91,9 +86,9 @@ func TestSafeBrowsing_NoMatch_IsClean(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer ts.Close()
-	withSafeBrowsingEndpointAndKey(t, ts, "k")
+	withSafeBrowsingEndpoint(t, ts)
 
-	res := SafeBrowsing(context.Background(), "x.example")
+	res := newSafeBrowsingCheck("k")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusOK {
 		t.Fatalf("status: got %s, want OK", res.Status)
 	}
@@ -115,9 +110,9 @@ func TestSafeBrowsing_Forbidden_IsError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":{"code":403,"message":"PERMISSION_DENIED"}}`))
 	}))
 	defer ts.Close()
-	withSafeBrowsingEndpointAndKey(t, ts, "k")
+	withSafeBrowsingEndpoint(t, ts)
 
-	res := SafeBrowsing(context.Background(), "x.example")
+	res := newSafeBrowsingCheck("k")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusError {
 		t.Errorf("expected error status on 403, got %s", res.Status)
 	}
@@ -130,9 +125,9 @@ func TestSafeBrowsing_RateLimited_IsRateLimited(t *testing.T) {
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer ts.Close()
-	withSafeBrowsingEndpointAndKey(t, ts, "k")
+	withSafeBrowsingEndpoint(t, ts)
 
-	res := SafeBrowsing(context.Background(), "x.example")
+	res := newSafeBrowsingCheck("k")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusRateLimited {
 		t.Errorf("429 must surface as rate_limited, got status=%s", res.Status)
 	}
@@ -144,9 +139,9 @@ func TestSafeBrowsing_GarbageJSON_IsError(t *testing.T) {
 		_, _ = w.Write([]byte(`not-json`))
 	}))
 	defer ts.Close()
-	withSafeBrowsingEndpointAndKey(t, ts, "k")
+	withSafeBrowsingEndpoint(t, ts)
 
-	res := SafeBrowsing(context.Background(), "x.example")
+	res := newSafeBrowsingCheck("k")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusError {
 		t.Errorf("expected error on garbage json, got %s", res.Status)
 	}

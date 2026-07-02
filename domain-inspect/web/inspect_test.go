@@ -5,55 +5,68 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
-	app_db "github.com/alextorq/dns-filter/db"
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 	"github.com/gin-gonic/gin"
 )
 
-// stubChecks replaces the real catalog with deterministic in-memory ones so
-// the handler tests don't reach the network. Restored by t.Cleanup so a
-// failing test cannot leak the stub into siblings.
-func stubChecks(t *testing.T) {
-	t.Helper()
-	prev := checksFactory
-	checksFactory = func() map[string]domain_inspect.CheckFunc {
-		return map[string]domain_inspect.CheckFunc{
-			"stub": func(_ context.Context, _ string) domain_inspect.CheckResult {
-				return domain_inspect.CheckResult{Status: domain_inspect.StatusOK, Verdict: domain_inspect.VerdictClean}
-			},
+type recordingLogger struct {
+	calls int
+}
+
+func (l *recordingLogger) Info(...any) { l.calls++ }
+
+func newTestHandlers() (*Handlers, *recordingLogger) {
+	log := &recordingLogger{}
+	return NewHandlers(
+		func() map[string]domain_inspect.CheckFunc {
+			return map[string]domain_inspect.CheckFunc{
+				"stub": func(_ context.Context, _ string) domain_inspect.CheckResult {
+					return domain_inspect.CheckResult{Status: domain_inspect.StatusOK, Verdict: domain_inspect.VerdictClean}
+				},
+			}
+		},
+		log,
+	), log
+}
+
+func TestNewHandlers_RejectsMissingDependencies(t *testing.T) {
+	log := &recordingLogger{}
+	cases := []struct {
+		name   string
+		checks CheckFactory
+		log    Logger
+	}{
+		{name: "missing checks", log: log},
+		{name: "missing logger", checks: func() map[string]domain_inspect.CheckFunc { return nil }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("expected constructor to panic on incomplete wiring")
+				}
+			}()
+			NewHandlers(tc.checks, tc.log)
+		})
+	}
+}
+
+func TestHandlers_RegisterRoutes_RejectsZeroValue(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected zero-value handlers to fail during route registration")
 		}
-	}
-	t.Cleanup(func() { checksFactory = prev })
+	}()
+	(&Handlers{}).RegisterRoutes(gin.New().Group("/api"))
 }
 
-func TestMain(m *testing.M) {
-	// The handler reaches into the DB (via local_stats), so we need an
-	// isolated SQLite file. Chdir to a tmp dir to redirect ./filter.sqlite.
-	tmp, err := os.MkdirTemp("", "domain-inspect-web-test-*")
-	if err != nil {
-		panic(err)
-	}
-	if err := os.Chdir(tmp); err != nil {
-		os.RemoveAll(tmp)
-		panic(err)
-	}
-	// Touch the connection so migrations run (the handler depends on the
-	// block/allow tables existing).
-	_ = app_db.GetConnection()
-	gin.SetMode(gin.TestMode)
-
-	code := m.Run()
-	os.RemoveAll(tmp)
-	os.Exit(code)
-}
-
-func callInspect(t *testing.T, query string) *httptest.ResponseRecorder {
+func callInspect(t *testing.T, h *Handlers, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	r := gin.New()
-	r.GET("/api/domain/inspect", Inspect)
+	r.GET("/api/domain/inspect", h.Inspect)
 	req := httptest.NewRequest(http.MethodGet, "/api/domain/inspect"+query, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -61,9 +74,13 @@ func callInspect(t *testing.T, query string) *httptest.ResponseRecorder {
 }
 
 func TestInspect_MissingDomain_Returns400(t *testing.T) {
-	w := callInspect(t, "")
+	h, log := newTestHandlers()
+	w := callInspect(t, h, "")
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
+	}
+	if log.calls != 0 {
+		t.Errorf("invalid requests must not be logged as completed inspections; got %d calls", log.calls)
 	}
 }
 
@@ -71,7 +88,8 @@ func TestInspect_MissingDomain_Returns400(t *testing.T) {
 // silently feeding "https://example.com/path" to RDAP / VT and getting back
 // nonsense results.
 func TestInspect_URLInsteadOfDomain_Returns400(t *testing.T) {
-	w := callInspect(t, "?domain=https://example.com/path")
+	h, _ := newTestHandlers()
+	w := callInspect(t, h, "?domain=https://example.com/path")
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for URL-shaped input, got %d (body=%s)", w.Code, w.Body.String())
 	}
@@ -80,9 +98,8 @@ func TestInspect_URLInsteadOfDomain_Returns400(t *testing.T) {
 // Wire-shape test: the handler must come back 200 with the expected envelope.
 // Checks are stubbed so this stays hermetic and fast.
 func TestInspect_ReturnsAggregatedShape(t *testing.T) {
-	stubChecks(t)
-
-	w := callInspect(t, "?domain=example.com")
+	h, log := newTestHandlers()
+	w := callInspect(t, h, "?domain=example.com")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
@@ -104,14 +121,16 @@ func TestInspect_ReturnsAggregatedShape(t *testing.T) {
 			t.Errorf("check %d has empty name", i)
 		}
 	}
+	if log.calls != 1 {
+		t.Errorf("successful inspection must be logged once; got %d calls", log.calls)
+	}
 }
 
 // Locks in the lowercase normalization: input "Example.COM" must echo back as
 // "example.com" so callers can rely on case-insensitive lookups.
 func TestInspect_NormalizesDomainCase(t *testing.T) {
-	stubChecks(t)
-
-	w := callInspect(t, "?domain=Example.COM")
+	h, _ := newTestHandlers()
+	w := callInspect(t, h, "?domain=Example.COM")
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}

@@ -20,14 +20,13 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-// Handlers bundles every per-feature *Handlers struct that requires
-// constructor-injected dependencies. main builds it as the single
-// composition-root step for the HTTP API. Feature packages without DI
-// register themselves via package-level Register(rg) functions instead.
+// Handlers bundles every per-feature *Handlers value. main builds it as the
+// single composition-root step for the HTTP API.
 type Handlers struct {
 	Auth     *authWeb.Handlers
 	Clients  *clientsWeb.Handlers
 	DNSCache *dnsCacheWeb.Handlers
+	Inspect  *inspectWeb.Handlers
 	Blocked  *eventsWeb.Handlers
 	Filter   *filterWeb.Handlers
 	Suggest  *suggestWeb.Handlers
@@ -53,7 +52,7 @@ func CreateServer(h Handlers) *gin.Engine {
 
 // buildRouter assembles the gin.Engine with every route the API exposes but
 // does NOT start listening. Each feature contributes its own paths via
-// RegisterRoutes / Register — this function only owns cross-cutting concerns
+// RegisterRoutes; this function only owns cross-cutting concerns
 // (CORS, the public/protected split, Swagger).
 func buildRouter(h Handlers) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
@@ -80,7 +79,7 @@ func buildRouter(h Handlers) *gin.Engine {
 	h.Clients.RegisterRoutes(api)
 	h.Database.RegisterRoutes(api)
 	h.DNSCache.RegisterRoutes(api)
-	inspectWeb.Register(api)
+	h.Inspect.RegisterRoutes(api)
 	h.Logger.RegisterRoutes(api)
 	h.Settings.RegisterRoutes(api)
 	h.Traffic.RegisterRoutes(api)

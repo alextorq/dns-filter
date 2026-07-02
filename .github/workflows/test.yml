@@ -65,9 +65,10 @@ jobs:
       - name: Upload coverage reports
         uses: codecov/codecov-action@v6
         with:
-          file: ./coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out
           flags: unittests
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   frontend:
     runs-on: ubuntu-latest

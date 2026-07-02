@@ -49,10 +49,11 @@ in-memory `:memory:`-sqlite.
 5. `Repo.IsActivelyBlocked` — авторитетная проверка с учётом `Active=true`.
    На любую DB-ошибку — fail-open (false), без записи в кэш (#25).
 
-Singleton'ы остались для bloom (`filter/filter`), LRU
-(`filter/cache`), логгера (`logger`), конфига
-(`config`) и `db.GetConnection()`. **Все они впитываются `*Module` в
-`main.go`** — фичи их сами не вызывают. `domain-inspect/checks/local_stats.go`
+Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь создаются
+обычными конструкторами в `main.go`; package-level singleton state в них
+удалён. Singleton'ы остались для логгера (`logger`), конфига (`config`) и
+`db.GetConnection()`. **Все они впитываются `*Module` в `main.go`** — фичи
+их сами не вызывают. `domain-inspect/checks/local_stats.go`
 тоже больше не читает singleton-коннекшен: check создаётся через
 `NewLocalStats(blockRepo, trafficRepo)` в composition root.
 
@@ -373,7 +374,7 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients, dns-cache и domain-inspect**. Остаток: observability/background helpers и process-level singleton-конструкторы |
+| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU**. Остаток: observability/background helpers и process-level constructors config/logger/db |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |

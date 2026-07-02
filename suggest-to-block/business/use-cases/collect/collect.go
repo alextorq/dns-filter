@@ -66,7 +66,7 @@ const (
 //     most deterministic signal we have, regardless of the total score.
 //
 // Lives on the use-case package (not the orchestrator) so the rule is unit-
-// testable without touching the DB or the filter singletons.
+// testable without touching the DB or filter instances.
 func ShouldAutoBlock(s Suggestion) bool {
 	if s.Score >= ThresholdToAutoBlock {
 		return true

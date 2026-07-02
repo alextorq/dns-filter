@@ -4,6 +4,23 @@ import (
 	"testing"
 )
 
+func TestNewFilter_ReturnsIndependentInstances(t *testing.T) {
+	first := NewFilter()
+	second := NewFilter()
+
+	if first == second {
+		t.Fatal("NewFilter returned the same instance twice")
+	}
+
+	first.UpdateFilter([]string{"blocked.example."})
+	if !first.DomainExist("blocked.example.") {
+		t.Fatal("updated filter should contain the domain")
+	}
+	if second.DomainExist("blocked.example.") {
+		t.Fatal("domain added to one filter leaked into another instance")
+	}
+}
+
 // Locks in #29: an empty input must not collapse the bloom to zero
 // capacity (which the previous code did via NewWithEstimates(0, …)) and
 // subsequent lookups must safely return false.

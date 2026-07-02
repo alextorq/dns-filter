@@ -142,8 +142,8 @@ func main() {
 
 	// Composition root for the DI-enabled features: each gets its own *Repo over
 	// the single connection, then *Module / *Handlers wired from those repos.
-	// Parts of domain-inspect still contain legacy service-locator reads and are
-	// migrated separately rather than hidden by this wiring.
+	// Domain-inspect checks and their runtime credentials are also constructed
+	// explicitly below; feature code does not resolve application dependencies.
 	blockRepo := blocked_domain_db.NewRepo(conn)
 	sourceRepo := source_db.NewRepo(conn)
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
@@ -152,8 +152,8 @@ func main() {
 	hostnamesRepo := hostnames_db.NewRepo(conn)
 	clientRepo := clients_db.NewRepo(conn)
 
-	bloom := filter_bloom.GetFilter()
-	cache := filter_cache.GetCache()
+	bloom := filter_bloom.NewFilter()
+	cache := filter_cache.NewCacheWithMetrics(1500)
 	filterModule := filter.NewModule(blockRepo, bloom, cache, conf, chanLogger)
 
 	sourceModule := source.NewModule(sourceRepo, blockRepo, chanLogger)

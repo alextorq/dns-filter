@@ -566,9 +566,9 @@ func main() {
     trafficRepo  := traffic_db.NewRepo(conn)
     clientRepo   := clients_db.NewRepo(conn)
 
-    // 3. filter.Module: absorbs the bloom + LRU cache singletons
-    bloom := filter_bloom.GetFilter()
-    cache := filter_cache.GetCache()
+    // 3. filter.Module: owns explicit process-local bloom + verdict cache instances
+    bloom := filter_bloom.NewFilter()
+    cache := filter_cache.NewCacheWithMetrics(1500)
     filterModule := filter.NewModule(blockRepo, bloom, cache, conf, chanLogger)
 
     // 4. Sources: seed the catalog (the list sync moves to the background, step 7)
@@ -673,7 +673,10 @@ Load-bearing ordering:
 
 4. **In-memory maps** — for the Bloom filter and the client exclusion list (fast synchronized access)
 
-5. **Singleton pattern** — for the logger, bloom filter, filter verdict LRU and config (sync.Once). The DNS response cache is an explicit per-process instance composed in `main.go` and shared by DNS, settings and its HTTP handler.
+5. **Process-owned state** — `main.go` explicitly constructs the bloom filter,
+   filter verdict LRU and DNS response cache, then injects them into their
+   consumers. Logger and config still use process-level `sync.Once`
+   constructors.
 
 6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. DNS cache and domain-inspect (handler, local readers, URLScan, VT/SB credentials and provider checks) are explicitly instantiated and injected:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.

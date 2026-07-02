@@ -20,18 +20,12 @@ type Filter struct {
 	Bloom *bloom.BloomFilter
 }
 
-var filter *Filter = nil
-var once = sync.Once{}
-
-func GetFilter() *Filter {
-	once.Do(func() {
-		if filter == nil {
-			filter = &Filter{
-				Bloom: bloom.NewWithEstimates(expectedDomains, falsePositive),
-			}
-		}
-	})
-	return filter
+// NewFilter creates one process-owned bloom filter. The caller controls its
+// lifetime; there is no package-level singleton state.
+func NewFilter() *Filter {
+	return &Filter{
+		Bloom: bloom.NewWithEstimates(expectedDomains, falsePositive),
+	}
 }
 
 func (f *Filter) DomainExist(domain string) bool {

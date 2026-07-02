@@ -1,17 +1,37 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/alextorq/dns-filter/clients"
 	"github.com/alextorq/dns-filter/clients/db"
+	"github.com/alextorq/dns-filter/clients/discovery"
 	"github.com/alextorq/dns-filter/clients/use-cases/create"
 	"github.com/alextorq/dns-filter/clients/use-cases/update"
-	"github.com/alextorq/dns-filter/logger"
+	"github.com/alextorq/dns-filter/config"
 	"github.com/gin-gonic/gin"
 )
+
+type Service interface {
+	List() ([]db.Client, error)
+	Create(create.Input) (*db.Client, error)
+	Update(update.Input) (*db.Client, error)
+	ChangeFilter(id uint, filtered bool) (*db.Client, error)
+	Remove(id uint) error
+	Discover(context.Context, discovery.DiscoverOptions) (*discovery.Result, error)
+}
+
+type Logger interface {
+	Error(error)
+}
+
+type Handlers struct {
+	Service Service
+	Log     Logger
+	Mode    config.Mode
+}
 
 // ListClients lists every known client.
 // @Summary      List clients
@@ -20,8 +40,8 @@ import (
 // @Success      200 {object} ListClientsResponse
 // @Failure      500 {object} ErrorResponse
 // @Router       /api/clients [post]
-func ListClients(c *gin.Context) {
-	rows, err := db.GetAllClients()
+func (h *Handlers) ListClients(c *gin.Context) {
+	rows, err := h.Service.List()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return
@@ -39,12 +59,11 @@ func ListClients(c *gin.Context) {
 // @Failure      400  {object} BadRequestResponse
 // @Failure      500  {object} ErrorResponse
 // @Router       /api/clients/create [post]
-func CreateClient(c *gin.Context) {
+func (h *Handlers) CreateClient(c *gin.Context) {
 	var req CreateClientRequest
-	l := logger.GetLogger()
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		l.Error(fmt.Errorf("create client: bind json: %w", err))
+		h.Log.Error(fmt.Errorf("create client: bind json: %w", err))
 		c.JSON(http.StatusBadRequest, BadRequestResponse{Message: err.Error()})
 		return
 	}
@@ -53,7 +72,7 @@ func CreateClient(c *gin.Context) {
 	// omitted. The pointer indirection in the request DTO exists for exactly
 	// this distinction — see the CreateClientRequest doc comment.
 	filtered := boolOr(req.Filtered, true)
-	row, err := clients.Create(create.Input{
+	row, err := h.Service.Create(create.Input{
 		IP:       req.IP,
 		MAC:      req.MAC,
 		Token:    req.Token,
@@ -84,17 +103,16 @@ func CreateClient(c *gin.Context) {
 // @Failure      404  {object} ErrorResponse
 // @Failure      500  {object} ErrorResponse
 // @Router       /api/clients/update [post]
-func UpdateClient(c *gin.Context) {
+func (h *Handlers) UpdateClient(c *gin.Context) {
 	var req UpdateClientRequest
-	l := logger.GetLogger()
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		l.Error(fmt.Errorf("update client: bind json: %w", err))
+		h.Log.Error(fmt.Errorf("update client: bind json: %w", err))
 		c.JSON(http.StatusBadRequest, BadRequestResponse{Message: err.Error()})
 		return
 	}
 
-	row, err := clients.Update(update.Input{
+	row, err := h.Service.Update(update.Input{
 		ID:       req.ID,
 		Name:     req.Name,
 		Hostname: req.Hostname,
@@ -122,17 +140,16 @@ func UpdateClient(c *gin.Context) {
 // @Failure      404  {object} ErrorResponse
 // @Failure      500  {object} ErrorResponse
 // @Router       /api/clients/change-filter [post]
-func ChangeFilter(c *gin.Context) {
+func (h *Handlers) ChangeFilter(c *gin.Context) {
 	var req ChangeFilterRequest
-	l := logger.GetLogger()
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		l.Error(fmt.Errorf("change filter: bind json: %w", err))
+		h.Log.Error(fmt.Errorf("change filter: bind json: %w", err))
 		c.JSON(http.StatusBadRequest, BadRequestResponse{Message: err.Error()})
 		return
 	}
 
-	row, err := clients.ChangeFilter(req.ID, req.Filtered)
+	row, err := h.Service.ChangeFilter(req.ID, req.Filtered)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
@@ -155,17 +172,16 @@ func ChangeFilter(c *gin.Context) {
 // @Failure      404  {object} ErrorResponse
 // @Failure      500  {object} ErrorResponse
 // @Router       /api/clients/delete [post]
-func DeleteClient(c *gin.Context) {
+func (h *Handlers) DeleteClient(c *gin.Context) {
 	var req DeleteClientRequest
-	l := logger.GetLogger()
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		l.Error(fmt.Errorf("delete client: bind json: %w", err))
+		h.Log.Error(fmt.Errorf("delete client: bind json: %w", err))
 		c.JSON(http.StatusBadRequest, BadRequestResponse{Message: err.Error()})
 		return
 	}
 
-	if err := clients.Remove(req.ID); err != nil {
+	if err := h.Service.Remove(req.ID); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
 			return

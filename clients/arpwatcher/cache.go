@@ -31,21 +31,13 @@ type Cache struct {
 	knownCount  int
 }
 
-var (
-	instance *Cache
-	once     sync.Once
-)
-
-// Get returns the singleton Cache. Both the watcher and the IPIdentifier
-// share one instance so the hot path sees what the watcher has learned.
-func Get() *Cache {
-	once.Do(func() {
-		instance = &Cache{
-			ipToMAC: map[string]string{},
-			macToIP: map[string]string{},
-		}
-	})
-	return instance
+// NewCache constructs an empty ARP snapshot. main shares it between the
+// watcher, DNS identifier, and hostname collector.
+func NewCache() *Cache {
+	return &Cache{
+		ipToMAC: map[string]string{},
+		macToIP: map[string]string{},
+	}
 }
 
 // MAC returns the MAC last associated with the given IP, or "" if unknown.
@@ -76,11 +68,11 @@ func (c *Cache) IP(mac string) (string, bool) {
 // UpdateResult summarizes what changed during one Update call. The watcher
 // uses NewPairs to decide whether to trigger a backfill pass on the DB.
 type UpdateResult struct {
-	NewPairs       int // (IP, MAC) pairs the cache hadn't seen
-	ChangedIPs     int // existing MACs whose IP moved (DHCP rotation)
-	ChangedMACs    int // existing IPs whose MAC changed (different device on same IP)
-	TotalKnown     int
-	UpdatedAtTime  time.Time
+	NewPairs      int // (IP, MAC) pairs the cache hadn't seen
+	ChangedIPs    int // existing MACs whose IP moved (DHCP rotation)
+	ChangedMACs   int // existing IPs whose MAC changed (different device on same IP)
+	TotalKnown    int
+	UpdatedAtTime time.Time
 }
 
 // Update applies a fresh snapshot of ARP table entries to the cache. It is

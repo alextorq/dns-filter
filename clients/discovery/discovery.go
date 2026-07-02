@@ -5,8 +5,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/alextorq/dns-filter/clients/db"
 )
 
 // Device is the merged view of one host on the LAN as the UI sees it.
@@ -102,7 +100,6 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
 		// mDNS self-answers on docker0/br-* (172.18.0.1, 172.24.0.1, …).
 		res.Devices = filterDockerDevices(res.Devices, dockerBridgeNets())
 	}
-	annotateRegistered(res.Devices)
 	res.Total = len(res.Devices)
 	return res, nil
 }
@@ -186,49 +183,6 @@ func merge(arpEntries []ARPEntry, mdnsEntries []mDNSEntry) []Device {
 	// Sort by IP (octet-wise) so the UI table is stable across calls.
 	sortByIP(out)
 	return out
-}
-
-// annotateRegistered flips AlreadyRegistered=true for devices whose IP or
-// MAC matches an existing client row. The lookup is one DB hit (single SELECT
-// over the full clients table) — discovery is on-demand and the table size
-// is tiny, so we don't bother with a per-IP query.
-func annotateRegistered(devices []Device) {
-	if len(devices) == 0 {
-		return
-	}
-	clients, err := db.GetAllClients()
-	if err != nil {
-		return // not fatal — UI just won't show the "already registered" badge
-	}
-	knownIPs := make(map[string]struct{}, len(clients))
-	knownMACs := make(map[string]struct{}, len(clients))
-	for _, c := range clients {
-		if c.IP != "" {
-			knownIPs[c.IP] = struct{}{}
-		}
-		if c.MAC != "" {
-			knownMACs[normalizeMAC(c.MAC)] = struct{}{}
-		}
-	}
-	for i := range devices {
-		if _, ok := knownIPs[devices[i].IP]; ok {
-			devices[i].AlreadyRegistered = true
-			continue
-		}
-		if devices[i].MAC != "" {
-			if _, ok := knownMACs[normalizeMAC(devices[i].MAC)]; ok {
-				devices[i].AlreadyRegistered = true
-			}
-		}
-	}
-}
-
-func normalizeMAC(mac string) string {
-	parsed, err := net.ParseMAC(mac)
-	if err != nil {
-		return mac
-	}
-	return parsed.String()
 }
 
 func sortByIP(devices []Device) {

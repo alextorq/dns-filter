@@ -151,9 +151,17 @@ The `/traffic` page absorbed the former `/statistic` page: at the top, a headlin
 
 ### 5. Client exclusions (`clients/`)
 
-**Purpose:** IP addresses for which filtering is disabled.
+**Purpose:** clients for which filtering is disabled, identified by MAC when
+available (stable across DHCP rotation), otherwise by IP; token identifiers are
+reserved for public mode.
 
-**Implementation:** A simple in-memory map synchronized with an RWMutex.
+**Implementation:** `clients/db.Repo` owns persistence, `clients.Module`
+serializes DB mutations with exclusion-snapshot updates, and a per-process
+`store.Store` serves O(1) hot-path lookups behind an RWMutex. `main.go` creates
+and shares that store with both `clients.Module` and `dns.ServerDeps.Clients`.
+The ARP cache and watcher are also instance-based and explicitly wired; MAC
+backfill triggers `Module.Sync` so the snapshot switches from the old IP key to
+the canonical MAC key atomically with respect to client mutations.
 
 **Hostname collector (`clients/hostnames/`).** A background goroutine (LAN mode only, started alongside arpwatcher) that every `DefaultInterval` (10 min) browses the network over mDNS (`discovery.BrowseMDNS` — a lightweight discovery variant **without** the heavy active-ARP scan) and, for each announced `IP→name`, resolves the IP to a MAC via the same `arpwatcher`, then writes `MAC→hostname` into the `host_names` table (`clients/hostnames/db`). **The key is MAC only:** a device's MAC is stable for the duration of its network association (even a privacy-randomized one), whereas the IP changes with the DHCP lease — keying by IP would "glue" the name to an address that DHCP later hands to a different device. A host whose MAC is unknown at sweep time is simply skipped (re-learned on the next sweep) rather than written under its IP. Coverage is partial by nature: devices that announce nothing over mDNS (some Android phones, much IoT) get no name here and fall back to vendor/IP in the UI. The sweep self-times-out (~5s in `BrowseMDNS`); a partial mDNS error is logged but does not cancel the sweep; departed devices are cleaned up by `PruneOlderThan(DefaultTTL=30d)` after each run. This is a consumer/complement to the on-demand scanner `POST /api/clients/discover` (the same mDNS machinery, but button-triggered and without persistence). That scanner also reads the kernel ARP table, and since the container runs on the host network namespace it sees the host's Docker bridges (`docker0` / `br-<hash>`) — both as ARP container neighbours and as the box's own mDNS self-answers (it replies on every bridge address it owns, surfacing itself as `172.18.0.1`, `172.24.0.1`, …). **Docker filtering is a single pass at the end:** every source (ARP, mDNS, active scan) is collected and merged raw, then `Discover` drops any device whose IP falls inside one of the host's real Docker bridge subnets. `dockerBridgeNets()` reads those subnets straight off the host's bridge interfaces (an interface is a Docker bridge per `discovery.isDockerBridgeIface` — `docker0` or `br-` + exactly 12 hex, so a non-Docker bridge like `br-lan` is never matched), so the check is exact, not a guessed IP range — and one IP test covers every source at once. `isDockerBridgeIface` is also used in `FindLocalSubnet` to avoid picking a Docker bridge as the *active-scan target* (a distinct concern: don't probe a /16 container net). The filter is on by default but caller-controllable: `POST /api/clients/discover` accepts `{"filter_docker": false}` (UI checkbox *Filter Docker networks*, default on) to include those addresses. The arpwatcher reads the same raw table and applies the same filter (`discovery.FilterDockerARP`) to keep its IP↔MAC cache clean.
 
@@ -226,8 +234,8 @@ The refresh context is *not* tied to the client's — the client already got a s
 
 **Self-routing.** `web/server.go` is thin — it owns only cross-cutting concerns: CORS, the public/protected split, Swagger. Each feature registers its own paths:
 
-- DI features (`auth`, `blocked-domain`, `db`, `filter`, `logger`, `settings`, `source`, `suggest-to-block`, `traffic`) expose methods on `*Handlers`.
-- Non-DI features (`clients`, `dns-cache`, `domain-inspect`) expose a package function `Register(rg *gin.RouterGroup)`.
+- DI features (`auth`, `blocked-domain`, `clients`, `db`, `filter`, `logger`, `settings`, `source`, `suggest-to-block`, `traffic`) expose methods on `*Handlers`.
+- Non-DI features (`dns-cache`, `domain-inspect`) expose a package function `Register(rg *gin.RouterGroup)`.
 - `auth/web` additionally exposes `RegisterPublic(r gin.IRouter)`, which mounts `POST /api/auth/login` outside its `RequireAuth()` middleware; protected auth routes use `RegisterRoutes(rg)`.
 
 The contract is pinned by the regression test `web/server_test.go::TestBuildRouter_RegistersAllExpectedRoutes` — a snapshot of the full `(method, path)` set is compared with what `gin.Engine.Routes()` returns after `buildRouter`. Any accidental route removal/rename fails in CI.
@@ -244,7 +252,7 @@ The contract is pinned by the regression test `web/server_test.go::TestBuildRout
 | `POST /api/events/block/amount` | The number of blocks (the headline number) |
 | `POST /api/suggest-to-block` | Block suggestions |
 | `POST /api/sources` | Source management |
-| `POST /api/exclude-clients` | Client exclusion management |
+| `POST /api/clients*` | Client CRUD, filter toggle and LAN discovery |
 | `POST /api/config/logger/*` | Logging management |
 
 ### 10. Metrics (`metric/`)
@@ -538,7 +546,7 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ## Entry point (main.go)
 
-`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. Clients, dns-cache and parts of domain-inspect still use legacy package-level access and remain separate DI work:
+`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. DNS cache and parts of domain-inspect still use legacy package-level access and remain separate DI work:
 
 ```go
 func main() {
@@ -556,6 +564,7 @@ func main() {
     suggestRepo  := suggest_to_block_db.NewRepo(conn)
     settingsRepo := settings_db.NewRepo(conn)
     trafficRepo  := traffic_db.NewRepo(conn)
+    clientRepo   := clients_db.NewRepo(conn)
 
     // 3. filter.Module: absorbs the bloom + LRU cache singletons
     bloom := filter_bloom.GetFilter()
@@ -568,7 +577,10 @@ func main() {
 
     // 5. Bloom = a snapshot of active domains from what is ALREADY in the DB
     if err := filterModule.UpdateFromDb(); err != nil { panic(err) }
-    if err := clients.Sync(); err != nil { panic(err) }
+    clientStore := clients_store.New()
+    clientModule := clients.NewModule(clientRepo, clientStore)
+    if err := clientModule.Sync(); err != nil { panic(err) }
+    arpCache := arpwatcher.NewCache()
 
     // 6. Suggest + domain-inspect read "allowed domains" from domain_traffic
     //    (via adapters — the ports do not change). Background tasks: the single
@@ -582,8 +594,9 @@ func main() {
     go authModule.ClearExpiredSessions()
     // LAN mode: arpwatcher (IP↔MAC) + the hostname collector (mDNS → host_names).
     if conf.Mode == config.ModeLAN {
-        go arpwatcher.Run(context.Background(), chanLogger, arpwatcher.DefaultInterval)
-        go (&hostnames.Collector{Browse: discovery.BrowseMDNS, MACs: arpwatcher.Get(), Store: hostnamesRepo, Log: chanLogger}).Run(context.Background())
+        arpWatcher := arpwatcher.NewWatcher(arpCache, clientRepo, clientModule.Sync)
+        go arpWatcher.Run(context.Background(), chanLogger, arpwatcher.DefaultInterval)
+        go (&hostnames.Collector{Browse: discovery.BrowseMDNS, MACs: arpCache, Store: hostnamesRepo, Log: chanLogger}).Run(context.Background())
     }
 
     // 7. DNS server: filter.CheckExist as a method value; trafficWorker is the single
@@ -595,7 +608,7 @@ func main() {
     dnsServer := dns.NewServer(dns.ServerDeps{
         Logger: chanLogger, Cache: cacheWithMetric,
         Filter: filterModule.CheckExist, Metric: metricInstance,
-        Identifier: buildIdentifier(conf.Mode), Clients: clients_store.Get(),
+        Identifier: buildIdentifier(conf.Mode, arpCache), Clients: clientStore,
         Upstream: resolver, SWREnabled: conf.CacheSWR,
         RefreshConcurrency: conf.CacheRefreshConcurrency,
     })
@@ -632,7 +645,7 @@ Load-bearing ordering:
 - `migrate.Migrate(conn)` must run before `NewRepo(conn)` — a Repo silently breaks on its first write without a schema. The connection is resolved once in `main` and passed into migration explicitly; the migration package no longer calls `db.GetConnection()` itself.
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
 - `sourceModule.Sync()` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds.
-- `clients.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
+- `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
 - `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(trafficRepo)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. suggest/domain-inspect get "allowed domains" from `trafficRepo` via adapters (`NewAllowFilterAdapter`, `SetAllowLookup(trafficRepo.IsAllowed)`), and block stats via `NewBlockStatsAdapter`; the ports did not change.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.
 - **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
@@ -651,15 +664,16 @@ Load-bearing ordering:
 
 3. **Asynchronous traffic accounting** — each request's verdict (blocked/allowed) is written into the unified `domain_traffic` counter via the channel-based `TrafficRecorder`: one row per (device, domain, verdict, day), additive upsert in batches, drop-on-full. The DNS reply never waits on a DB write. On an `UpsertBatch` error (e.g. `SQLITE_BUSY`) the `flush` **does not drop the buffer** but keeps the counts and retries them on the next tick (one flush = one atomic batch, so a retry is idempotent); buffer growth during a prolonged DB outage is bounded by `capacity` — new keys are shed, as in the drop-on-full queue. It replaced the two former event tables (`block_domain_events`/`allow_domain_events`).
 
-4. **In-memory maps** — for the Bloom filter and the client exclusion list (fast lock-free access)
+4. **In-memory maps** — for the Bloom filter and the client exclusion list (fast synchronized access)
 
 5. **Singleton pattern** — for the logger, bloom filter, LRU cache, DNS cache, config (sync.Once). These singletons are wrapped in a `*Module` with explicit dependencies; new modules do not call them directly — the `*Module` is composed in `main.go` and passed to wherever the singleton used to be poked.
 
-6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. Clients, dns-cache and parts of domain-inspect still use legacy package-level dependencies and are not yet covered by this claim:
+6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. DNS cache and parts of domain-inspect still use legacy package-level dependencies and are not yet covered by this claim:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.
    - `suggest_to_block.Module` — `Collect` and `Start(ctx)` (12h ticker).
+   - `clients.Module` — CRUD, exclusion-snapshot synchronization and discovery annotation; `clients/web.Handlers`, the DNS hot path and ARP watcher receive its explicit instances from `main`.
 
    The use-cases (`*/business/use-cases/*`) are functions that depend on **narrow output ports** declared next to the consumer (e.g. `create_domain.Repo interface{ DomainNotExist; CreateDomain }`, `check_exist_domain.Deps{Repo, Cache, Bloom, Conf, Log}`). The concrete `*Repo` satisfies all ports through structural typing — "accept interfaces, return structs". Use-case tests run on fakes without sqlite; the repositories are covered by separate integration tests with an in-memory `:memory:` sqlite.
 

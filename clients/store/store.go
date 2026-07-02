@@ -11,7 +11,7 @@ import (
 	"github.com/alextorq/dns-filter/clients/identifier"
 )
 
-// Store is the singleton in-memory exclusion set. Keys are
+// Store is the in-memory exclusion set. Keys are
 // "<kind>:<value>" so that lookups by IP, MAC, or token live in the same map
 // without colliding.
 type Store struct {
@@ -19,18 +19,10 @@ type Store struct {
 	excluded map[string]struct{}
 }
 
-var (
-	instance *Store
-	once     sync.Once
-)
-
-// Get returns the singleton Store. Multiple callers share one set so the DNS
-// hot path and the HTTP CRUD handlers see the same state.
-func Get() *Store {
-	once.Do(func() {
-		instance = &Store{excluded: make(map[string]struct{})}
-	})
-	return instance
+// New constructs an empty exclusion snapshot. The composition root shares the
+// returned instance between the clients module and DNS hot path.
+func New() *Store {
+	return &Store{excluded: make(map[string]struct{})}
 }
 
 func key(l identifier.Lookup) string {
@@ -49,7 +41,7 @@ func (s *Store) IsExcluded(l identifier.Lookup) bool {
 }
 
 // Add records the lookup as excluded. Used after a CRUD mutation so the hot
-// path picks up the change without waiting for a full UpdateFromDB pass.
+// path picks up the change without waiting for a full Module.Sync pass.
 func (s *Store) Add(l identifier.Lookup) {
 	if l.Kind == "" || l.Value == "" {
 		return
@@ -99,22 +91,13 @@ func clientLookups(c *db.Client) []identifier.Lookup {
 	return out
 }
 
-// UpdateFromDB rebuilds the snapshot from the database. Called once at boot
-// and any time a bulk operation makes incremental updates impractical.
+// Replace rebuilds the snapshot from rows loaded by the clients module. Called
+// once at boot and any time a bulk operation makes incremental updates
+// impractical.
 //
-// Concurrency: the rebuild is "SELECT all + replace map under write lock".
-// A concurrent ChangeFilter performs UPDATE then incrementally mutates the
-// same map. On SQLite (the only backend the project supports today) the
-// single-writer model serializes our SELECT against any in-flight UPDATE,
-// so the SELECT cannot miss a row that ChangeFilter just wrote. If the
-// project ever moves to a backend with read-committed isolation, a SELECT
-// here can race past an UPDATE and the rebuild can lose the just-added
-// entry — switch to per-row updates or take a coarser lock then.
-func (s *Store) UpdateFromDB() error {
-	rows, err := db.GetExcludedClients()
-	if err != nil {
-		return err
-	}
+// The clients module serializes Replace with CRUD mutations; this type only
+// owns the short map-swap lock needed by hot-path readers.
+func (s *Store) Replace(rows []db.Client) {
 	next := make(map[string]struct{}, len(rows)*2)
 	for _, c := range rows {
 		for _, l := range clientLookups(&c) {
@@ -124,7 +107,6 @@ func (s *Store) UpdateFromDB() error {
 	s.mu.Lock()
 	s.excluded = next
 	s.mu.Unlock()
-	return nil
 }
 
 // AddClient registers the canonical exclusion lookups for c. Called by the

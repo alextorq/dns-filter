@@ -31,6 +31,7 @@ import (
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
 	dns_cache_web "github.com/alextorq/dns-filter/dns-cache/web"
 	domain_inspect_checks "github.com/alextorq/dns-filter/domain-inspect/checks"
+	domainInspectWeb "github.com/alextorq/dns-filter/domain-inspect/web"
 	"github.com/alextorq/dns-filter/filter"
 	filter_cache "github.com/alextorq/dns-filter/filter/cache"
 	filter_bloom "github.com/alextorq/dns-filter/filter/filter"
@@ -331,6 +332,7 @@ func main() {
 			Cache: cacheWithMetric,
 			Log:   chanLogger,
 		},
+		Inspect: domainInspectWeb.NewHandlers(domain_inspect_checks.Default, chanLogger),
 		Blocked: &blockedWeb.Handlers{
 			Repo:          blockRepo,
 			Log:           chanLogger,

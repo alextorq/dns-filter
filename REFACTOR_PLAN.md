@@ -182,15 +182,16 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 - **DI-фичи** получили метод `(h *Handlers) RegisterRoutes(rg *gin.RouterGroup)`:
   `auth/web`, `blocked-domain/web`, `clients/web`, `db/web`, `dns-cache/web`, `filter/web`, `logger/web`,
   `settings/web`, `suggest-to-block/web`, `source/web`, `traffic/web`.
-- **Package-level фичи** получили функцию пакета `Register(rg *gin.RouterGroup)`:
-  `domain-inspect/web`.
+- `domain-inspect/web` позднее переведён с package-level `Register`/`Inspect`
+  на `NewHandlers(checks, log)` с приватными зависимостями и единый метод
+  `RegisterRoutes`; неполная сборка теперь падает при старте, а не на запросе.
 - **`auth/web`** разнесён на два instance-метода: `RegisterPublic(r gin.IRouter)` —
   только `POST /api/auth/login`; `RegisterRoutes(rg)` — `/auth/logout`,
   `/auth/me`. Middleware `RequireAuth()` также использует injected service.
 - **`suggest-to-block/web.GetSignalCodes`** конвертирован из package-level
   функции в метод `*Handlers` — фича теперь регистрируется унифицированно.
 - **`web/server.go`** ужат до cross-cutting wiring: CORS, public/protected
-  split, Swagger, и набор вызовов `RegisterRoutes` / `Register`. Введена
+  split, Swagger, и набор вызовов `RegisterRoutes`. Введена
   внутренняя функция `buildRouter(h Handlers)` (без `r.Run`) — нужна для
   тестов; `CreateServer` теперь = `buildRouter` + go-`r.Run`.
 
@@ -370,9 +371,9 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients и dns-cache**. Остаток: `domain-inspect` |
+| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients, dns-cache и domain-inspect/web**. Остаток: `domain-inspect/checks`, затем process-level singleton-конструкторы |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
-| 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes`/`Register` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
+| 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |
 | 7 | Свести фоновые задачи в один scheduler | не начат |
 | 8 | Конвенция именования пакетов | не начат |

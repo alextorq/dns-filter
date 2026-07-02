@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -13,6 +14,8 @@ import (
 	clientsWeb "github.com/alextorq/dns-filter/clients/web"
 	dbWeb "github.com/alextorq/dns-filter/db/web"
 	dnsCacheWeb "github.com/alextorq/dns-filter/dns-cache/web"
+	domainInspect "github.com/alextorq/dns-filter/domain-inspect"
+	inspectWeb "github.com/alextorq/dns-filter/domain-inspect/web"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
 	settingsWeb "github.com/alextorq/dns-filter/settings/web"
@@ -21,6 +24,10 @@ import (
 	trafficWeb "github.com/alextorq/dns-filter/traffic/web"
 	"github.com/gin-gonic/gin"
 )
+
+type inspectTestLogger struct{}
+
+func (inspectTestLogger) Info(...any) {}
 
 // expectedRoutes is the canonical contract of the HTTP API surface. Any
 // rename / addition / removal must update this slice and (if it changes the
@@ -88,6 +95,16 @@ func testHandlers() Handlers {
 		Auth:     &authWeb.Handlers{},
 		Clients:  &clientsWeb.Handlers{},
 		DNSCache: &dnsCacheWeb.Handlers{},
+		Inspect: inspectWeb.NewHandlers(
+			func() map[string]domainInspect.CheckFunc {
+				return map[string]domainInspect.CheckFunc{
+					"stub": func(context.Context, string) domainInspect.CheckResult {
+						return domainInspect.CheckResult{Status: domainInspect.StatusOK}
+					},
+				}
+			},
+			inspectTestLogger{},
+		),
 		Blocked:  &blockedWeb.Handlers{},
 		Filter:   &filterWeb.Handlers{},
 		Suggest:  &suggestWeb.Handlers{},

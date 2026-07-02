@@ -8,8 +8,6 @@ import (
 	"time"
 
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
-	"github.com/alextorq/dns-filter/domain-inspect/checks"
-	"github.com/alextorq/dns-filter/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,10 +16,32 @@ import (
 // "timeout" rows than hang the HTTP client.
 const inspectTimeout = 8 * time.Second
 
-// checksFactory builds the check catalog the handler runs. It is a function
-// (not a captured map) so the underlying registry can hot-swap implementations
-// — e.g. when tests want to stub out outbound HTTP. Defaults to the real set.
-var checksFactory = checks.Default
+type Logger interface {
+	Info(args ...any)
+}
+
+type CheckFactory func() map[string]domain_inspect.CheckFunc
+
+type Handlers struct {
+	checks CheckFactory
+	log    Logger
+}
+
+func NewHandlers(checks CheckFactory, log Logger) *Handlers {
+	if checks == nil {
+		panic("domain-inspect/web: checks factory is required")
+	}
+	if log == nil {
+		panic("domain-inspect/web: logger is required")
+	}
+	return &Handlers{checks: checks, log: log}
+}
+
+func (h *Handlers) validate() {
+	if h == nil || h.checks == nil || h.log == nil {
+		panic("domain-inspect/web: handlers are not fully configured; use NewHandlers")
+	}
+}
 
 // Inspect runs the catalog of domain checks and returns the aggregated result.
 // @Summary      Inspect a domain with reputation/diagnostic checks
@@ -31,9 +51,7 @@ var checksFactory = checks.Default
 // @Success      200    {object} domain_inspect.InspectResult
 // @Failure      400    {object} ErrorResponse
 // @Router       /api/domain/inspect [get]
-func Inspect(c *gin.Context) {
-	l := logger.GetLogger()
-
+func (h *Handlers) Inspect(c *gin.Context) {
 	domain := strings.ToLower(strings.TrimSpace(c.Query("domain")))
 	if domain == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Message: "domain query parameter is required"})
@@ -47,8 +65,8 @@ func Inspect(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), inspectTimeout)
 	defer cancel()
 
-	res := domain_inspect.Inspect(ctx, domain, checksFactory())
-	l.Info(fmt.Sprintf("domain-inspect: %s -> verdict=%s score=%d", domain, res.Summary.Verdict, res.Summary.Score))
+	res := domain_inspect.Inspect(ctx, domain, h.checks())
+	h.log.Info(fmt.Sprintf("domain-inspect: %s -> verdict=%s score=%d", domain, res.Summary.Verdict, res.Summary.Score))
 
 	c.JSON(http.StatusOK, res)
 }

@@ -597,13 +597,14 @@ func main() {
             URLScan:    urlScanCheck,
         })
     }
-    go suggestModule.Start(context.Background())
-    go authModule.ClearExpiredSessions()
+    backgroundCtx := context.Background()
+    go suggestModule.Start(backgroundCtx)
+    go authModule.ClearExpiredSessions(backgroundCtx, chanLogger)
     // LAN mode: arpwatcher (IP↔MAC) + the hostname collector (mDNS → host_names).
     if conf.Mode == config.ModeLAN {
         arpWatcher := arpwatcher.NewWatcher(arpCache, clientRepo, clientModule.Sync)
-        go arpWatcher.Run(context.Background(), chanLogger, arpwatcher.DefaultInterval)
-        go (&hostnames.Collector{Browse: discovery.BrowseMDNS, MACs: arpCache, Store: hostnamesRepo, Log: chanLogger}).Run(context.Background())
+        go arpWatcher.Run(backgroundCtx, chanLogger, arpwatcher.DefaultInterval)
+        go (&hostnames.Collector{Browse: discovery.BrowseMDNS, MACs: arpCache, Store: hostnamesRepo, Log: chanLogger}).Run(backgroundCtx)
     }
 
     // 7. DNS server: filter.CheckExist as a method value; trafficWorker is the single
@@ -630,7 +631,7 @@ func main() {
     _ = settingsModule.HydrateAll()
     // The retention prune over domain_traffic starts ONLY after HydrateAll: the first
     // (immediate) run already sees the effective window, not the seed sentinel.
-    go traffic_prune.Run(trafficRepo)
+    go traffic_prune.Run(backgroundCtx, trafficRepo, chanLogger)
     go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
     // 9. HTTP API: all per-feature *Handlers are gathered into web.Handlers and passed explicitly
@@ -653,7 +654,7 @@ Load-bearing ordering:
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
 - `sourceModule.Sync()` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds.
 - `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
-- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(trafficRepo)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
+- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(backgroundCtx, trafficRepo, chanLogger)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. All jobs built on `periodic.Run` receive context and logger explicitly; the current `backgroundCtx` becomes the signal-derived application context in the graceful-shutdown step. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.
 - **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
 - HTTP starts in a goroutine inside `web.CreateServer`, and the blocking `dnsServer.Serve()` keeps main alive.

@@ -236,11 +236,12 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   in-flight `Collect()` (HTTP-запросы к источникам через `easy-list`,
   upsert в DB) **не прерывается** — `easy_list.LoadFromURL` использует
   свой `http.Get` без context.
-- `block_domain_uc.NewBlockDomainEventStore` (и аналогичный allow worker)
-  — горутины с буфером, который сбрасывается на ticker'е 20s. На SIGTERM
-  буфер теряется (≤ 100 событий на worker).
-- `arpwatcher.Run(context.Background(), ...)` — уже принимает ctx, но
-  передаётся `Background()` без cancel.
+- `traffic_record.NewTrafficEventStore` — единственный оставшийся event worker;
+  его буфер сбрасывается по ticker'у, но lifecycle/финального flush пока нет.
+  На SIGTERM незаписанные агрегаты могут потеряться.
+- Все периодические cleanup-задачи уже принимают context и logger явно через
+  `periodic.Run`, но composition root пока передаёт общий `backgroundCtx` без
+  cancel. Его нужно заменить signal-derived application context.
 
 ### Порядок шагов
 
@@ -255,9 +256,9 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
    defer stop()
    ```
-   - Передать `ctx` в `arpwatcher.Run`, `suggestModule.Start`,
-     `authModule.ClearExpiredSessions` (последний сейчас не принимает ctx —
-     придётся протащить).
+   - Передать `ctx` вместо текущего `backgroundCtx` в `arpwatcher.Run`,
+     `suggestModule.Start`, `authModule.ClearExpiredSessions`, inspect/prune и
+     traffic/prune. Сигнатуры periodic-задач уже context-aware.
 
 3. **DNS — graceful Shutdown**
    - Запустить `dnsServer.Serve()` в горутине (через `errCh chan error`).
@@ -265,13 +266,11 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
    - `dns.NewServer` уже создаёт `*DnsServer`, который поднимает UDP+TCP; `Shutdown()`
      корректно дренирует TCP, UDP просто перестаёт читать.
 
-4. **Background workers — flush на shutdown**
-   - `*BlockDomainEventStore` и `*AllowDomainEventStore` получают метод
-     `Stop(ctx)`, который останавливает worker и делает финальный flush
-     буфера. main вызывает `Stop` после `dnsServer.Shutdown()` — гарантия,
-     что больше событий не придёт.
-   - Альтернатива: оставить как есть, принять потерю ≤ 100 событий на
-     worker. Это event-логи, не CRUD. Зависит от приоритета — обсудить.
+4. **Traffic worker — flush на shutdown**
+   - `TrafficEventStore` получает явный lifecycle (`Start(ctx)` либо
+     `Stop(ctx)`), который останавливает worker и делает финальный flush
+     агрегированного буфера. main завершает его после `dnsServer.Shutdown()` —
+     гарантия, что новые DNS verdicts больше не придут.
 
 5. **`source.LoadAndParseActiveSources` — context для HTTP**
    - `easy_list.LoadFromURL` и `LoadHostsFromURL` сейчас используют
@@ -288,8 +287,7 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
    defer cancel()
    _ = httpSrv.Shutdown(shutdownCtx)
    _ = dnsServer.Shutdown()
-   blockWorker.Stop(shutdownCtx)
-   allowWorker.Stop(shutdownCtx)
+   trafficWorker.Stop(shutdownCtx)
    logger.GetLogger().Close()  // последним — иначе потеряем логи shutdown
    ```
 
@@ -301,9 +299,9 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   200 OK (а не получил RST).
 - DNS: аналог через UDP/TCP — медленный upstream, проверяем что
   in-flight запрос завершается.
-- Workers: `TestBlockDomainEventStore_StopFlushesBuffer` — наполняем
+- Worker: `TestTrafficEventStore_StopFlushesBuffer` — наполняем
   буфер ниже capacity, вызываем `Stop(ctx)`, проверяем что репо получил
-  все события.
+  все агрегированные verdicts.
 
 ---
 
@@ -336,8 +334,8 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - **Порядок shutdown.** HTTP первым (он трогает БД) → DNS (он трогает
   filter+cache) → workers (flush буферов) → logger (последним). Иначе
   логи финальной фазы не дойдут до Loki.
-- **`block_domain_uc.NewBlockDomainEventStore`** хранит `e.buf` под
-  одной горутиной — `Stop` нужно реализовать через канал-сигнал, не
+- **`TrafficEventStore`** хранит буфер под одной горутиной — `Stop` нужно
+  реализовать через канал-сигнал, не
   через мьютекс над buf, иначе race с `start()` loop.
 
 ### Поведение существующих функций (актуально для любых будущих PR)

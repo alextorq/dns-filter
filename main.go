@@ -229,7 +229,8 @@ func main() {
 	)
 	inspectWorker.SetFeatureGate(inspectGate)
 
-	go authModule.ClearExpiredSessions()
+	backgroundCtx := context.Background()
+	go authModule.ClearExpiredSessions(backgroundCtx, chanLogger)
 
 	// Start the ARP watcher only in LAN mode. Public mode has no LAN to
 	// observe; the watcher would just spam ErrUnsupported (or, in a hosted
@@ -237,7 +238,7 @@ func main() {
 	// pairs). The watcher exits its own loop on non-Linux platforms.
 	if conf.Mode == config.ModeLAN {
 		arpWatcher := arpwatcher.NewWatcher(arpCache, clientRepo, clientModule.Sync)
-		go arpWatcher.Run(context.Background(), chanLogger, arpwatcher.DefaultInterval)
+		go arpWatcher.Run(backgroundCtx, chanLogger, arpwatcher.DefaultInterval)
 
 		// Background mDNS sweep that learns friendly device names and persists
 		// them as MAC→hostname rows. It resolves discovered IPs to MACs via the
@@ -249,7 +250,7 @@ func main() {
 			MACs:   arpCache,
 			Store:  hostnamesRepo,
 			Log:    chanLogger,
-		}).Run(context.Background())
+		}).Run(backgroundCtx)
 	}
 
 	cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL)
@@ -312,9 +313,9 @@ func main() {
 	// дропал weak-band кандидатов даже при включённой фиче — следующий шанс был
 	// бы через Interval. StartPrune работает независимо, обслуживая retention
 	// `inspect_candidate`/`rdap_cache` даже когда воркер пассивен.
-	go suggestModule.Start(context.Background())
-	go inspectWorker.Start(context.Background())
-	go suggest_inspect.StartPrune(inspectRepo, 4*conf.SuggestInspectCacheTTL)
+	go suggestModule.Start(backgroundCtx)
+	go inspectWorker.Start(backgroundCtx)
+	go suggest_inspect.StartPrune(backgroundCtx, inspectRepo, 4*conf.SuggestInspectCacheTTL, chanLogger)
 
 	// Daily retention prune over the unified domain_traffic table — the sole
 	// retention task (the two legacy block/allow clear-events tasks were removed
@@ -323,7 +324,7 @@ func main() {
 	// applies on the next prune. Launched AFTER HydrateAll so the very first
 	// (immediate) prune already sees the effective window — otherwise it could
 	// hard-delete rows using the pre-hydrate seed (see traffic_prune.retentionDays).
-	go traffic_prune_uc.Run(trafficRepo)
+	go traffic_prune_uc.Run(backgroundCtx, trafficRepo, chanLogger)
 
 	// Pull the block lists in the background and refresh the filter once done.
 	// The DNS server (started below via dnsServer.Serve) does not wait on this.

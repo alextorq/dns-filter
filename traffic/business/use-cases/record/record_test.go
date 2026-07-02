@@ -1,6 +1,8 @@
 package traffic_use_cases_record
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -443,4 +445,151 @@ func TestFlushBoundedDuringOutage(t *testing.T) {
 	if len(rows) > capacity {
 		t.Fatalf("aggregation buffer not bounded: %d distinct rows > capacity %d", len(rows), capacity)
 	}
+}
+
+func TestStopFlushesBufferedEvents(t *testing.T) {
+	repo := &fakeRepo{}
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
+
+	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "one.example.", At: at})
+	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "two.example.", At: at})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := store.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if got := len(repo.allRows()); got != 2 {
+		t.Fatalf("final flush persisted %d rows, want 2", got)
+	}
+}
+
+func TestStopIsIdempotent(t *testing.T) {
+	repo := &fakeRepo{}
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store.record(Event{Kind: "ip", Value: "10.0.0.5", IP: "10.0.0.5", Domain: "one.example.", At: time.Now()})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := store.Stop(ctx); err != nil {
+		t.Fatalf("first Stop: %v", err)
+	}
+	if err := store.Stop(ctx); err != nil {
+		t.Fatalf("second Stop: %v", err)
+	}
+
+	if got := len(repo.snapshot()); got != 1 {
+		t.Fatalf("repo batches = %d, want one final flush", got)
+	}
+}
+
+func TestRecordAfterStopIsDropped(t *testing.T) {
+	repo := &fakeRepo{}
+	log := &recordingLog{}
+	store := newWithChannelSizeAndInterval(repo, log, 1000, 100, time.Hour)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := store.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	store.Record("ip", "10.0.0.5", "10.0.0.5", "late.example", false)
+	store.Record("ip", "10.0.0.5", "10.0.0.5", "later.example", false)
+
+	if got := len(repo.allRows()); got != 0 {
+		t.Fatalf("record after Stop persisted %d rows, want 0", got)
+	}
+	if got := log.warns.Load(); got != 1 {
+		t.Fatalf("warnings = %d, want one deduplicated record-after-stop warning", got)
+	}
+}
+
+func TestConcurrentStopIsSafe(t *testing.T) {
+	repo := &fakeRepo{}
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store.record(Event{Kind: "ip", Value: "10.0.0.5", IP: "10.0.0.5", Domain: "one.example.", At: time.Now()})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	errCh := make(chan error, 8)
+	var callers sync.WaitGroup
+	for range 8 {
+		callers.Add(1)
+		go func() {
+			defer callers.Done()
+			errCh <- store.Stop(ctx)
+		}()
+	}
+	callers.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("concurrent Stop: %v", err)
+		}
+	}
+	if got := len(repo.snapshot()); got != 1 {
+		t.Fatalf("repo batches = %d, want one final flush", got)
+	}
+}
+
+func TestStopReturnsFinalFlushError(t *testing.T) {
+	repo := &flakyRepo{failing: true}
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store.record(Event{Kind: "ip", Value: "10.0.0.5", IP: "10.0.0.5", Domain: "one.example.", At: time.Now()})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := store.Stop(ctx); !errors.Is(err, errAlwaysFails) {
+		t.Fatalf("Stop error = %v, want %v", err, errAlwaysFails)
+	}
+}
+
+func TestStopHonorsContextWhileFinalFlushIsBlocked(t *testing.T) {
+	repo := &blockingRepo{enter: make(chan struct{}, 1), exit: make(chan struct{})}
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store.record(Event{Kind: "ip", Value: "10.0.0.5", IP: "10.0.0.5", Domain: "one.example.", At: time.Now()})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- store.Stop(ctx) }()
+
+	select {
+	case <-repo.enter:
+	case <-time.After(time.Second):
+		t.Fatal("final flush did not reach repo")
+	}
+	if err := <-errCh; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop error = %v, want context deadline", err)
+	}
+
+	close(repo.exit)
+	retryCtx, retryCancel := context.WithTimeout(context.Background(), time.Second)
+	defer retryCancel()
+	if err := store.Stop(retryCtx); err != nil {
+		t.Fatalf("Stop after repo unblocked: %v", err)
+	}
+}
+
+func TestConcurrentRecordAndStopDoesNotPanic(t *testing.T) {
+	store := newWithChannelSizeAndInterval(&fakeRepo{}, &recordingLog{}, 1000, 1000, time.Hour)
+	var writers sync.WaitGroup
+	for i := range 8 {
+		writers.Add(1)
+		go func(worker int) {
+			defer writers.Done()
+			for n := range 100 {
+				store.Record("ip", fmt.Sprintf("10.0.0.%d", worker), "", fmt.Sprintf("d%d.example", n), false)
+			}
+		}(i)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := store.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	writers.Wait()
 }

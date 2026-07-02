@@ -236,9 +236,10 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   in-flight `Collect()` (HTTP-запросы к источникам через `easy-list`,
   upsert в DB) **не прерывается** — `easy_list.LoadFromURL` использует
   свой `http.Get` без context.
-- `traffic_record.NewTrafficEventStore` — единственный оставшийся event worker;
-  его буфер сбрасывается по ticker'у, но lifecycle/финального flush пока нет.
-  На SIGTERM незаписанные агрегаты могут потеряться.
+- `TrafficEventStore.Stop(ctx)` уже останавливает admission, дожидается
+  конкурентных senders, дренирует FIFO и делает финальный flush. Метод
+  идемпотентен и безопасен для конкурентных вызовов. Осталось вызвать его из
+  общего shutdown-блока после остановки DNS.
 - Все периодические cleanup-задачи уже принимают context и logger явно через
   `periodic.Run`, но composition root пока передаёт общий `backgroundCtx` без
   cancel. Его нужно заменить signal-derived application context.
@@ -266,11 +267,10 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
    - `dns.NewServer` уже создаёт `*DnsServer`, который поднимает UDP+TCP; `Shutdown()`
      корректно дренирует TCP, UDP просто перестаёт читать.
 
-4. **Traffic worker — flush на shutdown**
-   - `TrafficEventStore` получает явный lifecycle (`Start(ctx)` либо
-     `Stop(ctx)`), который останавливает worker и делает финальный flush
-     агрегированного буфера. main завершает его после `dnsServer.Shutdown()` —
-     гарантия, что новые DNS verdicts больше не придут.
+4. **Traffic worker — подключить готовый Stop к shutdown**
+   - `TrafficEventStore.Stop(ctx)` уже реализован и протестирован. main должен
+     вызвать его после `dnsServer.Shutdown()` — это гарантирует, что новые DNS
+     verdicts больше не придут до финального flush.
 
 5. **`source.LoadAndParseActiveSources` — context для HTTP**
    - `easy_list.LoadFromURL` и `LoadHostsFromURL` сейчас используют
@@ -334,9 +334,9 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - **Порядок shutdown.** HTTP первым (он трогает БД) → DNS (он трогает
   filter+cache) → workers (flush буферов) → logger (последним). Иначе
   логи финальной фазы не дойдут до Loki.
-- **`TrafficEventStore`** хранит буфер под одной горутиной — `Stop` нужно
-  реализовать через канал-сигнал, не
-  через мьютекс над buf, иначе race с `start()` loop.
+- **`TrafficEventStore`** хранит буфер под одной горутиной; реализованный
+  `Stop` сигнализирует worker'у и не читает `buf` снаружи, сохраняя single-owner
+  инвариант без мьютекса над агрегатами.
 
 ### Поведение существующих функций (актуально для любых будущих PR)
 - **`Repo.CreateDNSRecordsByDomains`** сохраняет дедуп + batchSize=4000

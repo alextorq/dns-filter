@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/alextorq/dns-filter/config"
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
@@ -34,12 +33,20 @@ type urlscanSearchResponse struct {
 	} `json:"results"`
 }
 
-// URLScan looks up recent scans for the domain via the urlscan.io search API.
+// NewURLScan builds the urlscan.io check with its boot-time API key. URLScan
+// is env-only (unlike the runtime VT/SB settings), so capturing the value at
+// composition time keeps the check independent of global config.
+func NewURLScan(key string) domain_inspect.CheckFunc {
+	return func(ctx context.Context, domain string) domain_inspect.CheckResult {
+		return urlScan(ctx, domain, key)
+	}
+}
+
+// urlScan looks up recent scans for the domain via the urlscan.io search API.
 // We do not submit new scans here — that costs an API quota per call and the
 // result is asynchronous. The search endpoint returns whatever was scanned by
 // the community already, which is typically enough for popular domains.
-func URLScan(ctx context.Context, domain string) domain_inspect.CheckResult {
-	key := config.GetConfig().URLScanKey
+func urlScan(ctx context.Context, domain, key string) domain_inspect.CheckResult {
 	if key == "" {
 		return skipped("DNS_FILTER_URLSCAN_KEY not set")
 	}

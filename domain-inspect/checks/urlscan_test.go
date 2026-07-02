@@ -6,32 +6,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/alextorq/dns-filter/config"
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-func withURLScanEndpointAndKey(t *testing.T, ts *httptest.Server, key string) {
+func withURLScanEndpoint(t *testing.T, ts *httptest.Server) {
 	t.Helper()
 	prev := urlscanEndpoint
 	urlscanEndpoint = ts.URL + "/"
-
-	cfg := config.GetConfig()
-	prevKey := cfg.URLScanKey
-	cfg.URLScanKey = key
-
-	t.Cleanup(func() {
-		urlscanEndpoint = prev
-		cfg.URLScanKey = prevKey
-	})
+	t.Cleanup(func() { urlscanEndpoint = prev })
 }
 
 func TestURLScan_NoKey_Skipped(t *testing.T) {
-	cfg := config.GetConfig()
-	prev := cfg.URLScanKey
-	cfg.URLScanKey = ""
-	t.Cleanup(func() { cfg.URLScanKey = prev })
-
-	res := URLScan(context.Background(), "x.example")
+	res := NewURLScan("")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusSkipped {
 		t.Errorf("expected skipped, got %s", res.Status)
 	}
@@ -48,9 +34,9 @@ func TestURLScan_MaliciousHit(t *testing.T) {
 		]}`))
 	}))
 	defer ts.Close()
-	withURLScanEndpointAndKey(t, ts, "k")
+	withURLScanEndpoint(t, ts)
 
-	res := URLScan(context.Background(), "x.example")
+	res := NewURLScan("k")(context.Background(), "x.example")
 	if res.Verdict != domain_inspect.VerdictMalicious {
 		t.Errorf("verdict: got %s, want malicious", res.Verdict)
 	}
@@ -71,9 +57,9 @@ func TestURLScan_HighScoreNotMalicious_IsSuspicious(t *testing.T) {
 		]}`))
 	}))
 	defer ts.Close()
-	withURLScanEndpointAndKey(t, ts, "k")
+	withURLScanEndpoint(t, ts)
 
-	res := URLScan(context.Background(), "x.example")
+	res := NewURLScan("k")(context.Background(), "x.example")
 	if res.Verdict != domain_inspect.VerdictSuspicious {
 		t.Errorf("verdict: got %s, want suspicious", res.Verdict)
 	}
@@ -84,9 +70,9 @@ func TestURLScan_NoScans_IsUnknown(t *testing.T) {
 		_, _ = w.Write([]byte(`{"total":0,"results":[]}`))
 	}))
 	defer ts.Close()
-	withURLScanEndpointAndKey(t, ts, "k")
+	withURLScanEndpoint(t, ts)
 
-	res := URLScan(context.Background(), "x.example")
+	res := NewURLScan("k")(context.Background(), "x.example")
 	if res.Verdict != domain_inspect.VerdictUnknown {
 		t.Errorf("verdict: got %s, want unknown", res.Verdict)
 	}

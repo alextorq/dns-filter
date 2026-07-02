@@ -180,8 +180,12 @@ func main() {
 	trafficAllowAdapter := traffic_db.NewAllowFilterAdapter(trafficRepo)
 	suggestModule := suggest_to_block.NewModule(blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger)
 	localStatsCheck := domain_inspect_checks.NewLocalStats(blockRepo, trafficRepo)
+	urlScanCheck := domain_inspect_checks.NewURLScan(conf.URLScanKey)
 	inspectChecks := func() map[string]domain_inspect.CheckFunc {
-		return domain_inspect_checks.Default(localStatsCheck)
+		return domain_inspect_checks.Default(domain_inspect_checks.DefaultDeps{
+			LocalStats: localStatsCheck,
+			URLScan:    urlScanCheck,
+		})
 	}
 
 	// Reputation-enrichment worker. Подключается всегда — мастер-тогл

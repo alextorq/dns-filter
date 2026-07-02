@@ -9,6 +9,11 @@ import (
 	"github.com/alextorq/dns-filter/clients/db"
 )
 
+type Repo interface {
+	UpdateFields(id uint, fields map[string]any) error
+	GetByID(id uint) (*db.Client, error)
+}
+
 // Input is a sparse update: nil pointers leave the field untouched. We use
 // pointers (rather than empty-string sentinels) so callers can explicitly
 // clear a field by passing a pointer to "".
@@ -19,7 +24,7 @@ type Input struct {
 	Vendor   *string
 }
 
-func Update(in Input) (*db.Client, error) {
+func Update(repo Repo, in Input) (*db.Client, error) {
 	fields := map[string]any{}
 	if in.Name != nil {
 		fields["name"] = *in.Name
@@ -31,9 +36,9 @@ func Update(in Input) (*db.Client, error) {
 		fields["vendor"] = *in.Vendor
 	}
 	if len(fields) > 0 {
-		if err := db.UpdateClientFields(in.ID, fields); err != nil {
+		if err := repo.UpdateFields(in.ID, fields); err != nil {
 			return nil, err
 		}
 	}
-	return db.GetClientByID(in.ID)
+	return repo.GetByID(in.ID)
 }

@@ -15,9 +15,6 @@ import (
 // the opposite filtering. (Runs only in LAN mode, the default, so it never
 // reaches the real network scan — the bind fails first.)
 func TestDiscoverHandler_MalformedBody400(t *testing.T) {
-	if config.GetConfig().Mode != config.ModeLAN {
-		t.Skip("discover handler only reaches body-binding in LAN mode")
-	}
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -28,7 +25,7 @@ func TestDiscoverHandler_MalformedBody400(t *testing.T) {
 	)
 	c.Request.Header.Set("Content-Type", "application/json")
 
-	Discover(c)
+	(&Handlers{Mode: config.ModeLAN}).Discover(c)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 on malformed body, got %d (%s)", w.Code, w.Body.String())

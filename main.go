@@ -16,17 +16,20 @@ import (
 	blockedWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	"github.com/alextorq/dns-filter/clients"
 	"github.com/alextorq/dns-filter/clients/arpwatcher"
+	clients_db "github.com/alextorq/dns-filter/clients/db"
 	"github.com/alextorq/dns-filter/clients/discovery"
 	"github.com/alextorq/dns-filter/clients/hostnames"
 	hostnames_db "github.com/alextorq/dns-filter/clients/hostnames/db"
 	"github.com/alextorq/dns-filter/clients/identifier"
 	clients_store "github.com/alextorq/dns-filter/clients/store"
+	clientsWeb "github.com/alextorq/dns-filter/clients/web"
 	"github.com/alextorq/dns-filter/config"
 	app_db "github.com/alextorq/dns-filter/db"
 	"github.com/alextorq/dns-filter/db/migrate"
 	db_web "github.com/alextorq/dns-filter/db/web"
 	"github.com/alextorq/dns-filter/dns"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
+	dns_cache_web "github.com/alextorq/dns-filter/dns-cache/web"
 	domain_inspect_checks "github.com/alextorq/dns-filter/domain-inspect/checks"
 	"github.com/alextorq/dns-filter/filter"
 	filter_cache "github.com/alextorq/dns-filter/filter/cache"
@@ -63,14 +66,14 @@ import (
 // refresh the cache is empty, so identification falls back to IP — that's
 // the same behavior as PR1 and is correct (rules just haven't migrated to
 // MAC-keyed yet).
-func buildIdentifier(mode config.Mode) identifier.Identifier {
+func buildIdentifier(mode config.Mode, resolver identifier.MACResolver) identifier.Identifier {
 	switch mode {
 	case config.ModePublic:
 		return identifier.IPIdentifier{}
 	case config.ModeLAN:
 		fallthrough
 	default:
-		return identifier.IPIdentifier{Resolver: arpwatcher.Get()}
+		return identifier.IPIdentifier{Resolver: resolver}
 	}
 }
 
@@ -137,14 +140,15 @@ func main() {
 
 	// Composition root for the DI-enabled features: each gets its own *Repo over
 	// the single connection, then *Module / *Handlers wired from those repos.
-	// Clients, dns-cache and domain-inspect still contain legacy service-locator
-	// reads; they are migrated separately rather than hidden by this wiring.
+	// Parts of domain-inspect still contain legacy service-locator reads and are
+	// migrated separately rather than hidden by this wiring.
 	blockRepo := blocked_domain_db.NewRepo(conn)
 	sourceRepo := source_db.NewRepo(conn)
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
 	settingsRepo := settings_db.NewRepo(conn)
 	trafficRepo := traffic_db.NewRepo(conn)
 	hostnamesRepo := hostnames_db.NewRepo(conn)
+	clientRepo := clients_db.NewRepo(conn)
 
 	bloom := filter_bloom.GetFilter()
 	cache := filter_cache.GetCache()
@@ -160,9 +164,12 @@ func main() {
 	if err := filterModule.UpdateFromDb(); err != nil {
 		panic(err)
 	}
-	if err := clients.Sync(); err != nil {
+	clientStore := clients_store.New()
+	clientModule := clients.NewModule(clientRepo, clientStore)
+	if err := clientModule.Sync(); err != nil {
 		panic(err)
 	}
+	arpCache := arpwatcher.NewCache()
 
 	// suggest-to-block and domain-inspect READ allowed-domain data from the
 	// unified domain_traffic counter (domains ever forwarded upstream). The
@@ -212,7 +219,8 @@ func main() {
 	// environment with /proc/net/arp present, learn meaningless cloud-VLAN
 	// pairs). The watcher exits its own loop on non-Linux platforms.
 	if conf.Mode == config.ModeLAN {
-		go arpwatcher.Run(context.Background(), chanLogger, arpwatcher.DefaultInterval)
+		arpWatcher := arpwatcher.NewWatcher(arpCache, clientRepo, clientModule.Sync)
+		go arpWatcher.Run(context.Background(), chanLogger, arpwatcher.DefaultInterval)
 
 		// Background mDNS sweep that learns friendly device names and persists
 		// them as MAC→hostname rows. It resolves discovered IPs to MACs via the
@@ -221,13 +229,13 @@ func main() {
 		// browse behind a public DoH endpoint.
 		go (&hostnames.Collector{
 			Browse: discovery.BrowseMDNS,
-			MACs:   arpwatcher.Get(),
+			MACs:   arpCache,
 			Store:  hostnamesRepo,
 			Log:    chanLogger,
 		}).Run(context.Background())
 	}
 
-	cacheWithMetric := dns_cache.GetCacheWithMetric()
+	cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL)
 	metricInstance := dns.CreateMetric()
 	// Per-device traffic counter (the unified table). It is the sole recorder of
 	// block/allow verdicts now that the legacy event stores are gone. Capacity
@@ -241,14 +249,14 @@ func main() {
 	// both at once.
 	resolver := dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)
 
-	ident := buildIdentifier(conf.Mode)
+	ident := buildIdentifier(conf.Mode, arpCache)
 	dnsServer := dns.NewServer(dns.ServerDeps{
 		Logger:             chanLogger,
 		Cache:              cacheWithMetric,
 		Filter:             filterModule.CheckExist,
 		Metric:             metricInstance,
 		Identifier:         ident,
-		Clients:            clients_store.Get(),
+		Clients:            clientStore,
 		Upstream:           resolver,
 		SWREnabled:         conf.CacheSWR,
 		RefreshConcurrency: conf.CacheRefreshConcurrency,
@@ -313,6 +321,15 @@ func main() {
 			Service:        authModule,
 			CookieSecure:   conf.CookieSecure,
 			CookieSameSite: conf.CookieSameSite,
+		},
+		Clients: &clientsWeb.Handlers{
+			Service: clientModule,
+			Log:     chanLogger,
+			Mode:    conf.Mode,
+		},
+		DNSCache: &dns_cache_web.Handlers{
+			Cache: cacheWithMetric,
+			Log:   chanLogger,
 		},
 		Blocked: &blockedWeb.Handlers{
 			Repo:          blockRepo,

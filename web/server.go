@@ -26,6 +26,8 @@ import (
 // register themselves via package-level Register(rg) functions instead.
 type Handlers struct {
 	Auth     *authWeb.Handlers
+	Clients  *clientsWeb.Handlers
+	DNSCache *dnsCacheWeb.Handlers
 	Blocked  *eventsWeb.Handlers
 	Filter   *filterWeb.Handlers
 	Suggest  *suggestWeb.Handlers
@@ -75,9 +77,9 @@ func buildRouter(h Handlers) *gin.Engine {
 	h.Filter.RegisterRoutes(api)
 	h.Suggest.RegisterRoutes(api)
 	h.Source.RegisterRoutes(api)
-	clientsWeb.Register(api)
+	h.Clients.RegisterRoutes(api)
 	h.Database.RegisterRoutes(api)
-	dnsCacheWeb.Register(api)
+	h.DNSCache.RegisterRoutes(api)
 	inspectWeb.Register(api)
 	h.Logger.RegisterRoutes(api)
 	h.Settings.RegisterRoutes(api)

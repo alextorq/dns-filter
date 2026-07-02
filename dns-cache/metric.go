@@ -1,18 +1,11 @@
 package dns_cache
 
 import (
-	"sync"
 	"time"
 
-	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/metric"
 	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus"
-)
-
-var (
-	globalCacheWithM *CacheWithMetrics
-	onceM            sync.Once
 )
 
 var (
@@ -143,12 +136,4 @@ func (c *CacheWithMetrics) Lookup(key string) Lookup {
 		cacheMisses.Inc()
 	}
 	return r
-}
-
-func GetCacheWithMetric() *CacheWithMetrics {
-	onceM.Do(func() {
-		conf := config.GetConfig()
-		globalCacheWithM = NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL)
-	})
-	return globalCacheWithM
 }

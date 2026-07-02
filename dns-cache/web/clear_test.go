@@ -22,18 +22,15 @@ func (f *fakeFlusher) Clear() int {
 	return f.cleared
 }
 
-func withFlusher(t *testing.T, f cacheFlusher) {
-	t.Helper()
-	prev := flusherFactory
-	flusherFactory = func() cacheFlusher { return f }
-	t.Cleanup(func() { flusherFactory = prev })
-}
+type fakeLogger struct{ calls int }
 
-func callClear(t *testing.T) *httptest.ResponseRecorder {
+func (l *fakeLogger) Info(...any) { l.calls++ }
+
+func callClear(t *testing.T, h *Handlers) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.POST("/api/dns-cache/clear", ClearCache)
+	r.POST("/api/dns-cache/clear", h.ClearCache)
 	req := httptest.NewRequest(http.MethodPost, "/api/dns-cache/clear", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -46,15 +43,18 @@ func callClear(t *testing.T) *httptest.ResponseRecorder {
 // and silently makes the operation non-idempotent in dashboards.
 func TestClearCache_PopulatedCache_Returns200AndCount(t *testing.T) {
 	f := &fakeFlusher{cleared: 42}
-	withFlusher(t, f)
+	l := &fakeLogger{}
 
-	w := callClear(t)
+	w := callClear(t, &Handlers{Cache: f, Log: l})
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
 	}
 	if f.clearCalls != 1 {
 		t.Fatalf("expected Clear to be called exactly once, got %d", f.clearCalls)
+	}
+	if l.calls != 1 {
+		t.Fatalf("expected one log call, got %d", l.calls)
 	}
 
 	var resp ClearCacheResponse
@@ -71,9 +71,8 @@ func TestClearCache_PopulatedCache_Returns200AndCount(t *testing.T) {
 // already empty" instead of an error toast.
 func TestClearCache_EmptyCache_Returns200AndZero(t *testing.T) {
 	f := &fakeFlusher{cleared: 0}
-	withFlusher(t, f)
 
-	w := callClear(t)
+	w := callClear(t, &Handlers{Cache: f, Log: &fakeLogger{}})
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 on empty cache, got %d", w.Code)
@@ -94,10 +93,10 @@ func TestClearCache_EmptyCache_Returns200AndZero(t *testing.T) {
 // it shouldn't be.
 func TestClearCache_RejectsNonPOST(t *testing.T) {
 	f := &fakeFlusher{}
-	withFlusher(t, f)
+	h := &Handlers{Cache: f, Log: &fakeLogger{}}
 
 	r := gin.New()
-	r.POST("/api/dns-cache/clear", ClearCache)
+	h.RegisterRoutes(r.Group("/api"))
 	req := httptest.NewRequest(http.MethodGet, "/api/dns-cache/clear", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

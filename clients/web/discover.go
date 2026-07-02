@@ -33,11 +33,11 @@ type DiscoverResponse struct {
 // @Failure      409 {object} ErrorResponse "discovery is not supported in the current deployment mode"
 // @Failure      500 {object} ErrorResponse
 // @Router       /api/clients/discover [post]
-func Discover(c *gin.Context) {
+func (h *Handlers) Discover(c *gin.Context) {
 	// Discovery is meaningless in public mode — there is no LAN around the
 	// server, just whatever subnet the cloud provider assigned. Refuse early
 	// with a structured error rather than returning a misleading empty list.
-	if config.GetConfig().Mode != config.ModeLAN {
+	if h.Mode != config.ModeLAN {
 		c.JSON(http.StatusConflict, ErrorResponse{
 			Error: "LAN discovery is only available in LAN deployment mode",
 		})
@@ -60,7 +60,7 @@ func Discover(c *gin.Context) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	res, err := discovery.Discover(ctx, discovery.DiscoverOptions{FilterDocker: filterDocker})
+	res, err := h.Service.Discover(ctx, discovery.DiscoverOptions{FilterDocker: filterDocker})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 		return

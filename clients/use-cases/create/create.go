@@ -7,8 +7,15 @@ import (
 	"errors"
 
 	"github.com/alextorq/dns-filter/clients/db"
-	"github.com/alextorq/dns-filter/clients/store"
 )
+
+type Repo interface {
+	Create(*db.Client) error
+}
+
+type ExclusionStore interface {
+	AddClient(*db.Client)
+}
 
 // Input groups the user-controlled fields a caller may set on creation.
 // At least one identifier (IP, MAC, or Token) must be present — without it
@@ -28,7 +35,7 @@ type Input struct {
 // ErrNoIdentifier is returned when none of IP/MAC/Token is provided.
 var ErrNoIdentifier = errors.New("client must have at least one identifier (ip, mac, or token)")
 
-func Create(in Input) (*db.Client, error) {
+func Create(repo Repo, exclusions ExclusionStore, in Input) (*db.Client, error) {
 	if in.IP == "" && in.MAC == "" && in.Token == "" {
 		return nil, ErrNoIdentifier
 	}
@@ -41,11 +48,11 @@ func Create(in Input) (*db.Client, error) {
 		Vendor:   in.Vendor,
 		Filtered: in.Filtered,
 	}
-	if err := db.CreateClient(c); err != nil {
+	if err := repo.Create(c); err != nil {
 		return nil, err
 	}
 	if !c.Filtered {
-		store.Get().AddClient(c)
+		exclusions.AddClient(c)
 	}
 	return c, nil
 }

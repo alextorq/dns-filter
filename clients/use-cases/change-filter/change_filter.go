@@ -5,39 +5,36 @@
 // hot path skips the bloom/blocklist check entirely.
 //
 // The use case touches two pieces of state — the DB row and the in-memory
-// exclusion store — and they must agree at the end. A package-level mutex
-// serializes calls so that two concurrent toggles on the same id can't have
-// their store mutations land in the wrong order, leaving DB and memory
-// disagreeing until the next UpdateFromDB pass.
+// exclusion store — and they must agree at the end. clients.Module serializes
+// this operation with other exclusion mutations and full snapshot rebuilds.
 package change_filter
 
-import (
-	"sync"
+import "github.com/alextorq/dns-filter/clients/db"
 
-	"github.com/alextorq/dns-filter/clients/db"
-	"github.com/alextorq/dns-filter/clients/store"
-)
+type Repo interface {
+	GetByID(id uint) (*db.Client, error)
+	UpdateFields(id uint, fields map[string]any) error
+}
 
-var mu sync.Mutex
+type ExclusionStore interface {
+	AddClient(*db.Client)
+	RemoveClient(*db.Client)
+}
 
-func ChangeFilter(id uint, filtered bool) (*db.Client, error) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	c, err := db.GetClientByID(id)
+func ChangeFilter(repo Repo, exclusions ExclusionStore, id uint, filtered bool) (*db.Client, error) {
+	c, err := repo.GetByID(id)
 	if err != nil {
 		return nil, err
 	}
-	if err := db.UpdateClientFields(id, map[string]any{"filtered": filtered}); err != nil {
+	if err := repo.UpdateFields(id, map[string]any{"filtered": filtered}); err != nil {
 		return nil, err
 	}
 	c.Filtered = filtered
 
-	s := store.Get()
 	if filtered {
-		s.RemoveClient(c)
+		exclusions.RemoveClient(c)
 	} else {
-		s.AddClient(c)
+		exclusions.AddClient(c)
 	}
 	return c, nil
 }

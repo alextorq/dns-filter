@@ -50,7 +50,7 @@ in-memory `:memory:`-sqlite.
    На любую DB-ошибку — fail-open (false), без записи в кэш (#25).
 
 Singleton'ы остались для bloom (`filter/filter`), LRU
-(`filter/cache`), DNS-кэша (`dns-cache`), логгера (`logger`), конфига
+(`filter/cache`), логгера (`logger`), конфига
 (`config`) и `db.GetConnection()`. **Все они впитываются `*Module` в
 `main.go`** — фичи их сами не вызывают. На singleton-коннекшене всё ещё
 живёт `domain-inspect/checks/local_stats.go` — отдельный точечный PR.
@@ -180,10 +180,10 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 ### Этап 4 — каждая фича сама регистрирует роуты
 
 - **DI-фичи** получили метод `(h *Handlers) RegisterRoutes(rg *gin.RouterGroup)`:
-  `auth/web`, `blocked-domain/web`, `db/web`, `filter/web`, `logger/web`,
+  `auth/web`, `blocked-domain/web`, `clients/web`, `db/web`, `dns-cache/web`, `filter/web`, `logger/web`,
   `settings/web`, `suggest-to-block/web`, `source/web`, `traffic/web`.
 - **Package-level фичи** получили функцию пакета `Register(rg *gin.RouterGroup)`:
-  `clients/web`, `dns-cache/web`, `domain-inspect/web`.
+  `domain-inspect/web`.
 - **`auth/web`** разнесён на два instance-метода: `RegisterPublic(r gin.IRouter)` —
   только `POST /api/auth/login`; `RegisterRoutes(rg)` — `/auth/logout`,
   `/auth/me`. Middleware `RequireAuth()` также использует injected service.
@@ -370,7 +370,7 @@ Singleton'ы остались для bloom (`filter/filter`), LRU
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core, db/web и auth**. Остатки: `clients`, `domain-inspect`, `dns-cache` — отдельные PR |
+| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients и dns-cache**. Остаток: `domain-inspect` |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes`/`Register` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |

@@ -19,8 +19,7 @@ func entry(ip, m string) discovery.ARPEntry {
 	return discovery.ARPEntry{IP: net.ParseIP(ip).To4(), MAC: mac(m), Source: "test"}
 }
 
-// freshCache returns a Cache instance bypassing the package singleton so
-// tests don't accidentally share state.
+// freshCache returns an isolated Cache for each test.
 func freshCache() *Cache {
 	return &Cache{
 		ipToMAC: map[string]string{},

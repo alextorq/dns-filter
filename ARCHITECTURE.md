@@ -639,8 +639,9 @@ func main() {
     go traffic_prune.Run(backgroundCtx, trafficRepo, trafficRetention, chanLogger)
     go backgroundSync(backgroundCtx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
-    // 9. HTTP API: all per-feature *Handlers are gathered into web.Handlers and passed explicitly
-    web.CreateServer(web.Handlers{
+    // 9. HTTP API: all per-feature *Handlers are gathered and the server handle
+    //    is owned and started explicitly by main.
+    httpServer := web.NewServer(":8080", web.Handlers{
         Blocked: &blockedWeb.Handlers{Repo: blockRepo, Log: chanLogger, RefreshFilter: filterModule.UpdateFromDb,
             BlockStats: traffic_db.NewBlockStatsAdapter(trafficRepo)},
         Filter:   &filterWeb.Handlers{Module: filterModule},
@@ -649,6 +650,7 @@ func main() {
         Settings: &settingsWeb.Handlers{Service: settingsModule},
         Traffic:  trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, hostnamesRepo.AllAsMap, chanLogger),
     })
+    go func() { reportHTTPServerError(httpServer.ListenAndServe(), chanLogger) }()
 
     if err := dnsServer.Serve(); err != nil { panic(err) }
 }
@@ -662,7 +664,7 @@ Load-bearing ordering:
 - `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(backgroundCtx, trafficRepo, trafficRetention, chanLogger)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. The same injected `trafficRetention` instance is captured by the settings Apply hook and read by every prune tick. All jobs built on `periodic.Run` receive context and logger explicitly; the current `backgroundCtx` becomes the signal-derived application context in the graceful-shutdown step. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.
 - **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
-- HTTP starts in a goroutine inside `web.CreateServer`, and the blocking `dnsServer.Serve()` keeps main alive.
+- `web.NewServer` only builds `*http.Server`; `main` owns the handle, starts `ListenAndServe` explicitly and logs unexpected serve errors. The blocking `dnsServer.Serve()` still keeps main alive until the common lifecycle/shutdown orchestrator is added.
 
 ---
 
@@ -695,6 +697,6 @@ Load-bearing ordering:
 
 7. **Canonical domain form.** `block_lists.url`, the bloom filter and the LRU verdict cache store domains in a single FQDN form — lowercase, exactly one trailing dot (`example.com.`). Normalization is done by `utils.CanonicalDomain` at every boundary: user input (`create_domain.CreateDomain`), the source parsers (EasyList, Steven Black/HaGeZi) and the read hot path (`filter.Module.CheckExist`). The name from miekg/dns (`q.Name`) arrives in FQDN form but with no case guarantee (DNS 0x20 encoding), so normalization is needed on read too, not just on write — otherwise `Example.com` added by hand would not match the query and would not be blocked (#30).
 
-   The HTTP handlers are structs with dependency fields (`*/web.Handlers{Repo, Module, Filter, Log, …}`); `web.CreateServer` takes them as a package and reads no singletons.
+   The HTTP handlers are structs with dependency fields (`*/web.Handlers{Repo, Module, Filter, Log, …}`); `web.NewServer` takes them as a package, reads no singletons and performs no process-level I/O until `main` calls `ListenAndServe`.
 
    `db/batch.go` has only the DI variants `BatchInsertOn` / `BatchUpsertOn`, which take a `*gorm.DB` explicitly (the thin wrappers over the singleton connection were removed). They are relied on, in particular, by `traffic/db.Repo.UpsertBatch` (the additive counter upsert). Each batch commits in a **separate** transaction, not the whole set in one: a single transaction over a list of tens of thousands of rows (a full source upsert) held SQLite's single write lock for seconds, and a concurrent writer (the async traffic worker) exhausted its `busy_timeout` and failed with `SQLITE_BUSY`, losing its batch. Per-batch commits release the lock every few ms — at the cost of whole-set atomicity, which is acceptable here (all calls are idempotent: the `INSERT OR IGNORE` upsert repeats on the next sync, events are best-effort).

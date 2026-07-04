@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"reflect"
 	"sync"
 	"testing"
@@ -14,6 +15,23 @@ type stubSyncLogger struct {
 	mu    sync.Mutex
 	infos int
 	errs  []error
+}
+
+func TestReportHTTPServerError_IgnoresExpectedShutdown(t *testing.T) {
+	log := &stubSyncLogger{}
+	reportHTTPServerError(http.ErrServerClosed, log)
+	if len(log.errs) != 0 {
+		t.Fatalf("expected shutdown must be quiet, got %v", log.errs)
+	}
+}
+
+func TestReportHTTPServerError_LogsUnexpectedFailure(t *testing.T) {
+	log := &stubSyncLogger{}
+	boom := errors.New("bind failed")
+	reportHTTPServerError(boom, log)
+	if len(log.errs) != 1 || !errors.Is(log.errs[0], boom) {
+		t.Fatalf("logged errors = %v, want wrapped bind failure", log.errs)
+	}
 }
 
 func (l *stubSyncLogger) Info(_ ...any) {

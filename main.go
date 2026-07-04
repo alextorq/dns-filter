@@ -6,7 +6,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	authBusiness "github.com/alextorq/dns-filter/auth/business"
@@ -83,6 +85,14 @@ func buildIdentifier(mode config.Mode, resolver identifier.MACResolver) identifi
 type syncLogger interface {
 	Info(args ...any)
 	Error(err error)
+}
+
+// reportHTTPServerError suppresses the expected Shutdown result and surfaces
+// every real listener/runtime failure through the application logger.
+func reportHTTPServerError(err error, log syncLogger) {
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Error(fmt.Errorf("HTTP server stopped: %w", err))
+	}
 }
 
 // Retry backoff for the startup source sync: a failed sync (typically no
@@ -373,7 +383,7 @@ func main() {
 	// suppressed, making a healthy sync look stuck.
 	go backgroundSync(backgroundCtx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
-	web.CreateServer(web.Handlers{
+	httpServer := web.NewServer(":8080", web.Handlers{
 		Auth: &authWeb.Handlers{
 			Service:        authModule,
 			CookieSecure:   conf.CookieSecure,
@@ -426,6 +436,9 @@ func main() {
 		// MAC→hostname table (empty in public mode, where no collector runs).
 		Traffic: trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, hostnamesRepo.AllAsMap, chanLogger),
 	})
+	go func() {
+		reportHTTPServerError(httpServer.ListenAndServe(), chanLogger)
+	}()
 
 	if err := dnsServer.Serve(); err != nil {
 		panic(err)

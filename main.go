@@ -103,28 +103,62 @@ const (
 // take down a DNS server that is already answering traffic. A failed sync is
 // retried with exponential backoff (see syncRetryBaseDelay) until it succeeds;
 // in the meantime the server keeps running on whatever the DB already held.
-func backgroundSync(sync, refresh func() error, log syncLogger) {
-	runBackgroundSync(sync, refresh, log, time.Sleep)
+func backgroundSync(ctx context.Context, sync func(context.Context) error, refresh func() error, log syncLogger) {
+	runBackgroundSync(ctx, sync, refresh, log, waitForRetry)
 }
 
-// runBackgroundSync is backgroundSync with an injectable sleep so the retry
-// backoff is testable without real-time delays.
-func runBackgroundSync(sync, refresh func() error, log syncLogger, sleep func(time.Duration)) {
+// waitForRetry blocks for d or returns promptly when the application context is
+// canceled. A timer (rather than time.Sleep) keeps shutdown from waiting out a
+// potentially 30-minute retry delay.
+func waitForRetry(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// runBackgroundSync is backgroundSync with an injectable wait so retry
+// behavior is testable without real-time delays.
+func runBackgroundSync(
+	ctx context.Context,
+	sync func(context.Context) error,
+	refresh func() error,
+	log syncLogger,
+	wait func(context.Context, time.Duration) error,
+) {
+	if ctx.Err() != nil {
+		return
+	}
 	log.Info("Фоновая синхронизация источников запущена")
 
 	delay := syncRetryBaseDelay
 	for attempt := 1; ; attempt++ {
-		err := sync()
+		err := sync(ctx)
 		if err == nil {
 			break
 		}
+		if ctx.Err() != nil {
+			return
+		}
 		log.Error(fmt.Errorf("фоновая синхронизация источников не удалась (попытка %d), повтор через %s: %w", attempt, delay, err))
-		sleep(delay)
+		if err := wait(ctx, delay); err != nil {
+			return
+		}
 		delay = min(delay*2, syncRetryMaxDelay)
 	}
 
+	if ctx.Err() != nil {
+		return
+	}
 	if err := refresh(); err != nil {
 		log.Error(fmt.Errorf("обновление фильтра после фоновой синхронизации не удалось: %w", err))
+		return
+	}
+	if ctx.Err() != nil {
 		return
 	}
 	log.Info("Фоновая синхронизация источников завершена, фильтр обновлён")
@@ -337,7 +371,7 @@ func main() {
 	// races ahead of hydrate and prints even when the level was raised to WARN,
 	// while the matching "finished" line (logged later, post-hydrate) is
 	// suppressed, making a healthy sync look stuck.
-	go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
+	go backgroundSync(backgroundCtx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
 	web.CreateServer(web.Handlers{
 		Auth: &authWeb.Handlers{

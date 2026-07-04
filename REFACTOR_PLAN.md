@@ -226,6 +226,23 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   `HydrateAll`/runtime Apply. Каждый подпункт прошёл отдельное ревью и полный
   `go test -race ./...`.
 
+### Этап 6 — source sync принимает context
+
+- `context.Context` проброшен через `backgroundSync` → `source.Module.Sync` →
+  use-case `sync.Sync` → EasyList/hosts loaders.
+- HTTP-запросы создаются через `http.NewRequestWithContext`; cancellation не
+  логируется как сетевая ошибка и не запускает add/prune/refresh.
+- Loader-facing parsers возвращают `scanner.Err`, поэтому отменённый или
+  оборванный streaming body не считается успешным partial-списком.
+- Source write-порт использует context-aware методы репозитория; GORM получает
+  `WithContext(ctx)` для insert/delete batches, а prune проверяет cancellation
+  между источниками.
+- Exponential backoff использует отменяемый timer вместо `time.Sleep`, поэтому
+  будущий signal-derived application context не будет ждать до 30 минут.
+- Тесты закрепляют отмену обоих HTTP-loader'ов, pre-canceled Sync, cancellation
+  во время sync и backoff. Пока `main` передаёт `context.Background()`; реальная
+  остановка по сигналу подключается следующим lifecycle-этапом.
+
 ---
 
 ## Кандидат на следующий рефакторинг
@@ -244,11 +261,9 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   возвращает `*http.Server`. `Shutdown(ctx)` позвать неоткуда.
 - `dnsServer.Serve()` блокирует main, но `s.Shutdown()` (есть в
   `dns/server.go:279`) никем не вызывается.
-- `backgroundSync` не принимает context: retry использует неотменяемый
-  `time.Sleep`, а `sourceModule.Sync()` идёт по цепочке
-  `LoadAndParseActiveSources` → `easy_list.LoadFromURL` / `LoadHostsFromURL`,
-  где HTTP-запросы создаются без context. На shutdown текущая синхронизация
-  может ждать таймаут клиента вместо немедленной отмены.
+- Source sync pipeline уже принимает context и имеет отменяемый retry, но
+  composition root пока передаёт `context.Background()`. До подключения
+  signal-derived application context отмена на SIGTERM фактически не сработает.
 - `TrafficEventStore.Stop(ctx)` уже останавливает admission, дожидается
   конкурентных senders, дренирует FIFO и делает финальный flush. Метод
   идемпотентен и безопасен для конкурентных вызовов. Осталось вызвать его из
@@ -285,15 +300,11 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
      вызвать его после `dnsServer.Shutdown()` — это гарантирует, что новые DNS
      verdicts больше не придут до финального flush.
 
-5. **`source.LoadAndParseActiveSources` — context для HTTP**
-   - `easy_list.LoadFromURL` и `LoadHostsFromURL` сейчас используют
-     `http.Get`. Перевести на `http.NewRequestWithContext(ctx, ...)` →
-     `client.Do(req)`. На SIGTERM при первом старте Sync() прервётся
-     корректно, не висит на 30-секундном таймауте.
-   - Пробросить ctx через `source.Module.Sync` и use-case `sync.Sync`.
-     `suggestModule.Collect` эти loaders не вызывает и в этот пункт не входит.
-   - Сделать `backgroundSync` context-aware: отменяемый backoff через
-     timer/select, без refresh и success-log после cancellation.
+5. **`source.LoadAndParseActiveSources` — context для HTTP — готово**
+   - Context проброшен через `source.Module.Sync` и use-case `sync.Sync` в оба
+     loader'а; `suggestModule.Collect` эти loader'ы не вызывает.
+   - `backgroundSync` использует отменяемый timer/select и не делает refresh
+     или success-log после cancellation.
 
 6. **Главный блок shutdown в main**
    ```go

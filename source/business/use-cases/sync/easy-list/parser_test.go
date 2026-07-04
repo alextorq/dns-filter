@@ -1,11 +1,59 @@
 package easy_list
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+type cancelBody struct {
+	ctx     context.Context
+	started chan struct{}
+}
+
+func (b *cancelBody) Read([]byte) (int, error) {
+	close(b.started)
+	<-b.ctx.Done()
+	return 0, b.ctx.Err()
+}
+
+func (*cancelBody) Close() error { return nil }
+
+func TestLoadFromURL_CancelAbortsRequest(t *testing.T) {
+	started := make(chan struct{})
+	previousClient := httpClient
+	httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       &cancelBody{ctx: req.Context(), started: started},
+			Request:    req,
+		}, nil
+	})}
+	t.Cleanup(func() { httpClient = previousClient })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := LoadFromURL(ctx, "https://source.test/easylist.txt")
+		done <- err
+	}()
+
+	<-started
+	cancel()
+
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("LoadFromURL error = %v, want context.Canceled", err)
+	}
+}
 
 // parseSorted runs ParseEasyList and returns the result sorted, so tests can
 // compare against an order-independent expectation (map iteration order is

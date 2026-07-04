@@ -6,6 +6,8 @@
 package source
 
 import (
+	"context"
+
 	syncRec "github.com/alextorq/dns-filter/source/business/use-cases/sync"
 	"github.com/alextorq/dns-filter/source/db"
 )
@@ -16,14 +18,12 @@ type Logger interface {
 	Error(err error)
 }
 
-// BlockWriter is the narrow port over the blocklist. CreateDNSRecordsByDomains
-// and DeleteDNSRecordsBySourceNotIn together apply a freshly pulled source
-// (add new domains, drop the ones gone upstream); ChangeRecordStatusBySource
-// backs the source enable/disable kill-switch.
+// BlockWriter is the narrow port over the blocklist. The context-aware methods
+// apply a freshly pulled source (add new domains, drop the ones gone upstream)
+// and let application shutdown interrupt long SQLite batches.
 type BlockWriter interface {
-	CreateDNSRecordsByDomains(urls []string, source string) error
-	DeleteDNSRecordsBySourceNotIn(source string, keep []string) error
-	ChangeRecordStatusBySource(source string, active bool) error
+	CreateDNSRecordsByDomainsContext(ctx context.Context, urls []string, source string) error
+	DeleteDNSRecordsBySourceNotInContext(ctx context.Context, source string, keep []string) error
 }
 
 type Module struct {
@@ -45,6 +45,6 @@ func (m *Module) Seed() {
 // (new domains added, vanished ones dropped). At startup it runs inside the
 // backgroundSync goroutine (see main.go) so the DNS server can serve traffic
 // immediately; the caller refreshes the in-memory filter once Sync returns.
-func (m *Module) Sync() error {
-	return syncRec.Sync(m.repo, m.blockRepo, m.log)
+func (m *Module) Sync(ctx context.Context) error {
+	return syncRec.Sync(ctx, m.repo, m.blockRepo, m.log)
 }

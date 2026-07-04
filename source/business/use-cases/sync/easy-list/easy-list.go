@@ -2,6 +2,7 @@ package easy_list
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -19,18 +20,29 @@ const (
 	AdGuardRussianURL = "https://filters.adtidy.org/extension/ublock/filters/1.txt"
 )
 
-func LoadEasyList() ([]string, error) {
-	return LoadFromURL(EasyListURL)
+func LoadEasyList(ctx context.Context) ([]string, error) {
+	return LoadFromURL(ctx, EasyListURL)
 }
 
-func LoadFromURL(url string) ([]string, error) {
-	resp, err := httpClient.Get(url)
+func LoadFromURL(ctx context.Context, url string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	return ParseEasyList(resp.Body), nil
+	domains, err := parseEasyList(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return domains, nil
 }
 
 // IsSafeDNSDomain проверяет, является ли строка валидным доменом для DNS блокировки.
@@ -140,6 +152,14 @@ func MergeLists(blocked []string, allowed []string) []string {
 }
 
 func ParseEasyList(r io.Reader) []string {
+	domains, _ := parseEasyList(r)
+	return domains
+}
+
+// parseEasyList is the loader-facing parser. Unlike the public pure parsing
+// helper, it surfaces scanner read failures so a canceled/truncated HTTP body
+// can never be mistaken for a complete source list and fed into prune.
+func parseEasyList(r io.Reader) ([]string, error) {
 	blacklist := make(map[string]struct{}) // используем map для удаления дубликатов
 	whitelist := make(map[string]struct{})
 
@@ -235,5 +255,5 @@ func ParseEasyList(r io.Reader) []string {
 	for _, domain := range merge {
 		withDot = append(withDot, utils.CanonicalDomain(domain))
 	}
-	return withDot
+	return withDot, scanner.Err()
 }

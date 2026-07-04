@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"sync"
@@ -35,10 +36,11 @@ func TestBackgroundSyncRefreshesFilterOnSuccess(t *testing.T) {
 	log := &stubSyncLogger{}
 
 	runBackgroundSync(
-		func() error { calls = append(calls, "sync"); return nil },
+		context.Background(),
+		func(context.Context) error { calls = append(calls, "sync"); return nil },
 		func() error { calls = append(calls, "refresh"); return nil },
 		log,
-		func(d time.Duration) { sleeps = append(sleeps, d) },
+		func(_ context.Context, d time.Duration) error { sleeps = append(sleeps, d); return nil },
 	)
 
 	if !reflect.DeepEqual(calls, []string{"sync", "refresh"}) {
@@ -64,7 +66,8 @@ func TestBackgroundSyncRetriesUntilSyncSucceeds(t *testing.T) {
 	attempts := 0
 
 	runBackgroundSync(
-		func() error {
+		context.Background(),
+		func(context.Context) error {
 			calls = append(calls, "sync")
 			attempts++
 			if attempts < 3 {
@@ -74,7 +77,7 @@ func TestBackgroundSyncRetriesUntilSyncSucceeds(t *testing.T) {
 		},
 		func() error { calls = append(calls, "refresh"); return nil },
 		log,
-		func(d time.Duration) { sleeps = append(sleeps, d) },
+		func(_ context.Context, d time.Duration) error { sleeps = append(sleeps, d); return nil },
 	)
 
 	if !reflect.DeepEqual(calls, []string{"sync", "sync", "sync", "refresh"}) {
@@ -98,7 +101,8 @@ func TestBackgroundSyncBackoffIsCapped(t *testing.T) {
 	attempts := 0
 
 	runBackgroundSync(
-		func() error {
+		context.Background(),
+		func(context.Context) error {
 			attempts++
 			if attempts <= 12 {
 				return errors.New("network down")
@@ -107,7 +111,7 @@ func TestBackgroundSyncBackoffIsCapped(t *testing.T) {
 		},
 		func() error { return nil },
 		log,
-		func(d time.Duration) { sleeps = append(sleeps, d) },
+		func(_ context.Context, d time.Duration) error { sleeps = append(sleeps, d); return nil },
 	)
 
 	for i, d := range sleeps {
@@ -127,10 +131,11 @@ func TestBackgroundSyncLogsRefreshFailure(t *testing.T) {
 	log := &stubSyncLogger{}
 
 	runBackgroundSync(
-		func() error { calls = append(calls, "sync"); return nil },
+		context.Background(),
+		func(context.Context) error { calls = append(calls, "sync"); return nil },
 		func() error { calls = append(calls, "refresh"); return errors.New("db gone") },
 		log,
-		func(time.Duration) {},
+		func(context.Context, time.Duration) error { return nil },
 	)
 
 	if !reflect.DeepEqual(calls, []string{"sync", "refresh"}) {
@@ -141,5 +146,107 @@ func TestBackgroundSyncLogsRefreshFailure(t *testing.T) {
 	}
 	if log.infos != 1 {
 		t.Fatalf("ожидали только стартовый Info (без завершающего), получили %d", log.infos)
+	}
+}
+
+func TestBackgroundSync_PreCanceledSkipsAllWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	log := &stubSyncLogger{}
+	syncCalls, refreshCalls, waitCalls := 0, 0, 0
+
+	runBackgroundSync(
+		ctx,
+		func(context.Context) error { syncCalls++; return nil },
+		func() error { refreshCalls++; return nil },
+		log,
+		func(context.Context, time.Duration) error { waitCalls++; return nil },
+	)
+
+	if syncCalls != 0 || refreshCalls != 0 || waitCalls != 0 {
+		t.Fatalf("pre-canceled run did work: sync=%d refresh=%d wait=%d", syncCalls, refreshCalls, waitCalls)
+	}
+	if log.infos != 0 || len(log.errs) != 0 {
+		t.Fatalf("pre-canceled run logged activity: infos=%d errors=%v", log.infos, log.errs)
+	}
+}
+
+func TestBackgroundSync_CancelDuringBackoffStopsRetriesAndRefresh(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	log := &stubSyncLogger{}
+	syncCalls, refreshCalls := 0, 0
+
+	runBackgroundSync(
+		ctx,
+		func(context.Context) error { syncCalls++; return errors.New("network down") },
+		func() error { refreshCalls++; return nil },
+		log,
+		func(ctx context.Context, _ time.Duration) error {
+			cancel()
+			return ctx.Err()
+		},
+	)
+
+	if syncCalls != 1 || refreshCalls != 0 {
+		t.Fatalf("cancel during backoff: sync=%d want 1, refresh=%d want 0", syncCalls, refreshCalls)
+	}
+	if len(log.errs) != 1 || log.infos != 1 {
+		t.Fatalf("unexpected logs: infos=%d errors=%v", log.infos, log.errs)
+	}
+}
+
+func TestBackgroundSync_CancelDuringSyncIsNotLoggedOrRefreshed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	log := &stubSyncLogger{}
+	refreshCalls := 0
+
+	runBackgroundSync(
+		ctx,
+		func(ctx context.Context) error {
+			cancel()
+			return ctx.Err()
+		},
+		func() error { refreshCalls++; return nil },
+		log,
+		func(context.Context, time.Duration) error {
+			t.Fatal("wait must not run after cancellation")
+			return nil
+		},
+	)
+
+	if refreshCalls != 0 {
+		t.Fatalf("refresh calls = %d, want 0", refreshCalls)
+	}
+	if len(log.errs) != 0 || log.infos != 1 {
+		t.Fatalf("cancellation should be quiet: infos=%d errors=%v", log.infos, log.errs)
+	}
+}
+
+func TestBackgroundSync_CancelDuringRefreshSkipsCompletionLog(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	log := &stubSyncLogger{}
+
+	runBackgroundSync(
+		ctx,
+		func(context.Context) error { return nil },
+		func() error { cancel(); return nil },
+		log,
+		func(context.Context, time.Duration) error { t.Fatal("wait must not run"); return nil },
+	)
+
+	if log.infos != 1 {
+		t.Fatalf("Info calls = %d, want only the startup line", log.infos)
+	}
+	if len(log.errs) != 0 {
+		t.Fatalf("cancellation should not log errors: %v", log.errs)
+	}
+}
+
+func TestWaitForRetry_PreCanceledReturnsImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := waitForRetry(ctx, time.Hour); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitForRetry error = %v, want context.Canceled", err)
 	}
 }

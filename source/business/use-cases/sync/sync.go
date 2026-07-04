@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/alextorq/dns-filter/source/business/use-cases/sync/easy-list"
@@ -21,8 +22,8 @@ type SourceLister interface {
 // adds the freshly pulled domains; DeleteDNSRecordsBySourceNotIn prunes the ones
 // that vanished from every source (see pruneVanishedDomains).
 type BlockWriter interface {
-	CreateDNSRecordsByDomains(urls []string, source string) error
-	DeleteDNSRecordsBySourceNotIn(source string, keep []string) error
+	CreateDNSRecordsByDomainsContext(ctx context.Context, urls []string, source string) error
+	DeleteDNSRecordsBySourceNotInContext(ctx context.Context, source string, keep []string) error
 }
 
 type DomainBySource struct {
@@ -36,8 +37,11 @@ type DomainBySource struct {
 // loaded cleanly — when false the prune phase must be skipped, since the union
 // of fresh domains is incomplete and would delete domains a failed source
 // still lists.
-func LoadAndParseActiveSources(repo SourceLister, log Logger) (result []DomainBySource, complete bool) {
+func LoadAndParseActiveSources(ctx context.Context, repo SourceLister, log Logger) (result []DomainBySource, complete bool) {
 	result = make([]DomainBySource, 0)
+	if ctx.Err() != nil {
+		return result, false
+	}
 
 	items, err := repo.GetAllActive()
 	if err != nil {
@@ -48,8 +52,12 @@ func LoadAndParseActiveSources(repo SourceLister, log Logger) (result []DomainBy
 	complete = true
 
 	loadAdBlock := func(source db.BlockListSource, url string) {
-		partial, err := easy_list.LoadFromURL(url)
+		partial, err := easy_list.LoadFromURL(ctx, url)
 		if err != nil {
+			if ctx.Err() != nil {
+				complete = false
+				return
+			}
 			log.Error(fmt.Errorf("failed to load %s: %w", source, err))
 			complete = false
 			return
@@ -59,8 +67,12 @@ func LoadAndParseActiveSources(repo SourceLister, log Logger) (result []DomainBy
 	}
 
 	loadHosts := func(source db.BlockListSource, url string) {
-		partial, err := LoadHostsFromURL(url)
+		partial, err := LoadHostsFromURL(ctx, url)
 		if err != nil {
+			if ctx.Err() != nil {
+				complete = false
+				return
+			}
 			log.Error(fmt.Errorf("failed to load %s: %w", source, err))
 			complete = false
 			return
@@ -70,6 +82,9 @@ func LoadAndParseActiveSources(repo SourceLister, log Logger) (result []DomainBy
 	}
 
 	for _, item := range items {
+		if ctx.Err() != nil {
+			return result, false
+		}
 		switch item.Name {
 		case db.SourceEasyList:
 			loadAdBlock(db.SourceEasyList, easy_list.EasyListURL)
@@ -87,17 +102,26 @@ func LoadAndParseActiveSources(repo SourceLister, log Logger) (result []DomainBy
 	return result, complete
 }
 
-// Sync downloads every active source, adds the freshly pulled domains, then
-// prunes the ones that vanished. Errors from a single source abort the whole
-// batch (a half-imported source would leave the bloom out-of-sync with the DB).
-func Sync(repo SourceLister, blockRepo BlockWriter, log Logger) error {
-	list, complete := LoadAndParseActiveSources(repo, log)
+// Sync downloads every active source, adds the successfully pulled domains,
+// then prunes vanished rows only when every source loaded cleanly. A source
+// download failure skips prune; a DB write error or cancellation aborts.
+func Sync(ctx context.Context, repo SourceLister, blockRepo BlockWriter, log Logger) error {
+	list, complete := LoadAndParseActiveSources(ctx, repo, log)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	for _, item := range list {
-		if err := blockRepo.CreateDNSRecordsByDomains(item.Domains, item.Source.String()); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := blockRepo.CreateDNSRecordsByDomainsContext(ctx, item.Domains, item.Source.String()); err != nil {
 			return err
 		}
 	}
-	return pruneVanishedDomains(list, complete, blockRepo, log)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return pruneVanishedDomains(ctx, list, complete, blockRepo, log)
 }
 
 // pruneVanishedDomains drops, per source, every block_lists row whose domain is
@@ -114,7 +138,10 @@ func Sync(repo SourceLister, blockRepo BlockWriter, log Logger) error {
 // the prune could delete them. A source that parsed to an empty set is left
 // untouched too — an empty parse is more likely a garbage response than a list
 // that genuinely emptied.
-func pruneVanishedDomains(list []DomainBySource, complete bool, blockRepo BlockWriter, log Logger) error {
+func pruneVanishedDomains(ctx context.Context, list []DomainBySource, complete bool, blockRepo BlockWriter, log Logger) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !complete {
 		log.Debug("source sync incomplete — skipping prune of vanished domains")
 		return nil
@@ -126,10 +153,13 @@ func pruneVanishedDomains(list []DomainBySource, complete bool, blockRepo BlockW
 	}
 
 	for _, item := range list {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if len(item.Domains) == 0 {
 			continue
 		}
-		if err := blockRepo.DeleteDNSRecordsBySourceNotIn(item.Source.String(), union); err != nil {
+		if err := blockRepo.DeleteDNSRecordsBySourceNotInContext(ctx, item.Source.String(), union); err != nil {
 			return err
 		}
 	}

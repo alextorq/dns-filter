@@ -2,6 +2,7 @@ package sync
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -18,21 +19,40 @@ const (
 	HaGeZiMultiURL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt"
 )
 
-func LoadStevenBlack() ([]string, error) {
-	return LoadHostsFromURL(StevenBlackURL)
+func LoadStevenBlack(ctx context.Context) ([]string, error) {
+	return LoadHostsFromURL(ctx, StevenBlackURL)
 }
 
-func LoadHostsFromURL(url string) ([]string, error) {
-	resp, err := httpClient.Get(url)
+func LoadHostsFromURL(ctx context.Context, url string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	return ParseIpHostsLine(resp.Body), nil
+	domains, err := parseIPHostsLine(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return domains, nil
 }
 
 func ParseIpHostsLine(r io.Reader) []string {
+	domains, _ := parseIPHostsLine(r)
+	return domains
+}
+
+// parseIPHostsLine is the loader-facing parser. It reports scanner failures so
+// a canceled/truncated response is incomplete rather than a successful partial
+// list that could trigger destructive pruning.
+func parseIPHostsLine(r io.Reader) ([]string, error) {
 	scanner := bufio.NewScanner(r)
 	var result []string
 	for scanner.Scan() {
@@ -57,5 +77,5 @@ func ParseIpHostsLine(r io.Reader) []string {
 			result = append(result, utils.CanonicalDomain(domain))
 		}
 	}
-	return result
+	return result, scanner.Err()
 }

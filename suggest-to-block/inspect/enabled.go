@@ -2,21 +2,21 @@ package inspect
 
 import "sync/atomic"
 
-// featureEnabled — рантайм-флаг включения reputation-обогащения. Запись только
-// через Apply-хук дескриптора suggest_inspect_enabled (см. settings_wiring.go);
-// чтение — на hot path воркера (см. Worker.RunOnce) и в suggest-to-block при
-// маршрутизации в очередь inspect (см. Module.Collect).
-//
-// Атомик в package-level — самый легковесный способ связать BD-настройку с
-// одной горутиной-воркером, не таща через NewWorker отдельный канал/мьютекс.
-// Тесты воркера используют SetEnabled явно (или собственный gate-замок), так
-// что zero-value=false не маскирует включённую фичу.
-var featureEnabled atomic.Bool
+// EnabledState is the process-owned runtime flag for reputation enrichment.
+// Construct it in the composition root and inject its methods into the settings
+// Apply hook and both feature gates. Keeping the atomic on an instance prevents
+// tests (and future multiple application instances) from sharing package state.
+// The zero value is ready to use and disabled.
+type EnabledState struct {
+	enabled atomic.Bool
+}
 
-// SetEnabled пишет новое значение флага. Вызывается:
+func NewEnabledState() *EnabledState { return &EnabledState{} }
+
+// Set writes the new value. It is called:
 //   - на старте: HydrateAll → Apply (effective = БД override → env default);
 //   - в рантайме: PUT /api/settings/suggest_inspect_enabled → Apply.
-func SetEnabled(v bool) { featureEnabled.Store(v) }
+func (s *EnabledState) Set(v bool) { s.enabled.Store(v) }
 
-// IsEnabled читается воркером и сборщиком-suggest без блокировок.
-func IsEnabled() bool { return featureEnabled.Load() }
+// Enabled is read lock-free by the worker and suggest collector gates.
+func (s *EnabledState) Enabled() bool { return s.enabled.Load() }

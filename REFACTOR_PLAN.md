@@ -213,6 +213,19 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 **Документация:** `CLAUDE.md` (раздел Cross-cutting conventions),
 `ARCHITECTURE.md` (раздел 9 Web API) — описывают self-routing-контракт.
 
+### Этап 5 — runtime state принадлежит composition root
+
+- `suggest_inspect_enabled` больше не хранится в package-level atomic:
+  `main` создаёт один `suggest_inspect.EnabledState`, settings Apply пишет в
+  него, а gates воркера и suggest-модуля читают тот же экземпляр.
+- `traffic_retention_days` переведён с package-level atomic на
+  `traffic_prune.RetentionState`. Один экземпляр передаётся одновременно в
+  settings Apply и `traffic_prune.Run`; zero value `0` сохраняет защиту от
+  удаления данных до `HydrateAll`.
+- Для обоих состояний есть тесты независимости экземпляров и wiring-тесты
+  `HydrateAll`/runtime Apply. Каждый подпункт прошёл отдельное ревью и полный
+  `go test -race ./...`.
+
 ---
 
 ## Кандидат на следующий рефакторинг
@@ -231,11 +244,11 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   возвращает `*http.Server`. `Shutdown(ctx)` позвать неоткуда.
 - `dnsServer.Serve()` блокирует main, но `s.Shutdown()` (есть в
   `dns/server.go:279`) никем не вызывается.
-- `suggestModule.Start(context.Background())` — фоновый ticker. Даже когда
-  ctx будет реальный, текущая реализация гасит loop по `ctx.Done()`, но
-  in-flight `Collect()` (HTTP-запросы к источникам через `easy-list`,
-  upsert в DB) **не прерывается** — `easy_list.LoadFromURL` использует
-  свой `http.Get` без context.
+- `backgroundSync` не принимает context: retry использует неотменяемый
+  `time.Sleep`, а `sourceModule.Sync()` идёт по цепочке
+  `LoadAndParseActiveSources` → `easy_list.LoadFromURL` / `LoadHostsFromURL`,
+  где HTTP-запросы создаются без context. На shutdown текущая синхронизация
+  может ждать таймаут клиента вместо немедленной отмены.
 - `TrafficEventStore.Stop(ctx)` уже останавливает admission, дожидается
   конкурентных senders, дренирует FIFO и делает финальный flush. Метод
   идемпотентен и безопасен для конкурентных вызовов. Осталось вызвать его из
@@ -277,8 +290,10 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
      `http.Get`. Перевести на `http.NewRequestWithContext(ctx, ...)` →
      `client.Do(req)`. На SIGTERM при первом старте Sync() прервётся
      корректно, не висит на 30-секундном таймауте.
-   - `suggestModule.Start(ctx)` — пробросить ctx в `Collect`, оттуда — в
-     те же loaders. Сейчас `Collect()` без ctx, нужно расширить сигнатуру.
+   - Пробросить ctx через `source.Module.Sync` и use-case `sync.Sync`.
+     `suggestModule.Collect` эти loaders не вызывает и в этот пункт не входит.
+   - Сделать `backgroundSync` context-aware: отменяемый backoff через
+     timer/select, без refresh и success-log после cancellation.
 
 6. **Главный блок shutdown в main**
    ```go
@@ -299,9 +314,9 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   200 OK (а не получил RST).
 - DNS: аналог через UDP/TCP — медленный upstream, проверяем что
   in-flight запрос завершается.
-- Worker: `TestTrafficEventStore_StopFlushesBuffer` — наполняем
-  буфер ниже capacity, вызываем `Stop(ctx)`, проверяем что репо получил
-  все агрегированные verdicts.
+- Worker: финальный flush уже закреплён тестом
+  `TestStopFlushesBufferedEvents`; дублировать его не нужно, достаточно
+  lifecycle-теста порядка «DNS drain → TrafficEventStore.Stop».
 
 ---
 

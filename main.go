@@ -182,6 +182,7 @@ func main() {
 	localStatsCheck := domain_inspect_checks.NewLocalStats(blockRepo, trafficRepo)
 	urlScanCheck := domain_inspect_checks.NewURLScan(conf.URLScanKey)
 	inspectCredentials := domain_inspect_checks.NewCredentials()
+	inspectEnabled := suggest_inspect.NewEnabledState()
 	virusTotalCheck := domain_inspect_checks.NewVirusTotal(inspectCredentials)
 	safeBrowsingCheck := domain_inspect_checks.NewSafeBrowsing(inspectCredentials)
 	inspectChecks := func() map[string]domain_inspect.CheckFunc {
@@ -197,7 +198,7 @@ func main() {
 	// (suggest_inspect_enabled) и API-ключи (virustotal_key, safebrowsing_key)
 	// теперь — DB-настройки и могут включаться/выключаться без рестарта.
 	//
-	// inspectGate композирует два сигнала: мастер-тогл фичи (suggest_inspect.IsEnabled)
+	// inspectGate композирует два сигнала: внедрённый мастер-тогл фичи
 	// И наличие хотя бы одного провайдер-ключа (inspectCredentials.HasAnyKey). Без ключа
 	// RDAP/urlscan/dns_resolve всё равно стучатся наружу за каждым кандидатом
 	// и сливают наблюдённые домены LAN в публичные сервисы, а VT/SB отдают
@@ -206,11 +207,11 @@ func main() {
 	// suggestModule.Collect (отказ маршрутизировать в очередь).
 	//
 	// Запуск горутин suggest/inspect перенесён ниже HydrateAll, чтобы оба
-	// атомика уже соответствовали БД-override до первого тика; иначе zero-value
+	// runtime-состояния уже соответствовали БД-override до первого тика; иначе zero-value
 	// gate (false) погасил бы первый Collect/RunOnce даже при включённой фиче.
 	inspectRepo := inspect_db.NewRepo(conn)
 	suggestModule.SetInspectQueue(inspectRepo)
-	inspectGate := func() bool { return suggest_inspect.IsEnabled() && inspectCredentials.HasAnyKey() }
+	inspectGate := func() bool { return inspectEnabled.Enabled() && inspectCredentials.HasAnyKey() }
 	suggestModule.SetInspectGate(inspectGate)
 	inspectAdapter := suggest_inspect.NewAdapter(inspectRepo, conf.SuggestInspectCacheTTL, suggest_inspect.ProviderChecks{
 		VirusTotal:   virusTotalCheck,
@@ -260,6 +261,7 @@ func main() {
 	// bounds DISTINCT aggregation keys held in RAM between flushes, not raw
 	// events, so it can be sized generously.
 	trafficWorker := traffic_record_uc.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
+	trafficRetention := traffic_prune_uc.NewRetentionState()
 
 	// Reloadable upstream: constructed from env defaults, then re-pointed by the
 	// settings hydrate below if a DB override exists. The same instance backs
@@ -292,7 +294,9 @@ func main() {
 		resolver:           resolver,
 		cache:              cacheWithMetric,
 		dnsServer:          dnsServer,
+		inspectEnabled:     inspectEnabled,
 		inspectCredentials: inspectCredentials,
+		trafficRetention:   trafficRetention,
 	})
 	filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
 	if err := filter.RestoreState(settingsRepo, conf); err != nil {
@@ -323,8 +327,8 @@ func main() {
 	// dynamic setting; the loop reads its atomic fresh each tick, so a UI change
 	// applies on the next prune. Launched AFTER HydrateAll so the very first
 	// (immediate) prune already sees the effective window — otherwise it could
-	// hard-delete rows using the pre-hydrate seed (see traffic_prune.retentionDays).
-	go traffic_prune_uc.Run(backgroundCtx, trafficRepo, chanLogger)
+	// hard-delete rows using the pre-hydrate seed (see traffic_prune.RetentionState).
+	go traffic_prune_uc.Run(backgroundCtx, trafficRepo, trafficRetention, chanLogger)
 
 	// Pull the block lists in the background and refresh the filter once done.
 	// The DNS server (started below via dnsServer.Serve) does not wait on this.

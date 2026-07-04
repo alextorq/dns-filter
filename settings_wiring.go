@@ -23,7 +23,9 @@ type dynamicSettingsDeps struct {
 	resolver           *dns.ReloadableResolver
 	cache              *dns_cache.CacheWithMetrics
 	dnsServer          *dns.DnsServer
+	inspectEnabled     *suggest_inspect.EnabledState
 	inspectCredentials *checks.Credentials
+	trafficRetention   *traffic_prune.RetentionState
 }
 
 // registerDynamicSettings declares the canonical set of DB-backed runtime
@@ -102,8 +104,8 @@ func registerDynamicSettings(m *settings.Module, d dynamicSettingsDeps) {
 			Validate: settings.ValidatePositiveInt,
 			Apply:    func(raw string) error { d.dnsServer.SetRefreshConcurrency(settings.ParseInt(raw)); return nil },
 		},
-		trafficRetentionSetting(c),
-		// suggest-inspect: master-тогл reputation-обогащения. Atomic читается
+		trafficRetentionSetting(c, d.trafficRetention),
+		// suggest-inspect: master-тогл reputation-обогащения. Внедрённое состояние читается
 		// и воркером (Worker.RunOnce), и сборщиком suggest (Module.Collect),
 		// поэтому переключение из UI вступает в силу со следующего тика
 		// suggest/inspect — без рестарта.
@@ -112,7 +114,7 @@ func registerDynamicSettings(m *settings.Module, d dynamicSettingsDeps) {
 			Type:     "bool",
 			Default:  strconv.FormatBool(c.SuggestInspectEnabled),
 			Validate: settings.ValidateBool,
-			Apply:    func(raw string) error { suggest_inspect.SetEnabled(settings.ParseBool(raw)); return nil },
+			Apply:    func(raw string) error { d.inspectEnabled.Set(settings.ParseBool(raw)); return nil },
 		},
 		// VT/SB ключи: тип "secret" — в API выдаются маскированными (последние
 		// 4 символа), сам провайдер-чек на каждом запросе читает свежий ключ
@@ -147,7 +149,7 @@ const (
 // window. Split out so a wiring test can exercise the real Validate bounds and
 // the Apply→atomic round-trip without constructing the heavyweight DNS/cache
 // sinks the other descriptors need.
-func trafficRetentionSetting(c *config.Config) settings.Setting {
+func trafficRetentionSetting(c *config.Config, state *traffic_prune.RetentionState) settings.Setting {
 	return settings.Setting{
 		Key:  "traffic_retention_days",
 		Type: "int",
@@ -156,6 +158,6 @@ func trafficRetentionSetting(c *config.Config) settings.Setting {
 		Validate: settings.ValidateIntRange(trafficRetentionDaysMin, trafficRetentionDaysMax),
 		// Apply writes the atomic the daily prune loop reads fresh each tick, so
 		// a UI change takes effect on the next prune without a restart.
-		Apply: func(raw string) error { traffic_prune.SetRetentionDays(settings.ParseInt(raw)); return nil },
+		Apply: func(raw string) error { state.Set(settings.ParseInt(raw)); return nil },
 	}
 }

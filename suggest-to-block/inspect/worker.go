@@ -92,7 +92,7 @@ type Worker struct {
 	sleep func(context.Context, time.Duration)
 	// featureGate определяет, исполнять ли RunOnce. Nil = всегда исполнять
 	// (обратная совместимость с тестами, где Worker создаётся напрямую).
-	// В production main.go выставляет gate = IsEnabled, чтобы UI-тогл
+	// В production main.go выставляет gate на injected EnabledState, чтобы UI-тогл
 	// suggest_inspect_enabled управлял воркером без рестарта.
 	featureGate func() bool
 }

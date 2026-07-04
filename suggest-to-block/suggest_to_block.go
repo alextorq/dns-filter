@@ -71,7 +71,7 @@ type Module struct {
 	// inspectGate — рантайм-гейт включения reputation-обогащения.
 	// nil = всегда включено (обратная совместимость с тестами и со средой,
 	// где SetInspectQueue не звался). В production main.go выставляет gate
-	// в inspect.IsEnabled, чтобы UI-тогл управлял маршрутизацией без
+	// на injected inspect.EnabledState, чтобы UI-тогл управлял маршрутизацией без
 	// рестарта.
 	inspectGate func() bool
 }

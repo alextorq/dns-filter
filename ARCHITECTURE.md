@@ -260,6 +260,8 @@ The contract is pinned by the regression test `web/server_test.go::TestBuildRout
 
 **Purpose:** Collect and export metrics to Prometheus.
 
+`metric` performs no listener startup during import. After constructing the logger, `main` explicitly registers the Go/process collectors and `logger_dropped_logs_total`, then — only when metrics are enabled — builds `metric.NewServer(addr, Registry)` and owns `ListenAndServe`/future `Shutdown`. The server uses a dedicated mux exposing only `/metrics`; bind/runtime failures are reported through the application logger. The shared `metric.Registry` remains a compatibility layer while DNS/cache/inspect collectors still register during package initialization; removing those remaining registration globals is a separate refactor.
+
 **Metrics:**
 - `dns_cache_hits_total` — cache hits
 - `dns_cache_misses_total` — cache misses (including expired entries)
@@ -272,7 +274,7 @@ The contract is pinned by the regression test `web/server_test.go::TestBuildRout
 - `dns_serve_stale_on_error_total` — a response was served from the stale window because upstream failed (RFC 8767)
 
 **DB metrics (`db/`):**
-- `sqlite_file_size_bytes` — the on-disk SQLite file size (gauge, refreshed every 10 min)
+- `sqlite_file_size_bytes` — the on-disk SQLite file size. `main` explicitly constructs `db.DBSizeMonitor` with the DB path, logger and Prometheus registerer, then runs it with the application context; it samples immediately and every 10 minutes until cancellation. There is no import-time ticker/goroutine.
 - `db_query_duration_seconds{operation}` — a latency histogram for each GORM operation (`create`/`query`/`update`/`delete`/`row`/`raw`); captured by before/after callbacks attached in `GetConnection`. The buckets are tuned for sub-millisecond reads with headroom up to 5s — the upper tail is the "DB is slow" signal. This is the **primary** DB-latency indicator (p50/p95/p99 via `histogram_quantile`)
 - `db_query_errors_total{operation}` — operations that ended in an error; `gorm.ErrRecordNotFound` is deliberately **not** counted (an empty `First()` on the DNS path is normal control flow, not a failure)
 - `go_sql_*{db_name="main"}` — `database/sql` pool stats via `collectors.NewDBStatsCollector` (open/in-use/idle connections, `wait_count_total`, `wait_duration_seconds_total`). For the glebarez/modernc driver the pool is the write-serialization point, so a growing `go_sql_wait_duration` is the clearest sign the DB has become the bottleneck

@@ -236,6 +236,7 @@ The refresh context is *not* tied to the client's — the client already got a s
 **Self-routing.** `web/server.go` is thin — it owns only cross-cutting concerns: CORS, the public/protected split, Swagger. Each feature registers its own paths:
 
 - Every feature, including `domain-inspect`, exposes `RegisterRoutes` on an injected `*Handlers` value.
+- `source/web.Handlers` depends on its own narrow `SourceRepo` port (`GetAll`, `Amount`, `GetByID`, `Update`) rather than the concrete SQLite adapter; handler behavior and failure ordering are tested with DB-free fakes.
 - `domain-inspect/web.Handlers` receives the check-catalog factory and logger explicitly. `local_stats` receives block-list and traffic readers explicitly too and canonicalizes the UI hostname to the stored FQDN form before both local lookups. URLScan captures its env-only key through `NewURLScan`; VT/SB checks share an injected, runtime-updatable `checks.Credentials` instance.
 - `auth/web` additionally exposes `RegisterPublic(r gin.IRouter)`, which mounts `POST /api/auth/login` outside its `RequireAuth()` middleware; protected auth routes use `RegisterRoutes(rg)`.
 

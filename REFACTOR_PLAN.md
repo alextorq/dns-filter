@@ -278,6 +278,14 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - Глобальный `metric.Registry` пока сохранён: DNS/cache/inspect collectors всё
   ещё регистрируются туда из package init. Их инстанцирование — отдельный этап.
 
+### Этап 10.1 — consumer-owned port в `source/web`
+
+- `source/web.Handlers` принимает узкий `SourceRepo`, а не concrete
+  `*source/db.Repo`; production repo удовлетворяет порту structural typing.
+- Handler-тесты не поднимают SQLite и покрывают list happy/error, invalid JSON,
+  ошибки get/update/block/filter и обязательный порядок
+  `source update → block rows → filter refresh`.
+
 ---
 
 ## Кандидат на следующий рефакторинг

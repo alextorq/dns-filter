@@ -265,6 +265,19 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - Тесты закрепляют pre-cancel, immediate observation, cancellation, stat error,
   invalid interval и duplicate registration.
 
+### Этап 9 — Prometheus server без import-time listener
+
+- `metric` больше не импортирует config/logger и не запускает HTTP listener из
+  `init()`.
+- `main` явно регистрирует Go/process/logger collectors после создания logger,
+  строит `metric.NewServer` только при `MetricEnable` и владеет `*http.Server`.
+- Metrics endpoint использует отдельный `http.ServeMux`, не меняет
+  `http.DefaultServeMux`; bind/runtime errors идут через общий server reporter.
+- Server запускается после регистрации component collectors и готов для
+  `Shutdown(ctx)` в общем lifecycle.
+- Глобальный `metric.Registry` пока сохранён: DNS/cache/inspect collectors всё
+  ещё регистрируются туда из package init. Их инстанцирование — отдельный этап.
+
 ---
 
 ## Кандидат на следующий рефакторинг

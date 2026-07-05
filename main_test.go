@@ -17,18 +17,18 @@ type stubSyncLogger struct {
 	errs  []error
 }
 
-func TestReportHTTPServerError_IgnoresExpectedShutdown(t *testing.T) {
+func TestReportServerError_IgnoresExpectedShutdown(t *testing.T) {
 	log := &stubSyncLogger{}
-	reportHTTPServerError(http.ErrServerClosed, log)
+	reportServerError("metrics", http.ErrServerClosed, log)
 	if len(log.errs) != 0 {
 		t.Fatalf("expected shutdown must be quiet, got %v", log.errs)
 	}
 }
 
-func TestReportHTTPServerError_LogsUnexpectedFailure(t *testing.T) {
+func TestReportServerError_LogsUnexpectedFailure(t *testing.T) {
 	log := &stubSyncLogger{}
 	boom := errors.New("bind failed")
-	reportHTTPServerError(boom, log)
+	reportServerError("metrics", boom, log)
 	if len(log.errs) != 1 || !errors.Is(log.errs[0], boom) {
 		t.Fatalf("logged errors = %v, want wrapped bind failure", log.errs)
 	}

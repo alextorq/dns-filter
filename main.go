@@ -88,11 +88,11 @@ type syncLogger interface {
 	Error(err error)
 }
 
-// reportHTTPServerError suppresses the expected Shutdown result and surfaces
-// every real listener/runtime failure through the application logger.
-func reportHTTPServerError(err error, log syncLogger) {
+// reportServerError suppresses the expected Shutdown result and surfaces every
+// real listener/runtime failure through the application logger.
+func reportServerError(name string, err error, log syncLogger) {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Error(fmt.Errorf("HTTP server stopped: %w", err))
+		log.Error(fmt.Errorf("%s server stopped: %w", name, err))
 	}
 }
 
@@ -180,6 +180,9 @@ func main() {
 	migrate.Migrate(conn)
 	conf := config.GetConfig()
 	chanLogger := logger.GetLogger()
+	if err := metric.RegisterRuntimeCollectors(metric.Registry, chanLogger.DroppedCount); err != nil {
+		chanLogger.Error(fmt.Errorf("register runtime metrics: %w", err))
+	}
 	authModule := authBusiness.NewModule(auth_db.NewRepo(conn), conf.AdminLogin, conf.AdminPassword)
 	if err := authModule.BootstrapAdmin(); err != nil {
 		panic(err)
@@ -288,7 +291,6 @@ func main() {
 	} else {
 		go dbSizeMonitor.Run(backgroundCtx)
 	}
-
 	// Start the ARP watcher only in LAN mode. Public mode has no LAN to
 	// observe; the watcher would just spam ErrUnsupported (or, in a hosted
 	// environment with /proc/net/arp present, learn meaningless cloud-VLAN
@@ -395,6 +397,18 @@ func main() {
 	// suppressed, making a healthy sync look stuck.
 	go backgroundSync(backgroundCtx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
+	// Start metrics only after every component-specific collector has been
+	// registered. main keeps the handle for the common shutdown lifecycle.
+	var metricsServer *http.Server
+	if conf.MetricEnable {
+		metricsAddr := ":" + conf.MetricPort
+		metricsServer = metric.NewServer(metricsAddr, metric.Registry)
+		chanLogger.Info("Метрики Prometheus доступны на", metricsAddr+"/metrics")
+		go func(server *http.Server) {
+			reportServerError("metrics", server.ListenAndServe(), chanLogger)
+		}(metricsServer)
+	}
+
 	httpServer := web.NewServer(":8080", web.Handlers{
 		Auth: &authWeb.Handlers{
 			Service:        authModule,
@@ -449,7 +463,7 @@ func main() {
 		Traffic: trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, hostnamesRepo.AllAsMap, chanLogger),
 	})
 	go func() {
-		reportHTTPServerError(httpServer.ListenAndServe(), chanLogger)
+		reportServerError("HTTP", httpServer.ListenAndServe(), chanLogger)
 	}()
 
 	if err := dnsServer.Serve(); err != nil {

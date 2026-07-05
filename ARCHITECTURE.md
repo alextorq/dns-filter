@@ -260,6 +260,8 @@ The contract is pinned by the regression test `web/server_test.go::TestBuildRout
 
 **Purpose:** Collect and export metrics to Prometheus.
 
+`metric` performs no listener startup during import. After constructing the logger, `main` explicitly registers the Go/process collectors and `logger_dropped_logs_total`, then — only when metrics are enabled — builds `metric.NewServer(addr, Registry)` and owns `ListenAndServe`/future `Shutdown`. The server uses a dedicated mux exposing only `/metrics`; bind/runtime failures are reported through the application logger. The shared `metric.Registry` remains a compatibility layer while DNS/cache/inspect collectors still register during package initialization; removing those remaining registration globals is a separate refactor.
+
 **Metrics:**
 - `dns_cache_hits_total` — cache hits
 - `dns_cache_misses_total` — cache misses (including expired entries)

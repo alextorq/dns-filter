@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -52,11 +53,56 @@ func newHarness(t *testing.T) *harness {
 	repo := blocked_domain_db.NewRepo(conn)
 	spy := &refreshSpy{}
 	h := &Handlers{
-		Repo:          repo,
+		Records:       repo,
+		Creator:       repo,
+		Updater:       repo,
 		Log:           fakeLog{},
 		RefreshFilter: func() error { spy.calls++; return spy.err },
 	}
 	return &harness{t: t, repo: repo, handlers: h, refresh: spy}
+}
+
+type fakeRecordsRepo struct {
+	got    blocked_domain_db.GetAllParams
+	result blocked_domain_db.GetRecordsResult
+	err    error
+}
+
+func (f *fakeRecordsRepo) GetRecordsByFilter(params blocked_domain_db.GetAllParams) (blocked_domain_db.GetRecordsResult, error) {
+	f.got = params
+	return f.result, f.err
+}
+
+type fakeCreateRepo struct {
+	createErr error
+	domain    string
+	source    string
+}
+
+func (*fakeCreateRepo) DomainNotExist(string) bool { return true }
+func (f *fakeCreateRepo) CreateDomain(domain, source string) error {
+	f.domain, f.source = domain, source
+	return f.createErr
+}
+func (f *fakeCreateRepo) CreateDomainWithReasons(string, string, []create_domain.Reason) error {
+	return errors.New("unexpected reason path")
+}
+
+type fakeUpdateRepo struct {
+	record    *blocked_domain_db.BlockList
+	getErr    error
+	updateErr error
+	gotID     uint
+	updated   *blocked_domain_db.BlockList
+}
+
+func (f *fakeUpdateRepo) GetByID(id uint) (*blocked_domain_db.BlockList, error) {
+	f.gotID = id
+	return f.record, f.getErr
+}
+func (f *fakeUpdateRepo) UpdateBlockList(record *blocked_domain_db.BlockList) error {
+	f.updated = record
+	return f.updateErr
 }
 
 func (h *harness) postJSON(path string, fn gin.HandlerFunc, body any) *httptest.ResponseRecorder {
@@ -141,5 +187,104 @@ func TestChangeDnsRecordActive_DeactivatesAndRefreshes(t *testing.T) {
 	}
 	if got.Active {
 		t.Error("record must be inactive after update")
+	}
+}
+
+func TestGetAllDnsRecords_UsesNarrowReaderAndForwardsFilter(t *testing.T) {
+	repo := &fakeRecordsRepo{result: blocked_domain_db.GetRecordsResult{
+		Total: 1,
+		List:  []blocked_domain_db.BlockList{{Url: "ads.example."}},
+	}}
+	h := &Handlers{Records: repo, Log: fakeLog{}}
+	req := GetAllDnsRecordsRequest{Limit: 25, Offset: 10, Filter: "ads", Source: "EasyList"}
+
+	w := (&harness{t: t}).postJSON("/api/dns-records", h.GetAllDnsRecords, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+	want := blocked_domain_db.GetAllParams{Limit: 25, Offset: 10, Filter: "ads", Source: "EasyList"}
+	if repo.got != want {
+		t.Fatalf("filter = %+v, want %+v", repo.got, want)
+	}
+	var response GetAllDnsRecordsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if response.Total != 1 || len(response.List) != 1 || response.List[0].Url != "ads.example." {
+		t.Fatalf("response = %+v", response)
+	}
+}
+
+func TestGetAllDnsRecords_ReaderErrorReturns500(t *testing.T) {
+	h := &Handlers{Records: &fakeRecordsRepo{err: errors.New("db down")}, Log: fakeLog{}}
+	w := (&harness{t: t}).postJSON("/api/dns-records", h.GetAllDnsRecords, GetAllDnsRecordsRequest{})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", w.Code)
+	}
+}
+
+func TestCreateDnsRecords_StorageErrorSkipsRefresh(t *testing.T) {
+	creator := &fakeCreateRepo{createErr: errors.New("db down")}
+	refresh := &refreshSpy{}
+	h := &Handlers{
+		Creator: creator,
+		Log:     fakeLog{},
+		RefreshFilter: func() error {
+			refresh.calls++
+			return nil
+		},
+	}
+
+	w := (&harness{t: t}).postJSON("/api/dns-records/create", h.CreateDnsRecords, create_domain.RequestBody{Domain: "Ads.Example"})
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", w.Code)
+	}
+	if creator.domain != "ads.example." || creator.source != "User" {
+		t.Fatalf("create args = domain %q source %q", creator.domain, creator.source)
+	}
+	if refresh.calls != 0 {
+		t.Fatalf("refresh calls = %d, want 0", refresh.calls)
+	}
+}
+
+func TestChangeDnsRecordActive_RepoFailuresSkipRefresh(t *testing.T) {
+	boom := errors.New("db down")
+	for _, tc := range []struct {
+		name        string
+		repo        *fakeUpdateRepo
+		wantUpdated bool
+	}{
+		{name: "get", repo: &fakeUpdateRepo{getErr: boom}},
+		{name: "update", repo: &fakeUpdateRepo{record: &blocked_domain_db.BlockList{}, updateErr: boom}, wantUpdated: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			refresh := &refreshSpy{}
+			h := &Handlers{
+				Updater: tc.repo,
+				Log:     fakeLog{},
+				RefreshFilter: func() error {
+					refresh.calls++
+					return nil
+				},
+			}
+
+			w := (&harness{t: t}).postJSON("/api/dns-records/update", h.ChangeDnsRecordActive,
+				update_dns_record.UpdateBlockList{ID: 9, Active: true})
+
+			if w.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500", w.Code)
+			}
+			if tc.repo.gotID != 9 {
+				t.Fatalf("GetByID arg = %d, want 9", tc.repo.gotID)
+			}
+			if tc.wantUpdated && (tc.repo.updated == nil || !tc.repo.updated.Active) {
+				t.Fatalf("updated record = %+v, want Active=true", tc.repo.updated)
+			}
+			if refresh.calls != 0 {
+				t.Fatalf("refresh calls = %d, want 0", refresh.calls)
+			}
+		})
 	}
 }

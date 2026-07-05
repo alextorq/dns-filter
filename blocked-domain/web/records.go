@@ -27,11 +27,18 @@ type BlockStatsRepo interface {
 	BlockedTotalCount() (int64, error)
 }
 
+// RecordsRepo is the read-only port used by the block-list page.
+type RecordsRepo interface {
+	GetRecordsByFilter(filter blocked_domain_db.GetAllParams) (blocked_domain_db.GetRecordsResult, error)
+}
+
 // Handlers groups the blocked-domain HTTP endpoints with their dependencies.
 // Construct one at the composition root and reuse it across route
 // registrations; do not call package-level helpers.
 type Handlers struct {
-	Repo          *blocked_domain_db.Repo
+	Records       RecordsRepo
+	Creator       create_domain.Repo
+	Updater       update_dns_record.Repo
 	Log           Logger
 	RefreshFilter func() error
 	// BlockStats backs the /api/events/block/* stats endpoints. Injected
@@ -59,7 +66,7 @@ func (h *Handlers) GetAllDnsRecords(c *gin.Context) {
 		return
 	}
 
-	res, err := h.Repo.GetRecordsByFilter(blocked_domain_db.GetAllParams{
+	res, err := h.Records.GetRecordsByFilter(blocked_domain_db.GetAllParams{
 		Limit:  req.Limit,
 		Offset: req.Offset,
 		Filter: req.Filter,
@@ -96,7 +103,7 @@ func (h *Handlers) CreateDnsRecords(c *gin.Context) {
 	}
 
 	err := create_domain.CreateDomain(
-		create_domain.Deps{Repo: h.Repo, Log: h.Log},
+		create_domain.Deps{Repo: h.Creator, Log: h.Log},
 		create_domain.RequestBody{
 			Domain: req.Domain,
 			Source: syncDb.SourceUser.String(),
@@ -141,7 +148,7 @@ func (h *Handlers) ChangeDnsRecordActive(c *gin.Context) {
 	}
 
 	record, err := update_dns_record.UpdateDnsRecord(
-		update_dns_record.Deps{Repo: h.Repo, Log: h.Log},
+		update_dns_record.Deps{Repo: h.Updater, Log: h.Log},
 		updateData,
 	)
 	if err != nil {

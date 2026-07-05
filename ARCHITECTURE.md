@@ -237,6 +237,7 @@ The refresh context is *not* tied to the client's — the client already got a s
 
 - Every feature, including `domain-inspect`, exposes `RegisterRoutes` on an injected `*Handlers` value.
 - `source/web.Handlers` depends on its own narrow `SourceRepo` port (`GetAll`, `Amount`, `GetByID`, `Update`) rather than the concrete SQLite adapter; handler behavior and failure ordering are tested with DB-free fakes.
+- `blocked-domain/web.Handlers` splits persistence by operation: the list endpoint receives a read-only `RecordsRepo`, while create and update delegate through the existing use-case-owned `create-domain.Repo` and `update-dns-record.Repo` ports. The composition root may inject one adapter into all three slots without exposing its full API to any consumer.
 - `domain-inspect/web.Handlers` receives the check-catalog factory and logger explicitly. `local_stats` receives block-list and traffic readers explicitly too and canonicalizes the UI hostname to the stored FQDN form before both local lookups. URLScan captures its env-only key through `NewURLScan`; VT/SB checks share an injected, runtime-updatable `checks.Credentials` instance.
 - `auth/web` additionally exposes `RegisterPublic(r gin.IRouter)`, which mounts `POST /api/auth/login` outside its `RequireAuth()` middleware; protected auth routes use `RegisterRoutes(rg)`.
 

@@ -286,6 +286,16 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   ошибки get/update/block/filter и обязательный порядок
   `source update → block rows → filter refresh`.
 
+### Этап 10.2 — узкие порты в `blocked-domain/web`
+
+- Concrete `*blocked-domain/db.Repo` удалён из `Handlers`: чтение списка идёт
+  через consumer-owned `RecordsRepo`, create/update — через уже существующие
+  порты соответствующих use-case'ов.
+- `main` остаётся composition root и передаёт один production adapter в три
+  независимых слота без расширения контрактов потребителей.
+- DB-free handler-тесты проверяют передачу фильтра и storage error paths;
+  SQLite integration-тесты сохраняют проверку успешных create/update сценариев.
+
 ---
 
 ## Кандидат на следующий рефакторинг

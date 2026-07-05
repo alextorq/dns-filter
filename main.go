@@ -6,7 +6,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	authBusiness "github.com/alextorq/dns-filter/auth/business"
@@ -85,6 +87,14 @@ type syncLogger interface {
 	Error(err error)
 }
 
+// reportHTTPServerError suppresses the expected Shutdown result and surfaces
+// every real listener/runtime failure through the application logger.
+func reportHTTPServerError(err error, log syncLogger) {
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Error(fmt.Errorf("HTTP server stopped: %w", err))
+	}
+}
+
 // Retry backoff for the startup source sync: a failed sync (typically no
 // network on first boot) is retried with exponential backoff so the sinkhole
 // eventually loads its block lists without a process restart. The delay starts
@@ -103,28 +113,62 @@ const (
 // take down a DNS server that is already answering traffic. A failed sync is
 // retried with exponential backoff (see syncRetryBaseDelay) until it succeeds;
 // in the meantime the server keeps running on whatever the DB already held.
-func backgroundSync(sync, refresh func() error, log syncLogger) {
-	runBackgroundSync(sync, refresh, log, time.Sleep)
+func backgroundSync(ctx context.Context, sync func(context.Context) error, refresh func() error, log syncLogger) {
+	runBackgroundSync(ctx, sync, refresh, log, waitForRetry)
 }
 
-// runBackgroundSync is backgroundSync with an injectable sleep so the retry
-// backoff is testable without real-time delays.
-func runBackgroundSync(sync, refresh func() error, log syncLogger, sleep func(time.Duration)) {
+// waitForRetry blocks for d or returns promptly when the application context is
+// canceled. A timer (rather than time.Sleep) keeps shutdown from waiting out a
+// potentially 30-minute retry delay.
+func waitForRetry(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// runBackgroundSync is backgroundSync with an injectable wait so retry
+// behavior is testable without real-time delays.
+func runBackgroundSync(
+	ctx context.Context,
+	sync func(context.Context) error,
+	refresh func() error,
+	log syncLogger,
+	wait func(context.Context, time.Duration) error,
+) {
+	if ctx.Err() != nil {
+		return
+	}
 	log.Info("Фоновая синхронизация источников запущена")
 
 	delay := syncRetryBaseDelay
 	for attempt := 1; ; attempt++ {
-		err := sync()
+		err := sync(ctx)
 		if err == nil {
 			break
 		}
+		if ctx.Err() != nil {
+			return
+		}
 		log.Error(fmt.Errorf("фоновая синхронизация источников не удалась (попытка %d), повтор через %s: %w", attempt, delay, err))
-		sleep(delay)
+		if err := wait(ctx, delay); err != nil {
+			return
+		}
 		delay = min(delay*2, syncRetryMaxDelay)
 	}
 
+	if ctx.Err() != nil {
+		return
+	}
 	if err := refresh(); err != nil {
 		log.Error(fmt.Errorf("обновление фильтра после фоновой синхронизации не удалось: %w", err))
+		return
+	}
+	if ctx.Err() != nil {
 		return
 	}
 	log.Info("Фоновая синхронизация источников завершена, фильтр обновлён")
@@ -182,6 +226,7 @@ func main() {
 	localStatsCheck := domain_inspect_checks.NewLocalStats(blockRepo, trafficRepo)
 	urlScanCheck := domain_inspect_checks.NewURLScan(conf.URLScanKey)
 	inspectCredentials := domain_inspect_checks.NewCredentials()
+	inspectEnabled := suggest_inspect.NewEnabledState()
 	virusTotalCheck := domain_inspect_checks.NewVirusTotal(inspectCredentials)
 	safeBrowsingCheck := domain_inspect_checks.NewSafeBrowsing(inspectCredentials)
 	inspectChecks := func() map[string]domain_inspect.CheckFunc {
@@ -197,7 +242,7 @@ func main() {
 	// (suggest_inspect_enabled) и API-ключи (virustotal_key, safebrowsing_key)
 	// теперь — DB-настройки и могут включаться/выключаться без рестарта.
 	//
-	// inspectGate композирует два сигнала: мастер-тогл фичи (suggest_inspect.IsEnabled)
+	// inspectGate композирует два сигнала: внедрённый мастер-тогл фичи
 	// И наличие хотя бы одного провайдер-ключа (inspectCredentials.HasAnyKey). Без ключа
 	// RDAP/urlscan/dns_resolve всё равно стучатся наружу за каждым кандидатом
 	// и сливают наблюдённые домены LAN в публичные сервисы, а VT/SB отдают
@@ -206,11 +251,11 @@ func main() {
 	// suggestModule.Collect (отказ маршрутизировать в очередь).
 	//
 	// Запуск горутин suggest/inspect перенесён ниже HydrateAll, чтобы оба
-	// атомика уже соответствовали БД-override до первого тика; иначе zero-value
+	// runtime-состояния уже соответствовали БД-override до первого тика; иначе zero-value
 	// gate (false) погасил бы первый Collect/RunOnce даже при включённой фиче.
 	inspectRepo := inspect_db.NewRepo(conn)
 	suggestModule.SetInspectQueue(inspectRepo)
-	inspectGate := func() bool { return suggest_inspect.IsEnabled() && inspectCredentials.HasAnyKey() }
+	inspectGate := func() bool { return inspectEnabled.Enabled() && inspectCredentials.HasAnyKey() }
 	suggestModule.SetInspectGate(inspectGate)
 	inspectAdapter := suggest_inspect.NewAdapter(inspectRepo, conf.SuggestInspectCacheTTL, suggest_inspect.ProviderChecks{
 		VirusTotal:   virusTotalCheck,
@@ -260,6 +305,7 @@ func main() {
 	// bounds DISTINCT aggregation keys held in RAM between flushes, not raw
 	// events, so it can be sized generously.
 	trafficWorker := traffic_record_uc.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
+	trafficRetention := traffic_prune_uc.NewRetentionState()
 
 	// Reloadable upstream: constructed from env defaults, then re-pointed by the
 	// settings hydrate below if a DB override exists. The same instance backs
@@ -292,7 +338,9 @@ func main() {
 		resolver:           resolver,
 		cache:              cacheWithMetric,
 		dnsServer:          dnsServer,
+		inspectEnabled:     inspectEnabled,
 		inspectCredentials: inspectCredentials,
+		trafficRetention:   trafficRetention,
 	})
 	filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
 	if err := filter.RestoreState(settingsRepo, conf); err != nil {
@@ -323,8 +371,8 @@ func main() {
 	// dynamic setting; the loop reads its atomic fresh each tick, so a UI change
 	// applies on the next prune. Launched AFTER HydrateAll so the very first
 	// (immediate) prune already sees the effective window — otherwise it could
-	// hard-delete rows using the pre-hydrate seed (see traffic_prune.retentionDays).
-	go traffic_prune_uc.Run(backgroundCtx, trafficRepo, chanLogger)
+	// hard-delete rows using the pre-hydrate seed (see traffic_prune.RetentionState).
+	go traffic_prune_uc.Run(backgroundCtx, trafficRepo, trafficRetention, chanLogger)
 
 	// Pull the block lists in the background and refresh the filter once done.
 	// The DNS server (started below via dnsServer.Serve) does not wait on this.
@@ -333,9 +381,9 @@ func main() {
 	// races ahead of hydrate and prints even when the level was raised to WARN,
 	// while the matching "finished" line (logged later, post-hydrate) is
 	// suppressed, making a healthy sync look stuck.
-	go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
+	go backgroundSync(backgroundCtx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
-	web.CreateServer(web.Handlers{
+	httpServer := web.NewServer(":8080", web.Handlers{
 		Auth: &authWeb.Handlers{
 			Service:        authModule,
 			CookieSecure:   conf.CookieSecure,
@@ -388,6 +436,9 @@ func main() {
 		// MAC→hostname table (empty in public mode, where no collector runs).
 		Traffic: trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, hostnamesRepo.AllAsMap, chanLogger),
 	})
+	go func() {
+		reportHTTPServerError(httpServer.ListenAndServe(), chanLogger)
+	}()
 
 	if err := dnsServer.Serve(); err != nil {
 		panic(err)

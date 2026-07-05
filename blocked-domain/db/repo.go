@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 
 	create_domain "github.com/alextorq/dns-filter/blocked-domain/business/use-cases/create-domain"
@@ -150,6 +151,13 @@ func (r *Repo) UpdateBlockList(rec *BlockList) error {
 }
 
 func (r *Repo) CreateDNSRecordsByDomains(urls []string, source string) error {
+	return r.CreateDNSRecordsByDomainsContext(context.Background(), urls, source)
+}
+
+// CreateDNSRecordsByDomainsContext is the source-sync write path. The explicit
+// context reaches every GORM batch so shutdown can interrupt a large import.
+// The context-free wrapper is retained for non-lifecycle callers and tests.
+func (r *Repo) CreateDNSRecordsByDomainsContext(ctx context.Context, urls []string, source string) error {
 	if len(urls) == 0 {
 		return nil
 	}
@@ -161,7 +169,7 @@ func (r *Repo) CreateDNSRecordsByDomains(urls []string, source string) error {
 	// SQLite parameter limit is 32766 (3.32+). BlockList writes 7 columns
 	// (id, created_at, updated_at, deleted_at, url, active, source) — 5000
 	// rows × 7 ≈ 35k. 4000 keeps headroom.
-	return db.BatchUpsertOn(r.db, entries, 4000)
+	return db.BatchUpsertOn(r.db.WithContext(ctx), entries, 4000)
 }
 
 // idURL is a lightweight projection of (block_lists.id, block_lists.url) for
@@ -189,6 +197,13 @@ const staleDeleteBatch = 4000
 // blow past SQLite's bound-parameter limit) and removed in batches inside one
 // transaction.
 func (r *Repo) DeleteDNSRecordsBySourceNotIn(source string, keep []string) error {
+	return r.DeleteDNSRecordsBySourceNotInContext(context.Background(), source, keep)
+}
+
+// DeleteDNSRecordsBySourceNotInContext is the cancelable source-sync prune
+// path. WithContext propagates cancellation into the initial read and every
+// delete batch in the transaction.
+func (r *Repo) DeleteDNSRecordsBySourceNotInContext(ctx context.Context, source string, keep []string) error {
 	if len(keep) == 0 {
 		return nil
 	}
@@ -198,7 +213,7 @@ func (r *Repo) DeleteDNSRecordsBySourceNotIn(source string, keep []string) error
 	}
 
 	var rows []idURL
-	if err := r.db.Model(&BlockList{}).
+	if err := r.db.WithContext(ctx).Model(&BlockList{}).
 		Where("source = ?", source).
 		Select("id", "url").Find(&rows).Error; err != nil {
 		return err
@@ -214,7 +229,7 @@ func (r *Repo) DeleteDNSRecordsBySourceNotIn(source string, keep []string) error
 		return nil
 	}
 
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for i := 0; i < len(staleIDs); i += staleDeleteBatch {
 			batch := staleIDs[i:min(i+staleDeleteBatch, len(staleIDs))]
 			if err := tx.Unscoped().

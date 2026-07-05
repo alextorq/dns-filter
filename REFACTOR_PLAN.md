@@ -6,7 +6,7 @@
 
 ---
 
-## Архитектура сейчас (после allow-domain DI)
+## Архитектура сейчас (после core DI и unified traffic)
 
 DNS-фильтр — single-binary Go-сервис: DNS на `:53` (UDP+TCP), HTTP API на
 `:8080`, опциональные Prometheus-метрики на `:2112`. SQLite через GORM.
@@ -17,17 +17,18 @@ DNS-фильтр — single-binary Go-сервис: DNS на `:53` (UDP+TCP), HT
 ```
 main.go
 ├── *gorm.DB ─────┬─ blocked_domain_db.NewRepo(conn) ── blockRepo
-│                 ├─ allow_domain_db.NewRepo(conn) ──── allowRepo
+│                 ├─ traffic_db.NewRepo(conn) ───────── trafficRepo
 │                 ├─ source_db.NewRepo(conn) ────────── sourceRepo
-│                 └─ suggest_to_block_db.NewRepo(conn)  suggestRepo
+│                 ├─ suggest_to_block_db.NewRepo(conn)  suggestRepo
+│                 └─ settings_db.NewRepo(conn) ───────── settingsRepo
 │
 ├── filter.NewModule(blockRepo, bloom, cache, conf, log)  → filterModule
 ├── source.NewModule(sourceRepo, blockRepo, log)          → sourceModule
-└── suggest_to_block.NewModule(blockRepo, allowRepo,
+└── suggest_to_block.NewModule(blockRepo, trafficAllowAdapter,
         sourceRepo, filterModule, suggestRepo, log)       → suggestModule
                             │
                             ├── dns.NewServer(ServerDeps{Filter: filterModule.CheckExist, ...})
-                            └── web.CreateServer(web.Handlers{
+                            └── web.NewServer(":8080", web.Handlers{
                                     Blocked, Filter, Suggest, Source})
 ```
 
@@ -38,8 +39,9 @@ structural typing — «accept interfaces, return structs». Тесты use-case
 in-memory `:memory:`-sqlite.
 
 **HTTP-handlers** — структуры с полями-зависимостями
-(`*/web.Handlers{Repo, Module, Filter, Log, …}`). `web.CreateServer`
-принимает их пакетом и не читает singleton'ов.
+(`*/web.Handlers{Repo, Module, Filter, Log, …}`). `web.NewServer` принимает
+их пакетом, не читает singleton'ов и не открывает listener; server lifecycle
+принадлежит `main`.
 
 **DNS hot path** — `Module.CheckExist`:
 1. `Conf.Enabled.Load()` (atomic) — глобальный toggle.
@@ -213,6 +215,45 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 **Документация:** `CLAUDE.md` (раздел Cross-cutting conventions),
 `ARCHITECTURE.md` (раздел 9 Web API) — описывают self-routing-контракт.
 
+### Этап 5 — runtime state принадлежит composition root
+
+- `suggest_inspect_enabled` больше не хранится в package-level atomic:
+  `main` создаёт один `suggest_inspect.EnabledState`, settings Apply пишет в
+  него, а gates воркера и suggest-модуля читают тот же экземпляр.
+- `traffic_retention_days` переведён с package-level atomic на
+  `traffic_prune.RetentionState`. Один экземпляр передаётся одновременно в
+  settings Apply и `traffic_prune.Run`; zero value `0` сохраняет защиту от
+  удаления данных до `HydrateAll`.
+- Для обоих состояний есть тесты независимости экземпляров и wiring-тесты
+  `HydrateAll`/runtime Apply. Каждый подпункт прошёл отдельное ревью и полный
+  `go test -race ./...`.
+
+### Этап 6 — source sync принимает context
+
+- `context.Context` проброшен через `backgroundSync` → `source.Module.Sync` →
+  use-case `sync.Sync` → EasyList/hosts loaders.
+- HTTP-запросы создаются через `http.NewRequestWithContext`; cancellation не
+  логируется как сетевая ошибка и не запускает add/prune/refresh.
+- Loader-facing parsers возвращают `scanner.Err`, поэтому отменённый или
+  оборванный streaming body не считается успешным partial-списком.
+- Source write-порт использует context-aware методы репозитория; GORM получает
+  `WithContext(ctx)` для insert/delete batches, а prune проверяет cancellation
+  между источниками.
+- Exponential backoff использует отменяемый timer вместо `time.Sleep`, поэтому
+  будущий signal-derived application context не будет ждать до 30 минут.
+- Тесты закрепляют отмену обоих HTTP-loader'ов, pre-canceled Sync, cancellation
+  во время sync и backoff. Пока `main` передаёт `context.Background()`; реальная
+  остановка по сигналу подключается следующим lifecycle-этапом.
+
+### Этап 7 — HTTP server принадлежит composition root
+
+- `web.NewServer(addr, handlers)` только строит `*http.Server` и не открывает
+  listener: пакет `web` больше не запускает скрытую горутину.
+- `main` явно вызывает `ListenAndServe`; `http.ErrServerClosed` считается
+  штатным результатом, остальные bind/runtime errors логируются.
+- Возвращённый handle готов для подключения `Shutdown(ctx)` в общем lifecycle.
+  Тест закрепляет адрес, тип handler и полный route snapshot без открытия порта.
+
 ---
 
 ## Кандидат на следующий рефакторинг
@@ -227,15 +268,14 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 
 ### Что сейчас плохо
 
-- `web.CreateServer` запускает `r.Run(":8080")` в горутине и не
-  возвращает `*http.Server`. `Shutdown(ctx)` позвать неоткуда.
+- `main` уже владеет `*http.Server` и явно запускает `ListenAndServe`, но пока
+  не вызывает `Shutdown(ctx)` и не связывает HTTP runtime error с завершением
+  всего приложения.
 - `dnsServer.Serve()` блокирует main, но `s.Shutdown()` (есть в
   `dns/server.go:279`) никем не вызывается.
-- `suggestModule.Start(context.Background())` — фоновый ticker. Даже когда
-  ctx будет реальный, текущая реализация гасит loop по `ctx.Done()`, но
-  in-flight `Collect()` (HTTP-запросы к источникам через `easy-list`,
-  upsert в DB) **не прерывается** — `easy_list.LoadFromURL` использует
-  свой `http.Get` без context.
+- Source sync pipeline уже принимает context и имеет отменяемый retry, но
+  composition root пока передаёт `context.Background()`. До подключения
+  signal-derived application context отмена на SIGTERM фактически не сработает.
 - `TrafficEventStore.Stop(ctx)` уже останавливает admission, дожидается
   конкурентных senders, дренирует FIFO и делает финальный flush. Метод
   идемпотентен и безопасен для конкурентных вызовов. Осталось вызвать его из
@@ -246,11 +286,10 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 
 ### Порядок шагов
 
-1. **HTTP — `web.CreateServer` возвращает `*http.Server`**
-   - Заменить `go r.Run(":8080")` на `srv := &http.Server{Addr: ":8080", Handler: r}`
-     и `go srv.ListenAndServe()`. Сигнатура: `func CreateServer(h Handlers) *http.Server`.
-   - В main: `httpSrv := web.CreateServer(...)`, дальше при сигнале —
-     `httpSrv.Shutdown(ctx)`.
+1. **HTTP handle и явный запуск — готово**
+   - `web.NewServer(addr, handlers)` возвращает `*http.Server` без side effects.
+   - `main` владеет handle, запускает `ListenAndServe` и логирует неожиданные
+     ошибки. В общем lifecycle осталось вызвать `Shutdown(ctx)`.
 
 2. **Сигналы — `signal.NotifyContext` в main**
    ```go
@@ -272,13 +311,11 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
      вызвать его после `dnsServer.Shutdown()` — это гарантирует, что новые DNS
      verdicts больше не придут до финального flush.
 
-5. **`source.LoadAndParseActiveSources` — context для HTTP**
-   - `easy_list.LoadFromURL` и `LoadHostsFromURL` сейчас используют
-     `http.Get`. Перевести на `http.NewRequestWithContext(ctx, ...)` →
-     `client.Do(req)`. На SIGTERM при первом старте Sync() прервётся
-     корректно, не висит на 30-секундном таймауте.
-   - `suggestModule.Start(ctx)` — пробросить ctx в `Collect`, оттуда — в
-     те же loaders. Сейчас `Collect()` без ctx, нужно расширить сигнатуру.
+5. **`source.LoadAndParseActiveSources` — context для HTTP — готово**
+   - Context проброшен через `source.Module.Sync` и use-case `sync.Sync` в оба
+     loader'а; `suggestModule.Collect` эти loader'ы не вызывает.
+   - `backgroundSync` использует отменяемый timer/select и не делает refresh
+     или success-log после cancellation.
 
 6. **Главный блок shutdown в main**
    ```go
@@ -293,15 +330,15 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 
 ### Тесты
 
-- HTTP: `TestCreateServer_GracefulShutdown_DrainsInFlightRequest` —
+- HTTP: `TestNewServer_GracefulShutdown_DrainsInFlightRequest` —
   стартуем сервер на ephemeral port, открываем HTTP-запрос с медленным
   handler'ом, отправляем SIGTERM, проверяем что запрос дошёл до конца с
   200 OK (а не получил RST).
 - DNS: аналог через UDP/TCP — медленный upstream, проверяем что
   in-flight запрос завершается.
-- Worker: `TestTrafficEventStore_StopFlushesBuffer` — наполняем
-  буфер ниже capacity, вызываем `Stop(ctx)`, проверяем что репо получил
-  все агрегированные verdicts.
+- Worker: финальный flush уже закреплён тестом
+  `TestStopFlushesBufferedEvents`; дублировать его не нужно, достаточно
+  lifecycle-теста порядка «DNS drain → TrafficEventStore.Stop».
 
 ---
 

@@ -72,12 +72,33 @@ var expectedRoutes = []string{
 	"POST /api/suggest-to-block/change-status",
 }
 
+func TestNewServer_BuildsConfiguredServerWithoutListening(t *testing.T) {
+	const addr = "127.0.0.1:0"
+	srv := NewServer(addr, testHandlers())
+
+	if srv.Addr != addr {
+		t.Fatalf("Addr = %q, want %q", srv.Addr, addr)
+	}
+	router, ok := srv.Handler.(*gin.Engine)
+	if !ok {
+		t.Fatalf("Handler type = %T, want *gin.Engine", srv.Handler)
+	}
+	if got, want := collectRoutes(router), sortedRoutes(expectedRoutes); !reflect.DeepEqual(got, want) {
+		t.Fatalf("routes = %v, want %v", got, want)
+	}
+}
+
+func sortedRoutes(routes []string) []string {
+	out := append([]string(nil), routes...)
+	sort.Strings(out)
+	return out
+}
+
 func TestBuildRouter_RegistersAllExpectedRoutes(t *testing.T) {
 	r := buildRouter(testHandlers())
 
 	got := collectRoutes(r)
-	want := append([]string(nil), expectedRoutes...)
-	sort.Strings(want)
+	want := sortedRoutes(expectedRoutes)
 
 	if !reflect.DeepEqual(got, want) {
 		missing, extra := diffRoutes(want, got)

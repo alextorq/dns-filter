@@ -21,7 +21,9 @@ func wiringDepsForRegister(c *config.Config) dynamicSettingsDeps {
 	return dynamicSettingsDeps{
 		conf:               c,
 		logr:               logger.GetLogger(),
+		inspectEnabled:     suggest_inspect.NewEnabledState(),
 		inspectCredentials: checks.NewCredentials(),
+		trafficRetention:   traffic_prune.NewRetentionState(),
 	}
 }
 
@@ -40,7 +42,7 @@ func (f *fakeSettingsRepo) Delete(key string) error     { delete(f.data, key); r
 // The descriptor's Validate must accept sane windows and reject 0, negatives,
 // and the upper-bound + 1 — the same bounds as ValidateIntRange(1, 3650).
 func TestTrafficRetentionSetting_ValidateBounds(t *testing.T) {
-	s := trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30})
+	s := trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30}, traffic_prune.NewRetentionState())
 
 	for _, ok := range []string{"30", "1", "3650"} {
 		if err := s.Validate(ok); err != nil {
@@ -56,7 +58,7 @@ func TestTrafficRetentionSetting_ValidateBounds(t *testing.T) {
 
 // The env/compiled default is sourced from config.TrafficRetentionDays.
 func TestTrafficRetentionSetting_DefaultFromConfig(t *testing.T) {
-	s := trafficRetentionSetting(&config.Config{TrafficRetentionDays: 45})
+	s := trafficRetentionSetting(&config.Config{TrafficRetentionDays: 45}, traffic_prune.NewRetentionState())
 	if s.Default != "45" {
 		t.Errorf("Default = %q, want 45 (sourced from config)", s.Default)
 	}
@@ -65,10 +67,11 @@ func TestTrafficRetentionSetting_DefaultFromConfig(t *testing.T) {
 // Persist+apply round-trip: Set validates, persists, then runs Apply, which
 // must write the prune atomic so the next prune tick reads the new value.
 func TestTrafficRetentionSetting_SetWritesAtomic(t *testing.T) {
-	traffic_prune.SetRetentionDays(30)
+	state := traffic_prune.NewRetentionState()
+	state.Set(30)
 	repo := newFakeSettingsRepo()
 	m := settings.NewModule(repo)
-	m.Register(trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30}))
+	m.Register(trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30}, state))
 
 	if err := m.Set("traffic_retention_days", "7"); err != nil {
 		t.Fatalf("set: %v", err)
@@ -76,17 +79,18 @@ func TestTrafficRetentionSetting_SetWritesAtomic(t *testing.T) {
 	if repo.data["traffic_retention_days"] != "7" {
 		t.Errorf("expected 7 persisted, got %q", repo.data["traffic_retention_days"])
 	}
-	if got := traffic_prune.GetRetentionDays(); got != 7 {
+	if got := state.Days(); got != 7 {
 		t.Errorf("Apply must write the prune atomic, got %d want 7", got)
 	}
 }
 
 // An invalid value must be neither persisted nor applied to the atomic.
 func TestTrafficRetentionSetting_SetInvalid_NotAppliedNotPersisted(t *testing.T) {
-	traffic_prune.SetRetentionDays(30)
+	state := traffic_prune.NewRetentionState()
+	state.Set(30)
 	repo := newFakeSettingsRepo()
 	m := settings.NewModule(repo)
-	m.Register(trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30}))
+	m.Register(trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30}, state))
 
 	if err := m.Set("traffic_retention_days", "0"); err == nil {
 		t.Fatal("expected 0 to be rejected")
@@ -94,38 +98,40 @@ func TestTrafficRetentionSetting_SetInvalid_NotAppliedNotPersisted(t *testing.T)
 	if _, ok := repo.data["traffic_retention_days"]; ok {
 		t.Error("invalid value must not be persisted")
 	}
-	if got := traffic_prune.GetRetentionDays(); got != 30 {
+	if got := state.Days(); got != 30 {
 		t.Errorf("invalid value must not touch the atomic, got %d want 30", got)
 	}
 }
 
 // HydrateAll at boot must apply the DB override over the env default.
 func TestTrafficRetentionSetting_HydrateDBOverridesEnv(t *testing.T) {
-	traffic_prune.SetRetentionDays(999) // poison so we can prove hydrate wrote it
+	state := traffic_prune.NewRetentionState()
+	state.Set(999) // poison so we can prove hydrate wrote it
 	repo := newFakeSettingsRepo()
 	repo.data["traffic_retention_days"] = "60" // operator override
 	m := settings.NewModule(repo)
-	m.Register(trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30})) // env default 30
+	m.Register(trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30}, state)) // env default 30
 
 	if err := m.HydrateAll(); err != nil {
 		t.Fatalf("hydrate: %v", err)
 	}
-	if got := traffic_prune.GetRetentionDays(); got != 60 {
+	if got := state.Days(); got != 60 {
 		t.Errorf("hydrate must apply DB override 60 over env default 30, got %d", got)
 	}
 }
 
 // HydrateAll with no override applies the env/compiled default.
 func TestTrafficRetentionSetting_HydrateFallsBackToEnvDefault(t *testing.T) {
-	traffic_prune.SetRetentionDays(999)
+	state := traffic_prune.NewRetentionState()
+	state.Set(999)
 	repo := newFakeSettingsRepo() // empty: no override
 	m := settings.NewModule(repo)
-	m.Register(trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30}))
+	m.Register(trafficRetentionSetting(&config.Config{TrafficRetentionDays: 30}, state))
 
 	if err := m.HydrateAll(); err != nil {
 		t.Fatalf("hydrate: %v", err)
 	}
-	if got := traffic_prune.GetRetentionDays(); got != 30 {
+	if got := state.Days(); got != 30 {
 		t.Errorf("hydrate must apply env default 30 when no override, got %d", got)
 	}
 }
@@ -286,30 +292,27 @@ func TestVTSBSecrets_SetRoundTrip(t *testing.T) {
 	}
 }
 
-// === suggest_inspect_enabled Apply пишет в атомик =============================
+// === suggest_inspect_enabled Apply пишет во внедрённое состояние =============
 
-// Set прокачивает атомик пакета inspect: иначе UI-тогл изменит БД, но воркер
+// Set прокачивает внедрённое состояние: иначе UI-тогл изменит БД, но воркер
 // продолжит работать (или, наоборот, останется выключенным).
-func TestSuggestInspectEnabled_ApplyWritesAtomic(t *testing.T) {
-	// Запоминаем исходное, чтобы не протекать состояние между тестами.
-	prev := suggest_inspect.IsEnabled()
-	t.Cleanup(func() { suggest_inspect.SetEnabled(prev) })
-
+func TestSuggestInspectEnabled_ApplyWritesInjectedState(t *testing.T) {
 	repo := newFakeSettingsRepo()
 	m := settings.NewModule(repo)
-	registerDynamicSettings(m, wiringDepsForRegister(&config.Config{}))
+	deps := wiringDepsForRegister(&config.Config{})
+	registerDynamicSettings(m, deps)
 
 	if err := m.Set("suggest_inspect_enabled", "true"); err != nil {
 		t.Fatalf("set true: %v", err)
 	}
-	if !suggest_inspect.IsEnabled() {
-		t.Error("после Set true атомик должен быть true")
+	if !deps.inspectEnabled.Enabled() {
+		t.Error("после Set true внедрённое состояние должно быть true")
 	}
 
 	if err := m.Set("suggest_inspect_enabled", "false"); err != nil {
 		t.Fatalf("set false: %v", err)
 	}
-	if suggest_inspect.IsEnabled() {
-		t.Error("после Set false атомик должен быть false")
+	if deps.inspectEnabled.Enabled() {
+		t.Error("после Set false внедрённое состояние должно быть false")
 	}
 }

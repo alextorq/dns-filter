@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -408,6 +409,20 @@ func TestRepo_CreateDNSRecordsByDomains(t *testing.T) {
 	})
 }
 
+func TestRepo_CreateDNSRecordsByDomainsContext_PreCanceledDoesNotWrite(t *testing.T) {
+	r := newTestRepo(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := r.CreateDNSRecordsByDomainsContext(ctx, []string{"a.example"}, "src")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if n := countBlockList(t, r); n != 0 {
+		t.Fatalf("rows = %d, want 0 after canceled create", n)
+	}
+}
+
 // ----- DeleteDNSRecordsBySourceNotIn -----
 
 func countBlockList(t *testing.T, r *Repo) int64 {
@@ -558,6 +573,23 @@ func TestRepo_DeleteDNSRecordsBySourceNotIn(t *testing.T) {
 			t.Errorf("got %d rows after large prune, want 1", got)
 		}
 	})
+}
+
+func TestRepo_DeleteDNSRecordsBySourceNotInContext_PreCanceledDoesNotDelete(t *testing.T) {
+	r := newTestRepo(t)
+	if err := r.CreateDNSRecordsByDomains([]string{"keep.example", "gone.example"}, "src"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := r.DeleteDNSRecordsBySourceNotInContext(ctx, "src", []string{"keep.example"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if n := countBlockList(t, r); n != 2 {
+		t.Fatalf("rows = %d, want 2 after canceled delete", n)
+	}
 }
 
 // ----- ChangeRecordStatusBySource -----

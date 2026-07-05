@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"sort"
@@ -17,17 +18,25 @@ type recordedDelete struct {
 // fakeBlockWriter records DeleteDNSRecordsBySourceNotIn calls so prune logic
 // can be asserted without a real DB.
 type fakeBlockWriter struct {
-	deletes []recordedDelete
-	delErr  error
+	creates  int
+	deletes  []recordedDelete
+	delErr   error
+	onDelete func()
 }
 
-func (f *fakeBlockWriter) CreateDNSRecordsByDomains(_ []string, _ string) error { return nil }
+func (f *fakeBlockWriter) CreateDNSRecordsByDomainsContext(context.Context, []string, string) error {
+	f.creates++
+	return nil
+}
 
-func (f *fakeBlockWriter) DeleteDNSRecordsBySourceNotIn(source string, keep []string) error {
+func (f *fakeBlockWriter) DeleteDNSRecordsBySourceNotInContext(_ context.Context, source string, keep []string) error {
 	if f.delErr != nil {
 		return f.delErr
 	}
 	f.deletes = append(f.deletes, recordedDelete{source: source, keep: append([]string(nil), keep...)})
+	if f.onDelete != nil {
+		f.onDelete()
+	}
 	return nil
 }
 
@@ -35,6 +44,28 @@ type silentLogger struct{}
 
 func (silentLogger) Debug(_ ...any) {}
 func (silentLogger) Error(_ error)  {}
+
+type fakeSourceLister struct{ calls int }
+
+func (f *fakeSourceLister) GetAllActive() ([]db.Source, error) {
+	f.calls++
+	return nil, nil
+}
+
+func TestSync_PreCanceledSkipsReadsAndWrites(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	sources := &fakeSourceLister{}
+	blocks := &fakeBlockWriter{}
+
+	err := Sync(ctx, sources, blocks, silentLogger{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Sync error = %v, want context.Canceled", err)
+	}
+	if sources.calls != 0 || blocks.creates != 0 || len(blocks.deletes) != 0 {
+		t.Fatalf("pre-canceled Sync did work: reads=%d creates=%d deletes=%d", sources.calls, blocks.creates, len(blocks.deletes))
+	}
+}
 
 // sortedSet returns the unique elements of in, sorted — for order-independent
 // comparison of a keep set.
@@ -63,7 +94,7 @@ func TestPruneVanishedDomains_PrunesAgainstUnionOfAllSources(t *testing.T) {
 	}
 	w := &fakeBlockWriter{}
 
-	if err := pruneVanishedDomains(list, true, w, silentLogger{}); err != nil {
+	if err := pruneVanishedDomains(context.Background(), list, true, w, silentLogger{}); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 
@@ -84,7 +115,7 @@ func TestPruneVanishedDomains_SkippedWhenSyncIncomplete(t *testing.T) {
 	list := []DomainBySource{{Source: db.SourceEasyList, Domains: []string{"a.example"}}}
 	w := &fakeBlockWriter{}
 
-	if err := pruneVanishedDomains(list, false, w, silentLogger{}); err != nil {
+	if err := pruneVanishedDomains(context.Background(), list, false, w, silentLogger{}); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	if len(w.deletes) != 0 {
@@ -101,7 +132,7 @@ func TestPruneVanishedDomains_SkipsEmptySource(t *testing.T) {
 	}
 	w := &fakeBlockWriter{}
 
-	if err := pruneVanishedDomains(list, true, w, silentLogger{}); err != nil {
+	if err := pruneVanishedDomains(context.Background(), list, true, w, silentLogger{}); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	if len(w.deletes) != 1 || w.deletes[0].source != db.SourceEasyList.String() {
@@ -115,7 +146,24 @@ func TestPruneVanishedDomains_PropagatesDeleteError(t *testing.T) {
 	sentinel := errors.New("db down")
 	w := &fakeBlockWriter{delErr: sentinel}
 
-	if err := pruneVanishedDomains(list, true, w, silentLogger{}); !errors.Is(err, sentinel) {
+	if err := pruneVanishedDomains(context.Background(), list, true, w, silentLogger{}); !errors.Is(err, sentinel) {
 		t.Fatalf("expected delete error propagated, got %v", err)
+	}
+}
+
+func TestPruneVanishedDomains_CancelBetweenSourcesStopsFurtherDeletes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	list := []DomainBySource{
+		{Source: db.SourceEasyList, Domains: []string{"a.example"}},
+		{Source: db.SourceRuAdList, Domains: []string{"b.example"}},
+	}
+	w := &fakeBlockWriter{onDelete: cancel}
+
+	err := pruneVanishedDomains(ctx, list, true, w, silentLogger{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("prune error = %v, want context.Canceled", err)
+	}
+	if len(w.deletes) != 1 {
+		t.Fatalf("delete calls = %d, want 1 before cancellation", len(w.deletes))
 	}
 }

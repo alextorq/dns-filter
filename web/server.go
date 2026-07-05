@@ -1,6 +1,8 @@
 package web
 
 import (
+	"net/http"
+
 	authWeb "github.com/alextorq/dns-filter/auth/web"
 	eventsWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	clientsWeb "github.com/alextorq/dns-filter/clients/web"
@@ -37,17 +39,12 @@ type Handlers struct {
 	Database *dbWeb.Handlers
 }
 
-// CreateServer wires HTTP routes onto a fresh gin.Engine and starts it on
-// :8080 in a goroutine. All per-feature dependencies are injected via the
-// Handlers bundle — this function reads no singletons.
-func CreateServer(h Handlers) *gin.Engine {
-	r := buildRouter(h)
-
-	go func() {
-		r.Run(":8080")
-	}()
-
-	return r
+// NewServer builds the HTTP server without opening a listener. The composition
+// root owns ListenAndServe and Shutdown so startup errors and process lifecycle
+// remain observable and testable. All per-feature dependencies are injected via
+// the Handlers bundle — this function reads no singletons.
+func NewServer(addr string, h Handlers) *http.Server {
+	return &http.Server{Addr: addr, Handler: buildRouter(h)}
 }
 
 // buildRouter assembles the gin.Engine with every route the API exposes but

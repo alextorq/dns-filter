@@ -22,6 +22,20 @@ type pruneTestLogger struct{}
 
 func (pruneTestLogger) Error(error) {}
 
+func TestRetentionState_InstancesAreIndependent(t *testing.T) {
+	first := NewRetentionState()
+	second := NewRetentionState()
+
+	first.Set(30)
+
+	if got := first.Days(); got != 30 {
+		t.Fatalf("first Days = %d, want 30", got)
+	}
+	if got := second.Days(); got != retentionUnset {
+		t.Fatalf("second Days = %d, want unconfigured sentinel %d", got, retentionUnset)
+	}
+}
+
 func (f *fakeRepo) DeleteOlderThan(cutoff time.Time) error {
 	f.calls++
 	f.cutoff = cutoff
@@ -48,15 +62,16 @@ func TestCutoffFor_LocalMidnightMinusDays(t *testing.T) {
 	}
 }
 
-// Happy path: pruneTask reads the current retention atomic and calls the repo
+// Happy path: pruneTask reads the current injected retention state and calls the repo
 // with the matching cutoff.
 func TestPruneTask_UsesCurrentRetention(t *testing.T) {
-	SetRetentionDays(30)
+	state := NewRetentionState()
+	state.Set(30)
 	repo := &fakeRepo{}
 	loc := time.Local
 	now := time.Date(2026, 5, 26, 12, 0, 0, 0, loc)
 
-	if err := pruneTaskAt(repo, now); err != nil {
+	if err := pruneTaskAt(repo, state, now); err != nil {
 		t.Fatalf("pruneTask: %v", err)
 	}
 	if repo.calls != 1 {
@@ -72,18 +87,19 @@ func TestPruneTask_UsesCurrentRetention(t *testing.T) {
 // takes effect on the next prune without a restart. We simulate two ticks with
 // different retentions and assert the cutoff moves accordingly.
 func TestPruneTask_RetentionChangeTakesEffectNextTick(t *testing.T) {
+	state := NewRetentionState()
 	repo := &fakeRepo{}
 	loc := time.Local
 	now := time.Date(2026, 5, 26, 12, 0, 0, 0, loc)
 
-	SetRetentionDays(30)
-	if err := pruneTaskAt(repo, now); err != nil {
+	state.Set(30)
+	if err := pruneTaskAt(repo, state, now); err != nil {
 		t.Fatalf("first tick: %v", err)
 	}
 	first := repo.cutoff
 
-	SetRetentionDays(7) // operator shortens retention via the UI between ticks
-	if err := pruneTaskAt(repo, now); err != nil {
+	state.Set(7) // operator shortens retention via the UI between ticks
+	if err := pruneTaskAt(repo, state, now); err != nil {
 		t.Fatalf("second tick: %v", err)
 	}
 	second := repo.cutoff
@@ -105,10 +121,10 @@ func TestPruneTask_RetentionChangeTakesEffectNextTick(t *testing.T) {
 // guessed window that could be SMALLER than the operator's larger override would
 // hard-delete day-buckets they meant to keep.
 func TestPruneTask_SkipsWhenUnconfigured(t *testing.T) {
-	SetRetentionDays(0) // simulate the pre-hydrate sentinel
+	state := NewRetentionState() // pre-hydrate sentinel
 	repo := &fakeRepo{}
 
-	if err := pruneTaskAt(repo, time.Now()); err != nil {
+	if err := pruneTaskAt(repo, state, time.Now()); err != nil {
 		t.Fatalf("pruneTask: %v", err)
 	}
 	if repo.calls != 0 {
@@ -118,10 +134,11 @@ func TestPruneTask_SkipsWhenUnconfigured(t *testing.T) {
 
 // Negative: a repo error propagates so the periodic loop can log it.
 func TestPruneTask_PropagatesRepoError(t *testing.T) {
-	SetRetentionDays(30)
+	state := NewRetentionState()
+	state.Set(30)
 	boom := errors.New("db down")
 	repo := &fakeRepo{err: boom}
-	if err := pruneTaskAt(repo, time.Now()); !errors.Is(err, boom) {
+	if err := pruneTaskAt(repo, state, time.Now()); !errors.Is(err, boom) {
 		t.Errorf("expected %v, got %v", boom, err)
 	}
 }
@@ -158,8 +175,9 @@ func TestPrune_EndToEnd_DeletesOldKeepsNew(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	SetRetentionDays(30)
-	if err := pruneTaskAt(repo, now); err != nil {
+	state := NewRetentionState()
+	state.Set(30)
+	if err := pruneTaskAt(repo, state, now); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 
@@ -179,25 +197,27 @@ func TestPrune_EndToEnd_DeletesOldKeepsNew(t *testing.T) {
 	}
 }
 
-// The atomic setter/getter round-trip is what the settings Apply hook writes to.
-func TestSetGetRetentionDays_RoundTrip(t *testing.T) {
-	SetRetentionDays(45)
-	if got := GetRetentionDays(); got != 45 {
-		t.Errorf("GetRetentionDays = %d, want 45", got)
+// The instance setter/getter round-trip is what the settings Apply hook writes to.
+func TestRetentionState_SetDaysRoundTrip(t *testing.T) {
+	state := NewRetentionState()
+	state.Set(45)
+	if got := state.Days(); got != 45 {
+		t.Errorf("Days = %d, want 45", got)
 	}
-	SetRetentionDays(1)
-	if got := GetRetentionDays(); got != 1 {
-		t.Errorf("GetRetentionDays = %d, want 1", got)
+	state.Set(1)
+	if got := state.Days(); got != 1 {
+		t.Errorf("Days = %d, want 1", got)
 	}
 }
 
 func TestRun_PreCanceledContextSkipsRepo(t *testing.T) {
-	SetRetentionDays(30)
+	state := NewRetentionState()
+	state.Set(30)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	repo := &fakeRepo{}
 
-	Run(ctx, repo, pruneTestLogger{})
+	Run(ctx, repo, state, pruneTestLogger{})
 
 	if repo.calls != 0 {
 		t.Fatalf("DeleteOlderThan calls = %d, want 0", repo.calls)

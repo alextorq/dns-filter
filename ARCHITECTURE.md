@@ -147,7 +147,7 @@ type DomainTraffic struct {
 
 The `/traffic` page absorbed the former `/statistic` page: at the top, a headline number with a shared verdict filter (All/Blocked/Allowed; the number is computed as the sum across devices, without a dedicated endpoint); below it, **two tabs**: **Top domains** (the Top targets list under the same filter) and **Devices** (the device list). Clicking a device opens a **side panel** (`UDrawer direction="right"`) with a per-domain breakdown (its own verdict filter + pagination). The totals and `heroMetric` live in the `use-traffic-dashboard.ts` composable (covered by vitest).
 
-**Retention (prune).** `traffic/business/use-cases/prune` — the single retention task (it replaced the two former `clear-events`). Once a day it deletes rows older than the window, reading the `retentionDays` atomic FRESH on every tick (`Run` → `pruneTaskAt`). The window is the `traffic_retention_days` dynamic setting (its Apply hook writes the same atomic), so a UI change takes effect on the next run without a restart. The atomic starts at the sentinel `0` ("not configured"): `pruneTaskAt` skips the run when it is `<=0`, so a prune accidentally launched BEFORE `HydrateAll` deletes nothing on a seed guess (which could be smaller than a larger override and wipe out days that were meant to be kept). `main` launches the goroutine strictly after `HydrateAll` (which always applies an override or the default), so the very first run is armed; the sentinel is insurance against future reordering.
+**Retention (prune).** `traffic/business/use-cases/prune` — the single retention task (it replaced the two former `clear-events`). Once a day it deletes rows older than the window, reading an injected `RetentionState` FRESH on every tick (`Run` → `pruneTaskAt`). The window is the `traffic_retention_days` dynamic setting (its Apply hook writes the same instance), so a UI change takes effect on the next run without a restart. The state starts at the sentinel `0` ("not configured"): `pruneTaskAt` skips the run when it is `<=0`, so a prune accidentally launched BEFORE `HydrateAll` deletes nothing on a seed guess (which could be smaller than a larger override and wipe out days that were meant to be kept). `main` launches the goroutine strictly after `HydrateAll` (which always applies an override or the default), so the very first run is armed; the sentinel is insurance against future reordering.
 
 ### 5. Client exclusions (`clients/`)
 
@@ -183,6 +183,7 @@ the canonical MAC key atomically with respect to client mutations.
 - **Skip when `complete = false`.** A failed source is absent from the union — the prune is skipped entirely, otherwise its domains would be deleted.
 - **Skip an empty source.** A source parsed into an empty set is not pruned: an empty parse is more likely a garbage response than a list that genuinely emptied.
 - Deletion is strictly by `source` — `User`/`AutoBlocked`/`SuggestedToBlock` are untouched. Surviving rows keep their `id`/`created_at`. Deletions run in a single transaction.
+- The full chain accepts `context.Context`: both HTTP loaders use `NewRequestWithContext`, loader-facing parsers surface `scanner.Err` (so an interrupted streaming body is never accepted as a complete partial list), source writes use GORM `WithContext`, prune checks cancellation between sources, and `backgroundSync` waits between retries with a cancelable timer. Cancellation is normal control flow — it does not log a source failure, continue add/prune, refresh the bloom, or emit a success line. The current composition root still supplies `context.Background()`; the graceful-shutdown step will replace it with the signal-derived application context.
 
 ### 7. DNS cache (`dns-cache/`)
 
@@ -344,13 +345,13 @@ A typed KV store of runtime configuration persisted in the DB. It solves the pro
   - `HydrateAll()` — at startup, for each key, applies the effective value (`DB override → env default`). Both hydration and a runtime change go **through the single** `Apply` path. A broken value in the DB (e.g. an enum narrowed between versions) does not break startup: the default is substituted and the problem is returned in an aggregated error.
 - `settings/web` — `GET /api/settings` (effective values + type metadata for the UI), `PUT /api/settings/:key`, `DELETE /api/settings/:key` (reset). The module's sentinel errors are mapped: unknown key → 404, invalid value → 400.
 
-**Apply hooks (inversion of control).** The module knows nothing about logger/dns/cache. In `main.go` (the composition root, file `settings_wiring.go`) the descriptors are wired to runtime sinks: `log_level`→`ChanLogger.UpdateLogLevel`; `doh_upstream`/`doh_bootstrap_ips`→`dns.ReloadableResolver.SetEndpoint/SetBootstrapIPs` (+ a dns-cache flush); `cache_swr`→`DnsServer.SetSWR`; `cache_stale_grace`/`cache_stale_ttl`→`CacheWithMetrics.SetStaleGrace/SetStaleTTL`; `cache_refresh_concurrency`→`DnsServer.SetRefreshConcurrency`; `traffic_retention_days`→`traffic_prune.SetRetentionDays` (writes the atomic that the prune loop reads fresh on every tick); `suggest_inspect_enabled`→`suggest_inspect.SetEnabled` (read by `Worker.RunOnce` and `suggestModule.Collect`); `virustotal_key`/`safebrowsing_key`→the injected `checks.Credentials` instance (read by provider closures on every HTTP request).
+**Apply hooks (inversion of control).** The module knows nothing about logger/dns/cache. In `main.go` (the composition root, file `settings_wiring.go`) the descriptors are wired to runtime sinks: `log_level`→`ChanLogger.UpdateLogLevel`; `doh_upstream`/`doh_bootstrap_ips`→`dns.ReloadableResolver.SetEndpoint/SetBootstrapIPs` (+ a dns-cache flush); `cache_swr`→`DnsServer.SetSWR`; `cache_stale_grace`/`cache_stale_ttl`→`CacheWithMetrics.SetStaleGrace/SetStaleTTL`; `cache_refresh_concurrency`→`DnsServer.SetRefreshConcurrency`; `traffic_retention_days`→the injected `traffic_prune.RetentionState.Set` (the prune loop reads the same instance fresh on every tick); `suggest_inspect_enabled`→the injected `suggest_inspect.EnabledState.Set` (the same instance is captured by the `Worker.RunOnce` and `suggestModule.Collect` gates); `virustotal_key`/`safebrowsing_key`→the injected `checks.Credentials` instance (read by provider closures on every HTTP request).
 
 **Secrets in KV (`Type: "secret"`).** The pipeline above does not scale to API keys directly: dumps and UI screenshots leak the plain value. So the secret type gets two protections:
 - in `effectiveViewLocked` the value and default are masked to `••••<last 4 characters>`; the UI renders a password input, the mask goes into the placeholder, and the draft starts empty (nothing to submit "by accident");
 - `db/web/download.go::DownloadDb` does a `VACUUM INTO` to a temp file and a `DELETE FROM settings WHERE key IN (m.SecretKeys())` in the copy. The live DB is untouched; secret keys never leave the host via `/api/config/db/download`. `Apply` itself receives the original raw — the provider check reads the atomic without the mask.
 
-**A DB-free hot path.** All dynamic settings are read on the hot path from memory (atomics), the DB is persistence only. Specifically: `ChanLogger.level` (`atomic.Int32`, which also removed a race with the logger goroutine), `DnsServer.swrEnabled` (`atomic.Bool`), `Cache.staleGrace/staleTTL` (`atomic.Int64`), provider keys in the injected `checks.Credentials` (`atomic.Pointer[string]`), the upstream — via `dns.ReloadableResolver` (`atomic.Pointer[DoHResolver]`, swapped without a restart; the same instance is visible to both the server and the refresh worker), the refresh pool — a rebuildable semaphore behind an `atomic.Pointer` (an in-flight refresh releases its token back into the semaphore it took it from).
+**A DB-free hot path.** All dynamic settings are read on the hot path from memory (atomics), the DB is persistence only. Specifically: `ChanLogger.level` (`atomic.Int32`, which also removed a race with the logger goroutine), `DnsServer.swrEnabled` (`atomic.Bool`), `Cache.staleGrace/staleTTL` (`atomic.Int64`), the injected `suggest_inspect.EnabledState` (`atomic.Bool`), provider keys in the injected `checks.Credentials` (`atomic.Pointer[string]`), the upstream — via `dns.ReloadableResolver` (`atomic.Pointer[DoHResolver]`, swapped without a restart; the same instance is visible to both the server and the refresh worker), the refresh pool — a rebuildable semaphore behind an `atomic.Pointer` (an in-flight refresh releases its token back into the semaphore it took it from).
 
 **Adding a new dynamic setting** = one `settings.Setting{...}` entry in `registerDynamicSettings` + a setter on the relevant sink. No migration and no `web/server.go` edit are needed.
 
@@ -612,6 +613,7 @@ func main() {
     cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL)
     metricInstance := dns.CreateMetric()
     trafficWorker := traffic_record.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
+    trafficRetention := traffic_prune.NewRetentionState()
     resolver := dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)
     dnsServer := dns.NewServer(dns.ServerDeps{
         Logger: chanLogger, Cache: cacheWithMetric,
@@ -625,17 +627,21 @@ func main() {
     // 8. settings: descriptor declaration (incl. traffic_retention_days), restore
     //    of the filter state, HydrateAll — strictly before Serve. Then backgroundSync in the background.
     settingsModule := settings.NewModule(settingsRepo)
-    registerDynamicSettings(settingsModule, dynamicSettingsDeps{ /* conf, logr, resolver, cache, dnsServer */ })
+    registerDynamicSettings(settingsModule, dynamicSettingsDeps{
+        /* conf, logr, resolver, cache, dnsServer, inspectEnabled, inspectCredentials, */
+        trafficRetention: trafficRetention,
+    })
     filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
     _ = filter.RestoreState(settingsRepo, conf)
     _ = settingsModule.HydrateAll()
     // The retention prune over domain_traffic starts ONLY after HydrateAll: the first
     // (immediate) run already sees the effective window, not the seed sentinel.
-    go traffic_prune.Run(backgroundCtx, trafficRepo, chanLogger)
-    go backgroundSync(sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
+    go traffic_prune.Run(backgroundCtx, trafficRepo, trafficRetention, chanLogger)
+    go backgroundSync(backgroundCtx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
 
-    // 9. HTTP API: all per-feature *Handlers are gathered into web.Handlers and passed explicitly
-    web.CreateServer(web.Handlers{
+    // 9. HTTP API: all per-feature *Handlers are gathered and the server handle
+    //    is owned and started explicitly by main.
+    httpServer := web.NewServer(":8080", web.Handlers{
         Blocked: &blockedWeb.Handlers{Repo: blockRepo, Log: chanLogger, RefreshFilter: filterModule.UpdateFromDb,
             BlockStats: traffic_db.NewBlockStatsAdapter(trafficRepo)},
         Filter:   &filterWeb.Handlers{Module: filterModule},
@@ -644,6 +650,7 @@ func main() {
         Settings: &settingsWeb.Handlers{Service: settingsModule},
         Traffic:  trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, hostnamesRepo.AllAsMap, chanLogger),
     })
+    go func() { reportHTTPServerError(httpServer.ListenAndServe(), chanLogger) }()
 
     if err := dnsServer.Serve(); err != nil { panic(err) }
 }
@@ -652,12 +659,12 @@ func main() {
 Load-bearing ordering:
 - `migrate.Migrate(conn)` must run before `NewRepo(conn)` — a Repo silently breaks on its first write without a schema. The connection is resolved once in `main` and passed into migration explicitly; the migration package no longer calls `db.GetConnection()` itself.
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
-- `sourceModule.Sync()` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds.
+- `sourceModule.Sync(ctx)` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds or its context is canceled; both HTTP requests and the retry wait observe that context.
 - `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
-- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(backgroundCtx, trafficRepo, chanLogger)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. All jobs built on `periodic.Run` receive context and logger explicitly; the current `backgroundCtx` becomes the signal-derived application context in the graceful-shutdown step. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
+- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(backgroundCtx, trafficRepo, trafficRetention, chanLogger)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. The same injected `trafficRetention` instance is captured by the settings Apply hook and read by every prune tick. All jobs built on `periodic.Run` receive context and logger explicitly; the current `backgroundCtx` becomes the signal-derived application context in the graceful-shutdown step. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.
 - **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
-- HTTP starts in a goroutine inside `web.CreateServer`, and the blocking `dnsServer.Serve()` keeps main alive.
+- `web.NewServer` only builds `*http.Server`; `main` owns the handle, starts `ListenAndServe` explicitly and logs unexpected serve errors. The blocking `dnsServer.Serve()` still keeps main alive until the common lifecycle/shutdown orchestrator is added.
 
 ---
 
@@ -690,6 +697,6 @@ Load-bearing ordering:
 
 7. **Canonical domain form.** `block_lists.url`, the bloom filter and the LRU verdict cache store domains in a single FQDN form — lowercase, exactly one trailing dot (`example.com.`). Normalization is done by `utils.CanonicalDomain` at every boundary: user input (`create_domain.CreateDomain`), the source parsers (EasyList, Steven Black/HaGeZi) and the read hot path (`filter.Module.CheckExist`). The name from miekg/dns (`q.Name`) arrives in FQDN form but with no case guarantee (DNS 0x20 encoding), so normalization is needed on read too, not just on write — otherwise `Example.com` added by hand would not match the query and would not be blocked (#30).
 
-   The HTTP handlers are structs with dependency fields (`*/web.Handlers{Repo, Module, Filter, Log, …}`); `web.CreateServer` takes them as a package and reads no singletons.
+   The HTTP handlers are structs with dependency fields (`*/web.Handlers{Repo, Module, Filter, Log, …}`); `web.NewServer` takes them as a package, reads no singletons and performs no process-level I/O until `main` calls `ListenAndServe`.
 
    `db/batch.go` has only the DI variants `BatchInsertOn` / `BatchUpsertOn`, which take a `*gorm.DB` explicitly (the thin wrappers over the singleton connection were removed). They are relied on, in particular, by `traffic/db.Repo.UpsertBatch` (the additive counter upsert). Each batch commits in a **separate** transaction, not the whole set in one: a single transaction over a list of tens of thousands of rows (a full source upsert) held SQLite's single write lock for seconds, and a concurrent writer (the async traffic worker) exhausted its `busy_timeout` and failed with `SQLITE_BUSY`, losing its batch. Per-batch commits release the lock every few ms — at the cost of whole-set atomicity, which is acceptable here (all calls are idempotent: the `INSERT OR IGNORE` upsert repeats on the next sync, events are best-effort).

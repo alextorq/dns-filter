@@ -254,6 +254,17 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - Возвращённый handle готов для подключения `Shutdown(ctx)` в общем lifecycle.
   Тест закрепляет адрес, тип handler и полный route snapshot без открытия порта.
 
+### Этап 8 — DB size monitor без import-time goroutine
+
+- `db/metric.go` больше не запускает `MonitoringDbSize` из `init()` и не
+  резолвит package-level logger/config.
+- `main` явно создаёт `DBSizeMonitor`, передавая registry, DB path, logger и
+  interval, затем запускает `Run(ctx)` с application context.
+- Monitor делает один immediate sample, останавливает ticker по cancellation,
+  логирует stat errors и возвращает ошибку регистрации вместо panic.
+- Тесты закрепляют pre-cancel, immediate observation, cancellation, stat error,
+  invalid interval и duplicate registration.
+
 ---
 
 ## Кандидат на следующий рефакторинг

@@ -41,6 +41,7 @@ import (
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	"github.com/alextorq/dns-filter/logger"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
+	"github.com/alextorq/dns-filter/metric"
 	"github.com/alextorq/dns-filter/settings"
 	settings_db "github.com/alextorq/dns-filter/settings/db"
 	settingsWeb "github.com/alextorq/dns-filter/settings/web"
@@ -276,6 +277,17 @@ func main() {
 
 	backgroundCtx := context.Background()
 	go authModule.ClearExpiredSessions(backgroundCtx, chanLogger)
+	dbSizeMonitor, err := app_db.NewDBSizeMonitor(
+		metric.Registry,
+		conf.DbPath,
+		chanLogger,
+		app_db.DefaultDBSizeMonitorInterval,
+	)
+	if err != nil {
+		chanLogger.Error(fmt.Errorf("create DB size monitor: %w", err))
+	} else {
+		go dbSizeMonitor.Run(backgroundCtx)
+	}
 
 	// Start the ARP watcher only in LAN mode. Public mode has no LAN to
 	// observe; the watcher would just spam ErrUnsupported (or, in a hosted

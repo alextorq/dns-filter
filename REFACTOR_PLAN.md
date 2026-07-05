@@ -278,6 +278,33 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - Глобальный `metric.Registry` пока сохранён: DNS/cache/inspect collectors всё
   ещё регистрируются туда из package init. Их инстанцирование — отдельный этап.
 
+### Этап 10.1 — consumer-owned port в `source/web`
+
+- `source/web.Handlers` принимает узкий `SourceRepo`, а не concrete
+  `*source/db.Repo`; production repo удовлетворяет порту structural typing.
+- Handler-тесты не поднимают SQLite и покрывают list happy/error, invalid JSON,
+  ошибки get/update/block/filter и обязательный порядок
+  `source update → block rows → filter refresh`.
+
+### Этап 10.2 — узкие порты в `blocked-domain/web`
+
+- Concrete `*blocked-domain/db.Repo` удалён из `Handlers`: чтение списка идёт
+  через consumer-owned `RecordsRepo`, create/update — через уже существующие
+  порты соответствующих use-case'ов.
+- `main` остаётся composition root и передаёт один production adapter в три
+  независимых слота без расширения контрактов потребителей.
+- DB-free handler-тесты проверяют передачу фильтра и storage error paths;
+  SQLite integration-тесты сохраняют проверку успешных create/update сценариев.
+
+### Этап 10.3 — consumer-owned RDAP cache port в inspect adapter
+
+- `suggest-to-block/inspect.Adapter` принимает двухметодный `RDAPCache`
+  (`GetRDAP`, `PutRDAP`) вместо concrete `*inspect/db.Repo`.
+- Production repo проверяется compile-time assertion и передаётся из `main`
+  structural typing без дополнительного adapter layer.
+- Cache-aware adapter-тесты переведены с SQLite на in-memory fake и отдельно
+  фиксируют registrable key, TTL и запись возраста домена.
+
 ---
 
 ## Кандидат на следующий рефакторинг

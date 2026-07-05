@@ -13,6 +13,15 @@ type Logger interface {
 	Error(err error)
 }
 
+// SourceRepo is the persistence port required by the source HTTP handlers.
+// *source/db.Repo satisfies it structurally; tests inject a DB-free fake.
+type SourceRepo interface {
+	GetAll(filter syncDb.GetAllParams) ([]syncDb.Source, error)
+	Amount() int64
+	GetByID(id uint) (*syncDb.Source, error)
+	Update(source *syncDb.Source) error
+}
+
 // BlockRepo is the narrow port over the blocklist that ChangeSourceActive
 // needs to mass-toggle the active flag of every blocklist row whose Source
 // matches the toggled source name.
@@ -25,7 +34,7 @@ type Filter interface {
 }
 
 type Handlers struct {
-	Repo      *syncDb.Repo
+	Repo      SourceRepo
 	BlockRepo BlockRepo
 	Filter    Filter
 	Log       Logger

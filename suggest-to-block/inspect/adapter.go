@@ -32,10 +32,20 @@ type Result struct {
 	Reasons []collect.Reason
 }
 
+// RDAPCache is the persistence port used by Adapter. The inspect DB repository
+// satisfies it structurally; tests can provide an in-memory fake without
+// constructing SQLite.
+type RDAPCache interface {
+	GetRDAP(registrable string, ttl time.Duration) (*inspect_db.RDAPCache, bool, error)
+	PutRDAP(registrable string, ageDays int) error
+}
+
+var _ RDAPCache = (*inspect_db.Repo)(nil)
+
 // Adapter runs the reduced, cache-aware reputation check set for one FQDN and
 // collapses the result into a verdict plus the reasons that explain it.
 type Adapter struct {
-	repo *inspect_db.Repo
+	cache RDAPCache
 	// rdapTTL bounds how long a cached registration age stays fresh. Age grows
 	// only monotonically, so a generous TTL is safe; wired from config.
 	rdapTTL time.Duration
@@ -51,11 +61,11 @@ type ProviderChecks struct {
 // Safe Browsing only. crt.sh / urlscan / dns_resolve / local_stats are
 // deliberately excluded — for an already-allowed candidate they return
 // "unknown" and add nothing but latency and quota pressure.
-func NewAdapter(repo *inspect_db.Repo, rdapTTL time.Duration, providers ProviderChecks) *Adapter {
+func NewAdapter(cache RDAPCache, rdapTTL time.Duration, providers ProviderChecks) *Adapter {
 	if providers.VirusTotal == nil || providers.SafeBrowsing == nil {
 		panic("suggest-to-block/inspect: provider checks are required")
 	}
-	a := &Adapter{repo: repo, rdapTTL: rdapTTL}
+	a := &Adapter{cache: cache, rdapTTL: rdapTTL}
 	a.checks = map[string]domain_inspect.CheckFunc{
 		"rdap":          a.withRDAPCache(checks.RDAPAge),
 		"virustotal":    providers.VirusTotal,
@@ -134,7 +144,7 @@ func (a *Adapter) withRDAPCache(inner domain_inspect.CheckFunc) domain_inspect.C
 		if err != nil {
 			return inner(ctx, fqdn)
 		}
-		if c, ok, _ := a.repo.GetRDAP(reg, a.rdapTTL); ok {
+		if c, ok, _ := a.cache.GetRDAP(reg, a.rdapTTL); ok {
 			inspectRDAPCacheHits.Inc()
 			return domain_inspect.CheckResult{
 				Status:  domain_inspect.StatusOK,
@@ -145,7 +155,7 @@ func (a *Adapter) withRDAPCache(inner domain_inspect.CheckFunc) domain_inspect.C
 		res := inner(ctx, fqdn)
 		if res.Status == domain_inspect.StatusOK {
 			if age, ok := res.Details["age_days"].(int); ok {
-				_ = a.repo.PutRDAP(reg, age)
+				_ = a.cache.PutRDAP(reg, age)
 			}
 		}
 		return res

@@ -426,7 +426,9 @@ func main() {
 		},
 		Inspect: domainInspectWeb.NewHandlers(inspectChecks, chanLogger),
 		Blocked: &blockedWeb.Handlers{
-			Repo:          blockRepo,
+			Records:       blockRepo,
+			Creator:       blockRepo,
+			Updater:       blockRepo,
 			Log:           chanLogger,
 			RefreshFilter: filterModule.UpdateFromDb,
 			// Step 4: legacy block-stats endpoints now read SUM(count) WHERE

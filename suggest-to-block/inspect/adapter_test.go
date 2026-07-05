@@ -9,20 +9,39 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 	collect "github.com/alextorq/dns-filter/suggest-to-block/business/use-cases/collect"
 	inspect_db "github.com/alextorq/dns-filter/suggest-to-block/inspect/db"
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 )
 
-func newRepo(t *testing.T) *inspect_db.Repo {
-	t.Helper()
-	conn, err := gorm.Open(sqlite.Open("file::memory:?cache=private"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open db: %v", err)
+type fakeRDAPCache struct {
+	entries map[string]*inspect_db.RDAPCache
+	gets    []string
+	ttls    []time.Duration
+	puts    []inspect_db.RDAPCache
+	getErr  error
+	putErr  error
+}
+
+func newFakeRDAPCache() *fakeRDAPCache {
+	return &fakeRDAPCache{entries: make(map[string]*inspect_db.RDAPCache)}
+}
+
+func (f *fakeRDAPCache) GetRDAP(registrable string, ttl time.Duration) (*inspect_db.RDAPCache, bool, error) {
+	f.gets = append(f.gets, registrable)
+	f.ttls = append(f.ttls, ttl)
+	if f.getErr != nil {
+		return nil, false, f.getErr
 	}
-	if err := conn.AutoMigrate(&inspect_db.InspectCandidate{}, &inspect_db.RDAPCache{}); err != nil {
-		t.Fatalf("migrate: %v", err)
+	entry, ok := f.entries[registrable]
+	return entry, ok, nil
+}
+
+func (f *fakeRDAPCache) PutRDAP(registrable string, ageDays int) error {
+	entry := inspect_db.RDAPCache{Registrable: registrable, AgeDays: ageDays}
+	f.puts = append(f.puts, entry)
+	if f.putErr != nil {
+		return f.putErr
 	}
-	return inspect_db.NewRepo(conn)
+	f.entries[registrable] = &entry
+	return nil
 }
 
 func fakeCheck(status domain_inspect.CheckStatus, verdict domain_inspect.Verdict, details map[string]any) domain_inspect.CheckFunc {
@@ -34,7 +53,7 @@ func fakeCheck(status domain_inspect.CheckStatus, verdict domain_inspect.Verdict
 func newTestAdapter(t *testing.T) *Adapter {
 	t.Helper()
 	noop := fakeCheck(domain_inspect.StatusSkipped, domain_inspect.VerdictUnknown, nil)
-	return NewAdapter(newRepo(t), time.Hour, ProviderChecks{
+	return NewAdapter(newFakeRDAPCache(), time.Hour, ProviderChecks{
 		VirusTotal:   noop,
 		SafeBrowsing: noop,
 	})
@@ -57,8 +76,68 @@ func TestNewAdapter_RejectsMissingProviderChecks(t *testing.T) {
 					t.Fatal("expected missing provider check to panic")
 				}
 			}()
-			NewAdapter(newRepo(t), time.Hour, tc.providers)
+			NewAdapter(newFakeRDAPCache(), time.Hour, tc.providers)
 		})
+	}
+}
+
+func TestWithRDAPCache_UsesRegistrableCacheKey(t *testing.T) {
+	cache := newFakeRDAPCache()
+	noop := fakeCheck(domain_inspect.StatusSkipped, domain_inspect.VerdictUnknown, nil)
+	a := NewAdapter(cache, time.Hour, ProviderChecks{VirusTotal: noop, SafeBrowsing: noop})
+	wrapped := a.withRDAPCache(fakeCheck(domain_inspect.StatusOK, domain_inspect.VerdictSuspicious,
+		map[string]any{"age_days": 7}))
+
+	wrapped(context.Background(), "ads.sub.example.com")
+
+	if len(cache.gets) != 1 || cache.gets[0] != "example.com" {
+		t.Fatalf("cache gets = %v, want [example.com]", cache.gets)
+	}
+	if len(cache.ttls) != 1 || cache.ttls[0] != time.Hour {
+		t.Fatalf("cache TTLs = %v, want [1h]", cache.ttls)
+	}
+	if len(cache.puts) != 1 || cache.puts[0].Registrable != "example.com" || cache.puts[0].AgeDays != 7 {
+		t.Fatalf("cache puts = %+v, want example.com age 7", cache.puts)
+	}
+}
+
+func TestWithRDAPCache_GetErrorFallsBackToInner(t *testing.T) {
+	cache := newFakeRDAPCache()
+	cache.getErr = errors.New("cache unavailable")
+	a := newTestAdapter(t)
+	a.cache = cache
+	calls := 0
+	wrapped := a.withRDAPCache(func(context.Context, string) domain_inspect.CheckResult {
+		calls++
+		return domain_inspect.CheckResult{
+			Status:  domain_inspect.StatusOK,
+			Verdict: domain_inspect.VerdictSuspicious,
+			Details: map[string]any{"age_days": 9},
+		}
+	})
+
+	result := wrapped(context.Background(), "ads.example.com")
+
+	if calls != 1 || result.Verdict != domain_inspect.VerdictSuspicious {
+		t.Fatalf("inner calls = %d, verdict = %q", calls, result.Verdict)
+	}
+}
+
+func TestWithRDAPCache_PutErrorDoesNotChangeResult(t *testing.T) {
+	cache := newFakeRDAPCache()
+	cache.putErr = errors.New("cache unavailable")
+	a := newTestAdapter(t)
+	a.cache = cache
+	wrapped := a.withRDAPCache(fakeCheck(domain_inspect.StatusOK, domain_inspect.VerdictClean,
+		map[string]any{"age_days": 500}))
+
+	result := wrapped(context.Background(), "www.example.com")
+
+	if result.Status != domain_inspect.StatusOK || result.Verdict != domain_inspect.VerdictClean {
+		t.Fatalf("result = %+v, want unchanged clean result", result)
+	}
+	if len(cache.puts) != 1 {
+		t.Fatalf("cache puts = %d, want 1", len(cache.puts))
 	}
 }
 

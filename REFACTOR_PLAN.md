@@ -296,6 +296,15 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - DB-free handler-тесты проверяют передачу фильтра и storage error paths;
   SQLite integration-тесты сохраняют проверку успешных create/update сценариев.
 
+### Этап 10.3 — consumer-owned RDAP cache port в inspect adapter
+
+- `suggest-to-block/inspect.Adapter` принимает двухметодный `RDAPCache`
+  (`GetRDAP`, `PutRDAP`) вместо concrete `*inspect/db.Repo`.
+- Production repo проверяется compile-time assertion и передаётся из `main`
+  structural typing без дополнительного adapter layer.
+- Cache-aware adapter-тесты переведены с SQLite на in-memory fake и отдельно
+  фиксируют registrable key, TTL и запись возраста домена.
+
 ---
 
 ## Кандидат на следующий рефакторинг

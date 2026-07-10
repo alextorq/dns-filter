@@ -354,6 +354,20 @@ filter state создаётся отдельно через `runtime_state.New(t
 - Тесты закрепляют независимость config/state экземпляров и весь прежний
   concurrent/race-контракт фильтра.
 
+### Этап 10.7 — process-owned background runner
+
+- Добавлен узкий lifecycle port `background.Job` и adapter `JobFunc`; feature
+  workers сохраняют собственные зависимости и cadence, не импортируя runner.
+- `main` явно собирает фиксированный набор jobs, условно добавляет DB monitor и
+  LAN workers, затем передаёт весь набор в один `background.Runner`.
+- Runner валидирует и копирует набор, запускает jobs конкурентно и ждёт их
+  завершения на общем context; pre-canceled context не запускает работу.
+- Все jobs стартуют после `settingsModule.HydrateAll()`, поэтому immediate ticks
+  читают уже применённые runtime settings. Signal-derived context остаётся
+  частью отдельного graceful-shutdown этапа.
+- Unit-тесты закрепляют validation, concurrent start, ожидание остановки и
+  pre-canceled поведение runner.
+
 ---
 
 ## Кандидат на следующий рефакторинг
@@ -381,8 +395,9 @@ filter state создаётся отдельно через `runtime_state.New(t
   идемпотентен и безопасен для конкурентных вызовов. Осталось вызвать его из
   общего shutdown-блока после остановки DNS.
 - Все периодические cleanup-задачи уже принимают context и logger явно через
-  `periodic.Run`, но composition root пока передаёт общий `backgroundCtx` без
-  cancel. Его нужно заменить signal-derived application context.
+  `periodic.Run` и собраны в `background.Runner`, но composition root пока
+  запускает runner с `backgroundCtx` без cancel. Его нужно заменить
+  signal-derived application context.
 
 ### Порядок шагов
 
@@ -396,9 +411,10 @@ filter state создаётся отдельно через `runtime_state.New(t
    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
    defer stop()
    ```
-   - Передать `ctx` вместо текущего `backgroundCtx` в `arpwatcher.Run`,
-     `suggestModule.Start`, `authModule.ClearExpiredSessions`, inspect/prune и
-     traffic/prune. Сигнатуры periodic-задач уже context-aware.
+   - Передать `ctx` вместо текущего `backgroundCtx` в
+     `backgroundRunner.Run`; runner раздаёт тот же context `arpwatcher`,
+     suggest/auth/inspect workers и retention jobs. Сигнатуры задач уже
+     context-aware.
 
 3. **DNS — graceful Shutdown**
    - Запустить `dnsServer.Serve()` в горутине (через `errCh chan error`).
@@ -509,7 +525,7 @@ filter state создаётся отдельно через `runtime_state.New(t
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core, bootstrap DB/logger, component metrics, config/filter state, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU**. Остаток: background helpers |
+| 3 | DI вместо singleton'ов | **готово**: core, bootstrap DB/logger, component metrics, config/filter state, background jobs, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU собираются в composition root |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |

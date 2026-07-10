@@ -10,12 +10,145 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
 
 func silentGorm() gormlogger.Interface {
 	return gormlogger.Default.LogMode(gormlogger.Silent)
+}
+
+type discardErrorLogger struct{}
+
+func (discardErrorLogger) Error(error) {}
+
+func openDeps(path string, registerer prometheus.Registerer, name string) OpenDeps {
+	return OpenDeps{
+		Path:       path,
+		Log:        discardErrorLogger{},
+		Registerer: registerer,
+		DBName:     name,
+	}
+}
+
+func TestOpen_UsesExplicitPath(t *testing.T) {
+	conn, err := Open(openDeps(filepath.Join(t.TempDir(), "filter.sqlite"), prometheus.NewRegistry(), "test"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	sqlDB, err := conn.DB()
+	if err != nil {
+		t.Fatalf("DB: %v", err)
+	}
+	defer sqlDB.Close()
+
+	if err := conn.Exec("CREATE TABLE opened_by_factory (id INTEGER PRIMARY KEY)").Error; err != nil {
+		t.Fatalf("connection returned by Open is unusable: %v", err)
+	}
+}
+
+func TestOpen_ReturnsConnectionError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "filter.sqlite")
+
+	if _, err := Open(openDeps(path, prometheus.NewRegistry(), "test")); err == nil {
+		t.Fatal("Open must return an error for a database under a missing directory")
+	}
+}
+
+func TestOpen_RegistersEachPoolUnderItsExplicitName(t *testing.T) {
+	registerer := prometheus.NewRegistry()
+	first, err := Open(openDeps(filepath.Join(t.TempDir(), "first.sqlite"), registerer, "first"))
+	if err != nil {
+		t.Fatalf("open first pool: %v", err)
+	}
+	firstSQL, err := first.DB()
+	if err != nil {
+		t.Fatalf("first DB: %v", err)
+	}
+	defer firstSQL.Close()
+
+	second, err := Open(openDeps(filepath.Join(t.TempDir(), "second.sqlite"), registerer, "second"))
+	if err != nil {
+		t.Fatalf("open second pool: %v", err)
+	}
+	secondSQL, err := second.DB()
+	if err != nil {
+		t.Fatalf("second DB: %v", err)
+	}
+	defer secondSQL.Close()
+
+	metricFamilies, err := registerer.Gather()
+	if err != nil {
+		t.Fatalf("gather pool metrics: %v", err)
+	}
+	names := map[string]bool{}
+	for _, family := range metricFamilies {
+		if family.GetName() != "go_sql_open_connections" {
+			continue
+		}
+		for _, sample := range family.Metric {
+			for _, label := range sample.Label {
+				if label.GetName() == "db_name" {
+					names[label.GetValue()] = true
+				}
+			}
+		}
+	}
+	for _, want := range []string{"first", "second"} {
+		if !names[want] {
+			t.Errorf("go_sql_open_connections missing db_name=%q; got %v", want, names)
+		}
+	}
+}
+
+func TestOpen_RejectsDuplicatePoolNameInOneRegistry(t *testing.T) {
+	registerer := prometheus.NewRegistry()
+	first, err := Open(openDeps(filepath.Join(t.TempDir(), "first.sqlite"), registerer, "main"))
+	if err != nil {
+		t.Fatalf("open first pool: %v", err)
+	}
+	firstSQL, err := first.DB()
+	if err != nil {
+		t.Fatalf("first DB: %v", err)
+	}
+	defer firstSQL.Close()
+
+	if _, err := Open(openDeps(filepath.Join(t.TempDir(), "second.sqlite"), registerer, "main")); err == nil {
+		t.Fatal("Open must reject a duplicate db_name in the same registry")
+	}
+}
+
+func TestOpen_RejectsIncompleteInstrumentationDeps(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "filter.sqlite")
+	for _, tc := range []struct {
+		name string
+		deps OpenDeps
+	}{
+		{
+			name: "missing logger",
+			deps: OpenDeps{
+				Path:       path,
+				Registerer: prometheus.NewRegistry(),
+				DBName:     "test",
+			},
+		},
+		{
+			name: "missing registry",
+			deps: openDeps(path, nil, "test"),
+		},
+		{
+			name: "missing DB name",
+			deps: openDeps(path, prometheus.NewRegistry(), ""),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := Open(tc.deps); err == nil {
+				t.Fatal("Open must reject incomplete instrumentation dependencies")
+			}
+		})
+	}
 }
 
 // ----- buildDSN -----

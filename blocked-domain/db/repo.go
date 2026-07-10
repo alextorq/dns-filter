@@ -15,7 +15,7 @@ import (
 // structural typing. See blocked-domain/ports.go for the consumer-side ports.
 //
 // Construct with NewRepo(gormDB) in main and pass it everywhere instead of
-// reading db.GetConnection() from package-level state.
+// depending on a package-level database accessor.
 type Repo struct {
 	db *gorm.DB
 }

@@ -1,24 +1,18 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/alextorq/dns-filter/config"
 	"github.com/glebarez/sqlite" // Pure-Go SQLite driver (modernc.org/sqlite)
+	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
-
-var conf = config.GetConfig()
-
-func GetDBConnectionString() string {
-	return conf.DbPath
-}
 
 const (
 	// busyTimeoutMs pins how long a writer blocked by SQLite's single-writer lock
@@ -28,7 +22,7 @@ const (
 	// default change. It is NOT what fixed the dropped event batches seen in
 	// prod: there the bulk source-sync transaction held the lock LONGER than the
 	// timeout — see the per-batch commits in db/batch.go. Matches the GORM
-	// slow-query threshold set in GetConnection.
+	// slow-query threshold set in Open.
 	busyTimeoutMs = 5000
 	// sqliteCacheSizeKiB is the page-cache size; a negative value means KiB, so
 	// -64000 is a 64 MiB cache (vs the 2 MiB SQLite default).
@@ -41,10 +35,15 @@ const (
 	maxOpenConns = 4
 )
 
-var (
-	db   *gorm.DB
-	once sync.Once
-)
+// OpenDeps is the complete construction contract for an instrumented SQLite
+// connection. DBName must be unique within Registerer so every pool keeps its
+// own go_sql_* metric series.
+type OpenDeps struct {
+	Path       string
+	Log        ErrorLogger
+	Registerer prometheus.Registerer
+	DBName     string
+}
 
 // buildDSN appends the per-connection PRAGMAs to the SQLite path as DSN query
 // parameters. The modernc driver (via glebarez) runs every `_pragma=` on each
@@ -74,7 +73,7 @@ func buildDSN(path string) string {
 }
 
 // openConnection opens the GORM DB at path with the DSN PRAGMAs and pool bounds
-// applied. Split out of GetConnection so tests can exercise the real connection
+// applied. Split out of Open so tests can exercise the real connection
 // config against a temp file without the package-level singleton.
 func openConnection(path string, gormLog gormlogger.Interface) (*gorm.DB, error) {
 	gdb, err := gorm.Open(sqlite.Open(buildDSN(path)), &gorm.Config{Logger: gormLog})
@@ -91,38 +90,52 @@ func openConnection(path string, gormLog gormlogger.Interface) (*gorm.DB, error)
 	return gdb, nil
 }
 
-func GetConnection() *gorm.DB {
-	once.Do(func() {
-		// GORM по умолчанию логирует SQL целиком при превышении SlowThreshold
-		// (200ms). Bulk-инсерты в source.Sync() — десятки тысяч строк за раз,
-		// каждый запрос подходит под порог и пишет в stdout 100+ КБ VALUES.
-		// Поднимаем порог до 5 сек (реальные тормоза всё ещё ловим) и просим
-		// логгер использовать `?` вместо инлайн-значений — slow-warn остаётся
-		// диагностически полезным, но не флудит.
-		gormLog := gormlogger.New(
-			log.New(os.Stdout, "\r\n", log.LstdFlags),
-			gormlogger.Config{
-				SlowThreshold:             5 * time.Second,
-				LogLevel:                  gormlogger.Warn,
-				IgnoreRecordNotFoundError: true,
-				ParameterizedQueries:      true,
-				Colorful:                  true,
-			},
-		)
+// Open creates a configured SQLite connection. The caller owns the resulting
+// *gorm.DB and decides how to surface a startup failure; this package never
+// terminates the process itself.
+func Open(deps OpenDeps) (*gorm.DB, error) {
+	if deps.Log == nil {
+		return nil, errors.New("db open: error logger is required")
+	}
+	if deps.Registerer == nil {
+		return nil, errors.New("db open: metrics registerer is required")
+	}
+	if strings.TrimSpace(deps.DBName) == "" {
+		return nil, errors.New("db open: metrics DB name is required")
+	}
 
-		var err error
-		// Connection tuning (WAL, synchronous=NORMAL, 64 MiB cache, temp in
-		// memory, busy_timeout) and the pool bounds live in openConnection /
-		// buildDSN so they apply to every pooled connection.
-		db, err = openConnection(GetDBConnectionString(), gormLog)
-		if err != nil {
-			log.Fatal(err)
+	conn, err := openConnection(deps.Path, newGormLogger())
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite database: %w", err)
+	}
+
+	// Query callback registration remains best-effort, but a pool collector name
+	// collision would silently leave this connection unobserved. Reject it at
+	// construction time rather than returning a pool with stale metrics.
+	if err := instrumentConnection(conn, deps.Log, deps.Registerer, deps.DBName); err != nil {
+		if sqlDB, dbErr := conn.DB(); dbErr == nil {
+			_ = sqlDB.Close()
 		}
+		return nil, fmt.Errorf("instrument sqlite database: %w", err)
+	}
+	return conn, nil
+}
 
-		// Attach Prometheus instrumentation (per-operation latency/error
-		// callbacks + connection-pool stats) once, on the single shared
-		// connection. Non-fatal: failures here only cost observability.
-		instrumentConnection(db)
-	})
-	return db
+func newGormLogger() gormlogger.Interface {
+	// GORM по умолчанию логирует SQL целиком при превышении SlowThreshold
+	// (200ms). Bulk-инсерты в source.Sync() — десятки тысяч строк за раз,
+	// каждый запрос подходит под порог и пишет в stdout 100+ КБ VALUES.
+	// Поднимаем порог до 5 сек (реальные тормоза всё ещё ловим) и просим
+	// логгер использовать `?` вместо инлайн-значений — slow-warn остаётся
+	// диагностически полезным, но не флудит.
+	return gormlogger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		gormlogger.Config{
+			SlowThreshold:             5 * time.Second,
+			LogLevel:                  gormlogger.Warn,
+			IgnoreRecordNotFoundError: true,
+			ParameterizedQueries:      true,
+			Colorful:                  true,
+		},
+	)
 }

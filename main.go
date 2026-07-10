@@ -40,6 +40,7 @@ import (
 	filter_bloom "github.com/alextorq/dns-filter/filter/filter"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	"github.com/alextorq/dns-filter/logger"
+	consoleHandler "github.com/alextorq/dns-filter/logger/handlers/console"
 	loggerWeb "github.com/alextorq/dns-filter/logger/web"
 	"github.com/alextorq/dns-filter/metric"
 	"github.com/alextorq/dns-filter/settings"
@@ -176,10 +177,19 @@ func runBackgroundSync(
 }
 
 func main() {
-	conn := app_db.GetConnection()
-	migrate.Migrate(conn)
 	conf := config.GetConfig()
-	chanLogger := logger.GetLogger()
+	chanLogger := logger.NewChanLogger(1000, conf.LogLevel)
+	chanLogger.AddHandler(&consoleHandler.ConsoleHandler{})
+	conn, err := app_db.Open(app_db.OpenDeps{
+		Path:       conf.DbPath,
+		Log:        chanLogger,
+		Registerer: metric.Registry,
+		DBName:     "main",
+	})
+	if err != nil {
+		panic(fmt.Errorf("open database: %w", err))
+	}
+	migrate.Migrate(conn)
 	if err := metric.RegisterRuntimeCollectors(metric.Registry, chanLogger.DroppedCount); err != nil {
 		chanLogger.Error(fmt.Errorf("register runtime metrics: %w", err))
 	}

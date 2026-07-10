@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/metric"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -17,6 +16,12 @@ import (
 // It lives on the *gorm.DB statement instance (each query gets its own), so
 // concurrent queries on the hot path never clobber each other's timestamp.
 const queryStartKey = "metrics:query_start"
+
+// ErrorLogger is the only logging capability DB instrumentation needs.
+// main supplies the process logger when it opens the connection.
+type ErrorLogger interface {
+	Error(error)
+}
 
 var (
 	// dbQueryDuration is the wall-clock time each GORM operation spends between
@@ -88,12 +93,11 @@ func recordQueryEnd(op string) func(*gorm.DB) {
 // (gorm:begin_transaction / gorm:commit_or_rollback_transaction) is NOT
 // included; with synchronous=NORMAL + WAL the commit is cheap, so this stays a
 // faithful "how slow is the query" signal, just not literal end-to-end time.
-func instrumentQueries(conn *gorm.DB) {
-	l := logger.GetLogger()
+func instrumentQueries(conn *gorm.DB, log ErrorLogger) {
 	cb := conn.Callback()
 	logErr := func(name string, err error) {
 		if err != nil {
-			l.Error(fmt.Errorf("db metrics: register %s callback: %w", name, err))
+			log.Error(fmt.Errorf("db metrics: register %s callback: %w", name, err))
 		}
 	}
 
@@ -115,24 +119,26 @@ func instrumentQueries(conn *gorm.DB) {
 // in-use connections, wait count, cumulative wait time). For the glebarez
 // (modernc) SQLite driver the connection pool is the write-serialisation point,
 // so a climbing go_sql_wait_duration is the clearest "the DB is the bottleneck"
-// signal. db_name="main" labels every series so a future second pool can't
-// collide. Register (not MustRegister) so a duplicate call only logs.
-func instrumentPool(conn *gorm.DB) {
-	l := logger.GetLogger()
+// signal. dbName labels every series and must be unique within registerer.
+func instrumentPool(conn *gorm.DB, log ErrorLogger, registerer prometheus.Registerer, dbName string) error {
 	sqlDB, err := conn.DB()
 	if err != nil {
-		l.Error(fmt.Errorf("db metrics: cannot reach *sql.DB for pool stats: %w", err))
-		return
+		err = fmt.Errorf("db metrics: cannot reach *sql.DB for pool stats: %w", err)
+		log.Error(err)
+		return err
 	}
-	if err := metric.Registry.Register(collectors.NewDBStatsCollector(sqlDB, "main")); err != nil {
-		l.Error(fmt.Errorf("db metrics: register pool-stats collector: %w", err))
+	if err := registerer.Register(collectors.NewDBStatsCollector(sqlDB, dbName)); err != nil {
+		err = fmt.Errorf("db metrics: register pool-stats collector: %w", err)
+		log.Error(err)
+		return err
 	}
+	return nil
 }
 
 // instrumentConnection attaches all DB-level metrics to conn: per-operation
-// latency/error callbacks and the connection-pool stats collector. Called once
-// from GetConnection after the pool is open and PRAGMAs are applied.
-func instrumentConnection(conn *gorm.DB) {
-	instrumentQueries(conn)
-	instrumentPool(conn)
+// latency/error callbacks and the connection-pool stats collector. Called by
+// Open after the pool is open and PRAGMAs are applied.
+func instrumentConnection(conn *gorm.DB, log ErrorLogger, registerer prometheus.Registerer, dbName string) error {
+	instrumentQueries(conn, log)
+	return instrumentPool(conn, log, registerer, dbName)
 }

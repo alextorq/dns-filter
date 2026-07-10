@@ -11,8 +11,9 @@
 DNS-фильтр — single-binary Go-сервис: DNS на `:53` (UDP+TCP), HTTP API на
 `:8080`, опциональные Prometheus-метрики на `:2112`. SQLite через GORM.
 
-**Composition root — `main.go`.** `db.GetConnection()` вызывается ровно
-один раз. Дальше каждая фича получает явные зависимости:
+**Composition root — `main.go`.** Он загружает конфиг, создаёт logger с
+handler'ами и один раз вызывает `db.Open(OpenDeps{Path, Log, Registerer,
+DBName})`. Дальше каждая фича получает явные зависимости:
 
 ```
 main.go
@@ -53,9 +54,10 @@ in-memory `:memory:`-sqlite.
 
 Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь создаются
 обычными конструкторами в `main.go`; package-level singleton state в них
-удалён. Singleton'ы остались для логгера (`logger`), конфига (`config`) и
-`db.GetConnection()`. **Все они впитываются `*Module` в `main.go`** — фичи
-их сами не вызывают. `domain-inspect/checks/local_stats.go`
+удалён. `config.GetConfig()` остаётся единственным process-boundary loader'ом
+окружения; DB и logger создаются явными конструкторами в `main`. **Все
+зависимости впитываются `*Module` в `main.go`** — фичи их сами не вызывают.
+`domain-inspect/checks/local_stats.go`
 тоже больше не читает singleton-коннекшен: check создаётся через
 `NewLocalStats(blockRepo, trafficRepo)` в composition root.
 
@@ -104,10 +106,10 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   `GetAllActiveFilters` (потребитель — `suggest_to_block.Module`).
 - **`web.CreateServer(web.Handlers{...})`** — принимает все хендлеры
   пакетом и не читает singleton'ов.
-- **`main.go`** — composition root: `db.GetConnection()` вызывается ровно
-  один раз. Все `*Repo`, `*Module`, `*Handlers` конструируются здесь и
-  пробрасываются явно. Schema migration также получает это соединение явно:
-  `migrate.Migrate(conn)` не обращается к DB singleton самостоятельно.
+- **`main.go`** — composition root: одно соединение открывается явно и все
+  `*Repo`, `*Module`, `*Handlers` конструируются здесь и пробрасываются явно.
+  Schema migration также получает это соединение явно:
+  `migrate.Migrate(conn)` не обращается к process-level DB accessor.
 
 **Удалено:**
 - `blocked-domain/blocked_domain.go` (shim) и 4 deprecated package-level
@@ -131,7 +133,7 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   hard-delete). `GetAllActiveFilters` уже был там с этапа 2.
 - **`AllowDomainEventStore`** переведён на DI:
   `CreateAllowDomainEventStore(repo, log, capacity)`, поля `repo` + `log`
-  вместо `db.CreateBatchDomains` + `logger.GetLogger()`. Тест-сем
+  вместо package-level DB/logger accessors. Тест-сем
   `newWithChannelSize` зеркальный блок-воркеру; полное покрытие веток
   capacity/error/channel-full на фейках без sqlite.
 - **`allow_domain_use_cases_clear_events.ClearEvent(repo)`** — узкий порт
@@ -305,6 +307,25 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - Cache-aware adapter-тесты переведены с SQLite на in-memory fake и отдельно
   фиксируют registrable key, TTL и запись возраста домена.
 
+### Этап 10.4 — bootstrap DI для DB и logger
+
+- `main` явно создаёт `ChanLogger`, подключает console handler и передаёт его
+  в `db.Open(OpenDeps{Path, Log, Registerer, DBName})`; ошибка открытия БД
+  возвращается вызывающему, а не завершает процесс из пакета `db` через
+  `log.Fatal`. Pool metrics получают явный registerer и уникальный `DBName`;
+  дублирующее имя отклоняется при открытии, поэтому `go_sql_*` никогда не
+  остаётся привязанным к устаревшему pool.
+- Удалены production singleton accessors `logger.GetLogger` и
+  `db.GetConnection`: DB-метрики зависят только от узкого `ErrorLogger` порта.
+- Это намеренно breaking internal package API: DNS Filter поставляется как
+  приложение, а не versioned Go SDK, поэтому deprecated singleton wrappers не
+  сохраняются. Внешние потребители, если они существуют, должны перейти на
+  явные конструкторы.
+- `settings_wiring` зависит от двухметодного `runtimeLogger` порта, поэтому
+  его тесты используют fake без process-level logger.
+- Тесты закрепляют успешное открытие DB по явному пути, ошибку несуществующей
+  директории и применение/валидацию `log_level` через injected logger.
+
 ---
 
 ## Кандидат на следующий рефакторинг
@@ -376,7 +397,8 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
    _ = httpSrv.Shutdown(shutdownCtx)
    _ = dnsServer.Shutdown()
    trafficWorker.Stop(shutdownCtx)
-   logger.GetLogger().Close()  // последним — иначе потеряем логи shutdown
+   // Logger shutdown is intentionally separate: ChanLogger needs a
+   // drain-safe Stop(ctx) before the application can close it.
    ```
 
 ### Тесты
@@ -460,7 +482,7 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU**. Остаток: observability/background helpers и process-level constructors config/logger/db |
+| 3 | DI вместо singleton'ов | **готово для core, bootstrap DB/logger, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU**. Остаток: observability/background helpers, global metrics registry/init collectors и process-boundary config loader |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |

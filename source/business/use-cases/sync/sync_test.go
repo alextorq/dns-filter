@@ -45,11 +45,33 @@ type silentLogger struct{}
 func (silentLogger) Debug(_ ...any) {}
 func (silentLogger) Error(_ error)  {}
 
-type fakeSourceLister struct{ calls int }
+type fakeSourceLister struct {
+	calls int
+	items []db.Source
+	err   error
+}
 
 func (f *fakeSourceLister) GetAllActive() ([]db.Source, error) {
 	f.calls++
-	return nil, nil
+	return f.items, f.err
+}
+
+type loaderFunc func(context.Context) ([]string, error)
+
+func (f loaderFunc) Load(ctx context.Context) ([]string, error) { return f(ctx) }
+
+type pointerLoader struct{}
+
+func (*pointerLoader) Load(context.Context) ([]string, error) { return nil, nil }
+
+func completeRegistry(loader Loader) LoaderRegistry {
+	return LoaderRegistry{
+		db.SourceEasyList:       loader,
+		db.SourceRuAdList:       loader,
+		db.SourceAdGuardRussian: loader,
+		db.SourceStevenBlack:    loader,
+		db.SourceHaGeZiMulti:    loader,
+	}
 }
 
 func TestSync_PreCanceledSkipsReadsAndWrites(t *testing.T) {
@@ -58,12 +80,102 @@ func TestSync_PreCanceledSkipsReadsAndWrites(t *testing.T) {
 	sources := &fakeSourceLister{}
 	blocks := &fakeBlockWriter{}
 
-	err := Sync(ctx, sources, blocks, silentLogger{})
+	err := Sync(ctx, sources, blocks, nil, silentLogger{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Sync error = %v, want context.Canceled", err)
 	}
 	if sources.calls != 0 || blocks.creates != 0 || len(blocks.deletes) != 0 {
 		t.Fatalf("pre-canceled Sync did work: reads=%d creates=%d deletes=%d", sources.calls, blocks.creates, len(blocks.deletes))
+	}
+}
+
+func TestLoadAndParseActiveSources_UsesInjectedRegistry(t *testing.T) {
+	sources := &fakeSourceLister{items: []db.Source{
+		{Name: db.SourceEasyList, Active: true},
+		{Name: db.SourceStevenBlack, Active: true},
+	}}
+	called := make(map[db.BlockListSource]int)
+	loaders := LoaderRegistry{
+		db.SourceEasyList: loaderFunc(func(context.Context) ([]string, error) {
+			called[db.SourceEasyList]++
+			return []string{"easy.example."}, nil
+		}),
+		db.SourceStevenBlack: loaderFunc(func(context.Context) ([]string, error) {
+			called[db.SourceStevenBlack]++
+			return []string{"hosts.example."}, nil
+		}),
+	}
+
+	got, complete := LoadAndParseActiveSources(context.Background(), sources, loaders, silentLogger{})
+
+	if !complete {
+		t.Fatal("injected loaders completed successfully, want complete=true")
+	}
+	if called[db.SourceEasyList] != 1 || called[db.SourceStevenBlack] != 1 {
+		t.Fatalf("loader calls = %v, want one call per active remote source", called)
+	}
+	if len(got) != 2 || got[0].Source != db.SourceEasyList || got[1].Source != db.SourceStevenBlack {
+		t.Fatalf("loaded sources = %+v, want active-source order", got)
+	}
+}
+
+func TestLoadAndParseActiveSources_MissingRemoteLoaderIsIncomplete(t *testing.T) {
+	sources := &fakeSourceLister{items: []db.Source{{Name: db.SourceEasyList, Active: true}}}
+
+	got, complete := LoadAndParseActiveSources(context.Background(), sources, LoaderRegistry{}, silentLogger{})
+
+	if complete {
+		t.Fatal("missing loader for active remote source must make sync incomplete")
+	}
+	if len(got) != 0 {
+		t.Fatalf("loaded sources = %+v, want none", got)
+	}
+}
+
+func TestLoadAndParseActiveSources_IgnoresLocalSourcesWithoutLoaders(t *testing.T) {
+	sources := &fakeSourceLister{items: []db.Source{
+		{Name: db.SourceUser, Active: true},
+		{Name: db.SourceSuggestedToBlock, Active: true},
+		{Name: db.SourceAutoBlocked, Active: true},
+	}}
+
+	got, complete := LoadAndParseActiveSources(context.Background(), sources, LoaderRegistry{}, silentLogger{})
+
+	if !complete || len(got) != 0 {
+		t.Fatalf("local sources: complete=%v loaded=%+v, want true/empty", complete, got)
+	}
+}
+
+func TestNewLoaderRegistry_RejectsTypedNilLoader(t *testing.T) {
+	loaders := completeRegistry(loaderFunc(func(context.Context) ([]string, error) { return nil, nil }))
+	var nilLoader *pointerLoader
+	loaders[db.SourceEasyList] = nilLoader
+
+	if _, err := NewLoaderRegistry(loaders); err == nil {
+		t.Fatal("NewLoaderRegistry accepted typed-nil loader")
+	}
+}
+
+func TestNewLoaderRegistry_CopiesInputMap(t *testing.T) {
+	originalCalls, replacementCalls := 0, 0
+	loaders := completeRegistry(loaderFunc(func(context.Context) ([]string, error) {
+		originalCalls++
+		return nil, nil
+	}))
+	registry, err := NewLoaderRegistry(loaders)
+	if err != nil {
+		t.Fatalf("NewLoaderRegistry failed: %v", err)
+	}
+	loaders[db.SourceEasyList] = loaderFunc(func(context.Context) ([]string, error) {
+		replacementCalls++
+		return nil, nil
+	})
+
+	if _, err := registry[db.SourceEasyList].Load(context.Background()); err != nil {
+		t.Fatalf("copied loader failed: %v", err)
+	}
+	if originalCalls != 1 || replacementCalls != 0 {
+		t.Fatalf("calls after input mutation: original=%d replacement=%d", originalCalls, replacementCalls)
 	}
 }
 

@@ -49,6 +49,8 @@ import (
 	settings_db "github.com/alextorq/dns-filter/settings/db"
 	settingsWeb "github.com/alextorq/dns-filter/settings/web"
 	"github.com/alextorq/dns-filter/source"
+	source_sync "github.com/alextorq/dns-filter/source/business/use-cases/sync"
+	easy_list "github.com/alextorq/dns-filter/source/business/use-cases/sync/easy-list"
 	source_db "github.com/alextorq/dns-filter/source/db"
 	sourceWeb "github.com/alextorq/dns-filter/source/web"
 	suggest_to_block "github.com/alextorq/dns-filter/suggest-to-block"
@@ -223,7 +225,18 @@ func main() {
 	filterRuntimeState := filter_state.New(true)
 	filterModule := filter.NewModule(blockRepo, bloom, cache, filterRuntimeState, chanLogger)
 
-	sourceModule := source.NewModule(sourceRepo, blockRepo, chanLogger)
+	sourceHTTPClient := &http.Client{Timeout: 60 * time.Second}
+	sourceLoaders := source_sync.LoaderRegistry{
+		source_db.SourceEasyList:       easy_list.NewAdBlockLoader(sourceHTTPClient, easy_list.EasyListURL),
+		source_db.SourceRuAdList:       easy_list.NewAdBlockLoader(sourceHTTPClient, easy_list.RuAdListURL),
+		source_db.SourceAdGuardRussian: easy_list.NewAdBlockLoader(sourceHTTPClient, easy_list.AdGuardRussianURL),
+		source_db.SourceStevenBlack:    source_sync.NewHostsLoader(sourceHTTPClient, source_sync.StevenBlackURL),
+		source_db.SourceHaGeZiMulti:    source_sync.NewHostsLoader(sourceHTTPClient, source_sync.HaGeZiMultiURL),
+	}
+	sourceModule, err := source.NewModule(sourceRepo, blockRepo, sourceLoaders, chanLogger)
+	if err != nil {
+		panic(fmt.Errorf("create source module: %w", err))
+	}
 	sourceModule.Seed()
 
 	// Populate the bloom from whatever the DB already holds so the DNS server

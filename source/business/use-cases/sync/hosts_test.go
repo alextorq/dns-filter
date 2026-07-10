@@ -3,15 +3,16 @@ package sync
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
 	"testing"
 )
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
+type doerFunc func(*http.Request) (*http.Response, error)
 
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+func (f doerFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
 
 type cancelBody struct {
 	ctx     context.Context
@@ -26,23 +27,22 @@ func (b *cancelBody) Read([]byte) (int, error) {
 
 func (*cancelBody) Close() error { return nil }
 
-func TestLoadHostsFromURL_CancelAbortsRequest(t *testing.T) {
+func TestHostsLoader_CancelAbortsRequest(t *testing.T) {
+	t.Parallel()
 	started := make(chan struct{})
-	previousClient := httpClient
-	httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	loader := NewHostsLoader(doerFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     make(http.Header),
 			Body:       &cancelBody{ctx: req.Context(), started: started},
 			Request:    req,
 		}, nil
-	})}
-	t.Cleanup(func() { httpClient = previousClient })
+	}), "https://source.test/hosts")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := LoadHostsFromURL(ctx, "https://source.test/hosts")
+		_, err := loader.Load(ctx)
 		done <- err
 	}()
 
@@ -50,7 +50,40 @@ func TestLoadHostsFromURL_CancelAbortsRequest(t *testing.T) {
 	cancel()
 
 	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("LoadHostsFromURL error = %v, want context.Canceled", err)
+		t.Fatalf("HostsLoader.Load error = %v, want context.Canceled", err)
+	}
+}
+
+func TestHostsLoader_UsesInjectedEndpointAndParsesResponse(t *testing.T) {
+	t.Parallel()
+	const endpoint = "https://source.test/custom-hosts"
+	var requestedURL string
+	loader := NewHostsLoader(doerFunc(func(req *http.Request) (*http.Response, error) {
+		requestedURL = req.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("0.0.0.0 ads.example.com\n")),
+			Request:    req,
+		}, nil
+	}), endpoint)
+
+	domains, err := loader.Load(context.Background())
+	if err != nil {
+		t.Fatalf("HostsLoader.Load failed: %v", err)
+	}
+	if requestedURL != endpoint {
+		t.Fatalf("requested URL = %q, want injected %q", requestedURL, endpoint)
+	}
+	if len(domains) != 1 || domains[0] != "ads.example.com." {
+		t.Fatalf("domains = %v, want parsed injected response", domains)
+	}
+}
+
+func TestHostsLoader_RejectsTypedNilHTTPClient(t *testing.T) {
+	var client *http.Client
+	loader := NewHostsLoader(client, "https://source.test/hosts")
+	if _, err := loader.Load(context.Background()); err == nil {
+		t.Fatal("HostsLoader accepted typed-nil HTTP client")
 	}
 }
 

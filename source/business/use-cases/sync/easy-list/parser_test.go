@@ -3,6 +3,7 @@ package easy_list
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"slices"
 	"sort"
@@ -10,9 +11,9 @@ import (
 	"testing"
 )
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
+type doerFunc func(*http.Request) (*http.Response, error)
 
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+func (f doerFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
 
 type cancelBody struct {
 	ctx     context.Context
@@ -27,23 +28,22 @@ func (b *cancelBody) Read([]byte) (int, error) {
 
 func (*cancelBody) Close() error { return nil }
 
-func TestLoadFromURL_CancelAbortsRequest(t *testing.T) {
+func TestAdBlockLoader_CancelAbortsRequest(t *testing.T) {
+	t.Parallel()
 	started := make(chan struct{})
-	previousClient := httpClient
-	httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	loader := NewAdBlockLoader(doerFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     make(http.Header),
 			Body:       &cancelBody{ctx: req.Context(), started: started},
 			Request:    req,
 		}, nil
-	})}
-	t.Cleanup(func() { httpClient = previousClient })
+	}), "https://source.test/easylist.txt")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := LoadFromURL(ctx, "https://source.test/easylist.txt")
+		_, err := loader.Load(ctx)
 		done <- err
 	}()
 
@@ -51,7 +51,40 @@ func TestLoadFromURL_CancelAbortsRequest(t *testing.T) {
 	cancel()
 
 	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("LoadFromURL error = %v, want context.Canceled", err)
+		t.Fatalf("AdBlockLoader.Load error = %v, want context.Canceled", err)
+	}
+}
+
+func TestAdBlockLoader_UsesInjectedEndpointAndParsesResponse(t *testing.T) {
+	t.Parallel()
+	const endpoint = "https://source.test/custom-easylist.txt"
+	var requestedURL string
+	loader := NewAdBlockLoader(doerFunc(func(req *http.Request) (*http.Response, error) {
+		requestedURL = req.URL.String()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("||ads.example.com^\n")),
+			Request:    req,
+		}, nil
+	}), endpoint)
+
+	domains, err := loader.Load(context.Background())
+	if err != nil {
+		t.Fatalf("AdBlockLoader.Load failed: %v", err)
+	}
+	if requestedURL != endpoint {
+		t.Fatalf("requested URL = %q, want injected %q", requestedURL, endpoint)
+	}
+	if !slices.Equal(domains, []string{"ads.example.com."}) {
+		t.Fatalf("domains = %v, want parsed injected response", domains)
+	}
+}
+
+func TestAdBlockLoader_RejectsTypedNilHTTPClient(t *testing.T) {
+	var client *http.Client
+	loader := NewAdBlockLoader(client, "https://source.test/easylist.txt")
+	if _, err := loader.Load(context.Background()); err == nil {
+		t.Fatal("AdBlockLoader accepted typed-nil HTTP client")
 	}
 }
 

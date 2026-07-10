@@ -3,8 +3,8 @@ package sync
 import (
 	"context"
 	"fmt"
+	"reflect"
 
-	"github.com/alextorq/dns-filter/source/business/use-cases/sync/easy-list"
 	"github.com/alextorq/dns-filter/source/db"
 )
 
@@ -16,6 +16,61 @@ type Logger interface {
 // SourceLister is the narrow read port over the sources table.
 type SourceLister interface {
 	GetAllActive() ([]db.Source, error)
+}
+
+// Loader is the per-source input port. Concrete AdBlock/hosts adapters own
+// their HTTP client, endpoint and parser; the sync use-case only selects one
+// by source identity.
+type Loader interface {
+	Load(context.Context) ([]string, error)
+}
+
+type LoaderRegistry map[db.BlockListSource]Loader
+
+var remoteSources = [...]db.BlockListSource{
+	db.SourceEasyList,
+	db.SourceRuAdList,
+	db.SourceAdGuardRussian,
+	db.SourceStevenBlack,
+	db.SourceHaGeZiMulti,
+}
+
+// NewLoaderRegistry validates the complete remote-source set and copies it so
+// callers cannot change a running Module by mutating their input map.
+func NewLoaderRegistry(loaders LoaderRegistry) (LoaderRegistry, error) {
+	for _, source := range remoteSources {
+		loader, ok := loaders[source]
+		if !ok || isNilLoader(loader) {
+			return nil, fmt.Errorf("source sync: loader for %s is required", source)
+		}
+	}
+	result := make(LoaderRegistry, len(loaders))
+	for source, loader := range loaders {
+		result[source] = loader
+	}
+	return result, nil
+}
+
+func isRemoteSource(source db.BlockListSource) bool {
+	for _, candidate := range remoteSources {
+		if source == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func isNilLoader(loader Loader) bool {
+	if loader == nil {
+		return true
+	}
+	v := reflect.ValueOf(loader)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
 
 // BlockWriter is the narrow write port over the blocklist. CreateDNSRecordsByDomains
@@ -37,7 +92,7 @@ type DomainBySource struct {
 // loaded cleanly — when false the prune phase must be skipped, since the union
 // of fresh domains is incomplete and would delete domains a failed source
 // still lists.
-func LoadAndParseActiveSources(ctx context.Context, repo SourceLister, log Logger) (result []DomainBySource, complete bool) {
+func LoadAndParseActiveSources(ctx context.Context, repo SourceLister, loaders LoaderRegistry, log Logger) (result []DomainBySource, complete bool) {
 	result = make([]DomainBySource, 0)
 	if ctx.Err() != nil {
 		return result, false
@@ -51,52 +106,30 @@ func LoadAndParseActiveSources(ctx context.Context, repo SourceLister, log Logge
 
 	complete = true
 
-	loadAdBlock := func(source db.BlockListSource, url string) {
-		partial, err := easy_list.LoadFromURL(ctx, url)
-		if err != nil {
-			if ctx.Err() != nil {
-				complete = false
-				return
-			}
-			log.Error(fmt.Errorf("failed to load %s: %w", source, err))
-			complete = false
-			return
-		}
-		log.Debug(fmt.Sprintf("Loaded %s domains: %d", source, len(partial)))
-		result = append(result, DomainBySource{Source: source, Domains: partial})
-	}
-
-	loadHosts := func(source db.BlockListSource, url string) {
-		partial, err := LoadHostsFromURL(ctx, url)
-		if err != nil {
-			if ctx.Err() != nil {
-				complete = false
-				return
-			}
-			log.Error(fmt.Errorf("failed to load %s: %w", source, err))
-			complete = false
-			return
-		}
-		log.Debug(fmt.Sprintf("Loaded %s domains: %d", source, len(partial)))
-		result = append(result, DomainBySource{Source: source, Domains: partial})
-	}
-
 	for _, item := range items {
 		if ctx.Err() != nil {
 			return result, false
 		}
-		switch item.Name {
-		case db.SourceEasyList:
-			loadAdBlock(db.SourceEasyList, easy_list.EasyListURL)
-		case db.SourceRuAdList:
-			loadAdBlock(db.SourceRuAdList, easy_list.RuAdListURL)
-		case db.SourceAdGuardRussian:
-			loadAdBlock(db.SourceAdGuardRussian, easy_list.AdGuardRussianURL)
-		case db.SourceStevenBlack:
-			loadHosts(db.SourceStevenBlack, StevenBlackURL)
-		case db.SourceHaGeZiMulti:
-			loadHosts(db.SourceHaGeZiMulti, HaGeZiMultiURL)
+		loader, ok := loaders[item.Name]
+		if !ok || isNilLoader(loader) {
+			if isRemoteSource(item.Name) {
+				log.Error(fmt.Errorf("failed to load %s: loader is not configured", item.Name))
+				complete = false
+			}
+			continue
 		}
+		partial, err := loader.Load(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				complete = false
+				continue
+			}
+			log.Error(fmt.Errorf("failed to load %s: %w", item.Name, err))
+			complete = false
+			continue
+		}
+		log.Debug(fmt.Sprintf("Loaded %s domains: %d", item.Name, len(partial)))
+		result = append(result, DomainBySource{Source: item.Name, Domains: partial})
 	}
 
 	return result, complete
@@ -105,8 +138,8 @@ func LoadAndParseActiveSources(ctx context.Context, repo SourceLister, log Logge
 // Sync downloads every active source, adds the successfully pulled domains,
 // then prunes vanished rows only when every source loaded cleanly. A source
 // download failure skips prune; a DB write error or cancellation aborts.
-func Sync(ctx context.Context, repo SourceLister, blockRepo BlockWriter, log Logger) error {
-	list, complete := LoadAndParseActiveSources(ctx, repo, log)
+func Sync(ctx context.Context, repo SourceLister, blockRepo BlockWriter, loaders LoaderRegistry, log Logger) error {
+	list, complete := LoadAndParseActiveSources(ctx, repo, loaders, log)
 	if err := ctx.Err(); err != nil {
 		return err
 	}

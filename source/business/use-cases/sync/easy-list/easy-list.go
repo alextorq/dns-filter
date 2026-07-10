@@ -3,16 +3,15 @@ package easy_list
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
-	"time"
 
 	"github.com/alextorq/dns-filter/utils"
 	"golang.org/x/net/publicsuffix"
 )
-
-var httpClient = &http.Client{Timeout: 60 * time.Second}
 
 const (
 	EasyListURL       = "https://easylist.to/easylist/easylist.txt"
@@ -20,16 +19,32 @@ const (
 	AdGuardRussianURL = "https://filters.adtidy.org/extension/ublock/filters/1.txt"
 )
 
-func LoadEasyList(ctx context.Context) ([]string, error) {
-	return LoadFromURL(ctx, EasyListURL)
+// HTTPDoer is the consumer-owned HTTP port used by AdBlockLoader.
+type HTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
 }
 
-func LoadFromURL(ctx context.Context, url string) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// AdBlockLoader downloads and parses one configured AdBlock-format source.
+// It owns no package-level client, so multiple application graphs/tests can
+// inject independent transports safely.
+type AdBlockLoader struct {
+	client HTTPDoer
+	url    string
+}
+
+func NewAdBlockLoader(client HTTPDoer, url string) *AdBlockLoader {
+	return &AdBlockLoader{client: client, url: url}
+}
+
+func (l *AdBlockLoader) Load(ctx context.Context) ([]string, error) {
+	if isNilHTTPDoer(l.client) {
+		return nil, fmt.Errorf("adblock loader: HTTP client is required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, l.url, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := l.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -43,6 +58,19 @@ func LoadFromURL(ctx context.Context, url string) ([]string, error) {
 		return nil, err
 	}
 	return domains, nil
+}
+
+func isNilHTTPDoer(client HTTPDoer) bool {
+	if client == nil {
+		return true
+	}
+	v := reflect.ValueOf(client)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
 
 // IsSafeDNSDomain проверяет, является ли строка валидным доменом для DNS блокировки.

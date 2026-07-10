@@ -25,7 +25,8 @@ main.go
 │                 └─ settings_db.NewRepo(conn) ───────── settingsRepo
 │
 ├── filter.NewModule(blockRepo, bloom, cache, conf, log)  → filterModule
-├── source.NewModule(sourceRepo, blockRepo, log)          → sourceModule
+├── source.NewModule(sourceRepo, blockRepo, sourceLoaders, log)
+│                                                        → sourceModule
 └── suggest_to_block.NewModule(blockRepo, trafficAllowAdapter,
         sourceRepo, filterModule, suggestRepo, log)       → suggestModule
                             │
@@ -368,9 +369,32 @@ filter state создаётся отдельно через `runtime_state.New(t
 - Unit-тесты закрепляют validation, concurrent start, ожидание остановки и
   pre-canceled поведение runner.
 
+### Этап 10.8 — source loaders через DI
+
+- Package-level HTTP clients из EasyList/hosts loaders удалены. `main` создаёт
+  один timeout-configured `http.Client` и передаёт его в
+  `source_sync.NewDefaultLoaders`; source feature владеет стабильным mapping
+  source → adapter/endpoint, а composition root — transport policy.
+- Use-case получает `LoaderRegistry map[BlockListSource]Loader` и выбирает
+  adapter по активному source вместо прямых package-вызовов и switch по URL.
+- Registry валидирует обязательные remote sources, отклоняет nil/typed-nil и
+  копирует входную map; отсутствие loader во время sync помечает batch
+  incomplete и защищает prune от неполного union.
+- `source.Module` зависит от consumer-owned `SourceRepo`, а не concrete
+  `*source/db.Repo`, и хранит injected registry для всех запусков Sync.
+- Loader cancellation tests больше не подменяют globals и безопасно запускаются
+  параллельно; module/use-case tests используют fake repo/loaders без HTTP/SQLite.
+
 ---
 
-## Кандидат на следующий рефакторинг
+## Следующий DI этап
+
+**Полностью сконструировать domain-inspect checks в composition root.** RDAP,
+crt.sh и DNS checks пока используют package-level HTTP/resolver/endpoint seams;
+следующий DI PR должен дать им явные конструкторы и собрать полный каталог в
+`main`, включая RDAP dependency inspect adapter.
+
+## Следующий lifecycle-рефакторинг
 
 **Пункт 9 — graceful shutdown (HTTP + DNS + фоновые задачи).** Самый
 острый из оставшихся: на SIGTERM текущая реализация обрывает соединения
@@ -525,7 +549,7 @@ filter state создаётся отдельно через `runtime_state.New(t
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово**: core, bootstrap DB/logger, component metrics, config/filter state, background jobs, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU собираются в composition root |
+| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, db/web, auth, clients, dns-cache, local domain-inspect adapters, bloom и verdict LRU. **Остаток:** полный domain-inspect checks catalog, LAN discovery, DB snapshot exporter и точечные clock/generator seams |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |
@@ -534,5 +558,6 @@ filter state создаётся отдельно через `runtime_state.New(t
 | 9 | Graceful shutdown (HTTP + DNS + workers) | **следующий кандидат** |
 | 10 | Hot path не читает глобальный config | **готово**: hot path читает injected `RuntimeState`, `config.Load()` не singleton |
 
-Логично закрывать в порядке п.9 → п.4. Пункты 1, 6, 7, 8, 10 —
-независимы и можно включать по мере касания соответствующих файлов.
+В DI-потоке следующий шаг — полный domain-inspect checks catalog; lifecycle
+п.9 можно вести независимо. Пункты 1, 6, 7 и 8 также независимы и могут
+включаться по мере касания соответствующих файлов.

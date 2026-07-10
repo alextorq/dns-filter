@@ -3,32 +3,39 @@ package sync
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	easy_list "github.com/alextorq/dns-filter/source/business/use-cases/sync/easy-list"
 	"github.com/alextorq/dns-filter/utils"
 )
-
-var httpClient = &http.Client{Timeout: 60 * time.Second}
 
 const (
 	StevenBlackURL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
 	HaGeZiMultiURL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt"
 )
 
-func LoadStevenBlack(ctx context.Context) ([]string, error) {
-	return LoadHostsFromURL(ctx, StevenBlackURL)
+// HostsLoader downloads and parses one configured hosts-format source.
+type HostsLoader struct {
+	client HTTPDoer
+	url    string
 }
 
-func LoadHostsFromURL(ctx context.Context, url string) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func NewHostsLoader(client HTTPDoer, url string) *HostsLoader {
+	return &HostsLoader{client: client, url: url}
+}
+
+func (l *HostsLoader) Load(ctx context.Context) ([]string, error) {
+	if isNilHTTPDoer(l.client) {
+		return nil, fmt.Errorf("hosts loader: HTTP client is required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, l.url, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := l.client.Do(req)
 	if err != nil {
 		return nil, err
 	}

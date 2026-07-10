@@ -171,6 +171,16 @@ the canonical MAC key atomically with respect to client mutations.
 
 **Supported sources:** Steven Black's hosts, HaGeZi (hosts format); EasyList, RuAdList, AdGuardRussian (EasyList/AdBlock format).
 
+**Loader DI.** `main` owns one timeout-configured HTTP client and passes it to
+`source_sync.NewDefaultLoaders`. The source feature owns the stable production
+mapping `BlockListSource → format/parser/endpoint`, while transport policy stays
+in the composition root. `source.Module` receives the resulting
+`LoaderRegistry` plus a consumer-owned `SourceRepo`; the sync use-case does not
+resolve HTTP clients or a concrete DB adapter. Registry validation requires all
+remote sources and copies the map so a running module cannot be mutated by its
+caller. Local sources (`User`, `SuggestedToBlock`, `AutoBlocked`) correctly have
+no network loader.
+
 **EasyList-format parser (`easy-list/`).** Converts AdBlock rules into bare domains for the DNS block list. Only an unconditional `||domain^` rule can be flattened into a domain. A rule with contextual/partial modifiers (`$domain=`, `$third-party`, `$popup`, resource types, `$badfilter`, `$dnsrewrite`, …) is **discarded entirely** — the DNS filter does not know the page context, and stripping `$...` while blocking the bare domain would turn the browser rule `||mail.ru^$domain=dzen.ru` into a global block of `mail.ru`. Only `$important` and `$all` are allowed — they do not narrow a full domain block (`dnsSafeModifiers`, an allowlist approach: an unknown modifier makes the rule non-flattenable). Additionally, `IsSafeDNSDomain` discards bare public suffixes (`||ru^` → `ru`) and wildcard rules.
 
 **Sync process** (`Sync`, run in the background at startup — `backgroundSync` in `main.go`, plus a manual trigger from the web; there is no periodic re-sync, the "next sync" = the next process start):
@@ -587,8 +597,12 @@ func main() {
     filterState := runtime_state.New(true)
     filterModule := filter.NewModule(blockRepo, bloom, cache, filterState, chanLogger)
 
-    // 5. Sources: seed the catalog (the list sync moves to the background, step 7)
-    sourceModule := source.NewModule(sourceRepo, blockRepo, chanLogger)
+    // 5. Sources: main owns HTTP policy; the feature owns source/format/URL mapping.
+    sourceHTTPClient := &http.Client{Timeout: 60 * time.Second}
+    sourceLoaders, err := source_sync.NewDefaultLoaders(sourceHTTPClient)
+    if err != nil { panic(err) }
+    sourceModule, err := source.NewModule(sourceRepo, blockRepo, sourceLoaders, chanLogger)
+    if err != nil { panic(err) }
     sourceModule.Seed()
 
     // 5. Bloom = a snapshot of active domains from what is ALREADY in the DB
@@ -695,7 +709,7 @@ func main() {
 Load-bearing ordering:
 - `migrate.Migrate(conn)` must run before `NewRepo(conn)` — a Repo silently breaks on its first write without a schema. The connection is opened once in `main` and passed into migration explicitly; the migration package never resolves a process-level connection itself.
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
-- `sourceModule.Sync(ctx)` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds or its context is canceled; both HTTP requests and the retry wait observe that context.
+- `sourceModule.Sync(ctx)` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. The module holds a validated injected loader registry and a consumer-owned `SourceRepo`; its EasyList/hosts adapters receive their HTTP client and endpoint from `main`, with no package globals. When sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a panic would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds or its context is canceled; both HTTP requests and the retry wait observe that context.
 - `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
 - `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` tasks and their event stores are gone; the replacement traffic prune joins every other feature worker in the injected `background.Runner`. The runner starts **after `HydrateAll`** so every immediate job run sees effective settings rather than seed values, and waits for all jobs when its shared context is canceled. The same injected `trafficRetention` instance is captured by the settings Apply hook and read by every prune tick. The current `backgroundCtx` becomes the signal-derived application context in the graceful-shutdown step. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.

@@ -15,6 +15,7 @@ import (
 	auth_db "github.com/alextorq/dns-filter/auth/db"
 	authWeb "github.com/alextorq/dns-filter/auth/web"
 	"github.com/alextorq/dns-filter/background"
+	background_sourcesync "github.com/alextorq/dns-filter/background/sourcesync"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	blockedWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	"github.com/alextorq/dns-filter/clients"
@@ -87,97 +88,17 @@ func buildIdentifier(mode config.Mode, resolver identifier.MACResolver) identifi
 	}
 }
 
-// syncLogger is the narrow logging port backgroundSync needs.
-type syncLogger interface {
-	Info(args ...any)
+// serverLogger is the narrow logging port used by server error reporting.
+type serverLogger interface {
 	Error(err error)
 }
 
 // reportServerError suppresses the expected Shutdown result and surfaces every
 // real listener/runtime failure through the application logger.
-func reportServerError(name string, err error, log syncLogger) {
+func reportServerError(name string, err error, log serverLogger) {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error(fmt.Errorf("%s server stopped: %w", name, err))
 	}
-}
-
-// Retry backoff for the startup source sync: a failed sync (typically no
-// network on first boot) is retried with exponential backoff so the sinkhole
-// eventually loads its block lists without a process restart. The delay starts
-// at syncRetryBaseDelay and doubles up to syncRetryMaxDelay.
-const (
-	syncRetryBaseDelay = 30 * time.Second
-	syncRetryMaxDelay  = 30 * time.Minute
-)
-
-// backgroundSync pulls the block lists and, on success, rebuilds the in-memory
-// filter (UpdateFromDb refreshes the bloom and clears the verdict cache so a
-// freshly blocked domain is not served from a stale verdict).
-//
-// It is launched as a goroutine after the DNS server is already serving, so —
-// unlike the synchronous startup path — it never panics: a panic here would
-// take down a DNS server that is already answering traffic. A failed sync is
-// retried with exponential backoff (see syncRetryBaseDelay) until it succeeds;
-// in the meantime the server keeps running on whatever the DB already held.
-func backgroundSync(ctx context.Context, sync func(context.Context) error, refresh func() error, log syncLogger) {
-	runBackgroundSync(ctx, sync, refresh, log, waitForRetry)
-}
-
-// waitForRetry blocks for d or returns promptly when the application context is
-// canceled. A timer (rather than time.Sleep) keeps shutdown from waiting out a
-// potentially 30-minute retry delay.
-func waitForRetry(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
-// runBackgroundSync is backgroundSync with an injectable wait so retry
-// behavior is testable without real-time delays.
-func runBackgroundSync(
-	ctx context.Context,
-	sync func(context.Context) error,
-	refresh func() error,
-	log syncLogger,
-	wait func(context.Context, time.Duration) error,
-) {
-	if ctx.Err() != nil {
-		return
-	}
-	log.Info("Фоновая синхронизация источников запущена")
-
-	delay := syncRetryBaseDelay
-	for attempt := 1; ; attempt++ {
-		err := sync(ctx)
-		if err == nil {
-			break
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		log.Error(fmt.Errorf("фоновая синхронизация источников не удалась (попытка %d), повтор через %s: %w", attempt, delay, err))
-		if err := wait(ctx, delay); err != nil {
-			return
-		}
-		delay = min(delay*2, syncRetryMaxDelay)
-	}
-
-	if ctx.Err() != nil {
-		return
-	}
-	if err := refresh(); err != nil {
-		log.Error(fmt.Errorf("обновление фильтра после фоновой синхронизации не удалось: %w", err))
-		return
-	}
-	if ctx.Err() != nil {
-		return
-	}
-	log.Info("Фоновая синхронизация источников завершена, фильтр обновлён")
 }
 
 func main() {
@@ -442,13 +363,15 @@ func main() {
 	// Pull the block lists in the background and refresh the filter once done.
 	// The DNS server (started below via dnsServer.Serve) does not wait on this.
 	// Launched after HydrateAll so the persisted log level is already applied
-	// when backgroundSync emits its "started" line — otherwise that INFO line
+	// when the source sync job emits its "started" line — otherwise that INFO line
 	// races ahead of hydrate and prints even when the level was raised to WARN,
 	// while the matching "finished" line (logged later, post-hydrate) is
 	// suppressed, making a healthy sync look stuck.
-	backgroundJobs = append(backgroundJobs, background.JobFunc(func(ctx context.Context) {
-		backgroundSync(ctx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
-	}))
+	sourceSyncJob, err := background_sourcesync.New(sourceModule, filterModule, chanLogger)
+	if err != nil {
+		panic(fmt.Errorf("create source sync job: %w", err))
+	}
+	backgroundJobs = append(backgroundJobs, sourceSyncJob)
 
 	backgroundRunner, err := background.NewRunner(backgroundJobs...)
 	if err != nil {

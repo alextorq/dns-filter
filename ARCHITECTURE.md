@@ -183,7 +183,7 @@ no network loader.
 
 **EasyList-format parser (`easy-list/`).** Converts AdBlock rules into bare domains for the DNS block list. Only an unconditional `||domain^` rule can be flattened into a domain. A rule with contextual/partial modifiers (`$domain=`, `$third-party`, `$popup`, resource types, `$badfilter`, `$dnsrewrite`, …) is **discarded entirely** — the DNS filter does not know the page context, and stripping `$...` while blocking the bare domain would turn the browser rule `||mail.ru^$domain=dzen.ru` into a global block of `mail.ru`. Only `$important` and `$all` are allowed — they do not narrow a full domain block (`dnsSafeModifiers`, an allowlist approach: an unknown modifier makes the rule non-flattenable). Additionally, `IsSafeDNSDomain` discards bare public suffixes (`||ru^` → `ru`) and wildcard rules.
 
-**Sync process** (`Sync`, run in the background at startup — `backgroundSync` in `main.go`, plus a manual trigger from the web; there is no periodic re-sync, the "next sync" = the next process start):
+**Sync process** (`Sync`, run at startup by `background/sourcesync.Job`, plus a manual trigger from the web; there is no periodic re-sync, the "next sync" = the next process start):
 1. Download and parse each active source. A failure of one source is logged and does not abort the rest — it simply does not reach the write stage, its domains are kept; but the whole batch is marked `complete = false`.
 2. **Add phase** — `CreateDNSRecordsByDomains` per source: an upsert (dedup + `INSERT OR IGNORE`) of the fresh set.
 3. **Prune phase** — `pruneVanishedDomains`: for each source, `DeleteDNSRecordsBySourceNotIn` hard-deletes its `block_lists` rows that are absent from the **union of all** fresh sets.
@@ -193,7 +193,7 @@ no network loader.
 - **Skip when `complete = false`.** A failed source is absent from the union — the prune is skipped entirely, otherwise its domains would be deleted.
 - **Skip an empty source.** A source parsed into an empty set is not pruned: an empty parse is more likely a garbage response than a list that genuinely emptied.
 - Deletion is strictly by `source` — `User`/`AutoBlocked`/`SuggestedToBlock` are untouched. Surviving rows keep their `id`/`created_at`. Deletions run in a single transaction.
-- The full chain accepts `context.Context`: both HTTP loaders use `NewRequestWithContext`, loader-facing parsers surface `scanner.Err` (so an interrupted streaming body is never accepted as a complete partial list), source writes use GORM `WithContext`, prune checks cancellation between sources, and `backgroundSync` waits between retries with a cancelable timer. Cancellation is normal control flow — it does not log a source failure, continue add/prune, refresh the bloom, or emit a success line. The current composition root still supplies `context.Background()`; the graceful-shutdown step will replace it with the signal-derived application context.
+- The full chain accepts `context.Context`: both HTTP loaders use `NewRequestWithContext`, loader-facing parsers surface `scanner.Err` (so an interrupted streaming body is never accepted as a complete partial list), source writes use GORM `WithContext`, prune checks cancellation between sources, and `background/sourcesync.Job` waits between retries with a cancelable timer. Cancellation is normal control flow — it does not log a source failure, continue add/prune, refresh the bloom, or emit a success line. The current composition root still supplies `context.Background()`; the graceful-shutdown step will replace it with the signal-derived application context.
 
 ### 7. DNS cache (`dns-cache/`)
 
@@ -666,7 +666,7 @@ func main() {
     dnsServer.Traffic = trafficWorker
 
     // 8. settings: descriptor declaration (incl. traffic_retention_days), restore
-    //    of the filter state, HydrateAll — strictly before Serve. Then backgroundSync in the background.
+    //    of the filter state, HydrateAll — strictly before Serve. Then source sync in the background.
     settingsModule := settings.NewModule(settingsRepo)
     registerDynamicSettings(settingsModule, dynamicSettingsDeps{
         /* conf, logr, resolver, cache, dnsServer, inspectEnabled, inspectCredentials, */
@@ -681,10 +681,9 @@ func main() {
         background.JobFunc(func(ctx context.Context) {
             traffic_prune.Run(ctx, trafficRepo, trafficRetention, chanLogger)
         }),
-        background.JobFunc(func(ctx context.Context) {
-            backgroundSync(ctx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
-        }),
     )
+    sourceSyncJob, _ := background_sourcesync.New(sourceModule, filterModule, chanLogger)
+    backgroundJobs = append(backgroundJobs, sourceSyncJob)
     backgroundRunner, _ := background.NewRunner(backgroundJobs...)
     backgroundCtx := context.Background()
     go backgroundRunner.Run(backgroundCtx)
@@ -709,7 +708,7 @@ func main() {
 Load-bearing ordering:
 - `migrate.Migrate(conn)` must run before `NewRepo(conn)` — a Repo silently breaks on its first write without a schema. The connection is opened once in `main` and passed into migration explicitly; the migration package never resolves a process-level connection itself.
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
-- `sourceModule.Sync(ctx)` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. The module holds a validated injected loader registry and a consumer-owned `SourceRepo`; its EasyList/hosts adapters receive their HTTP client and endpoint from `main`, with no package globals. When sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a panic would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds or its context is canceled; both HTTP requests and the retry wait observe that context.
+- `sourceModule.Sync(ctx)` moved out of the synchronous path into `background/sourcesync.Job` — the DNS server starts without waiting on the network. The module holds a validated injected loader registry and a consumer-owned `SourceRepo`; `main` supplies the HTTP client while the source factory owns the stable endpoint/adapter mapping, with no package globals. The job receives `source.Module`, `filter.Module`, and the logger through narrow ports; after sync it calls `UpdateFromDb()` (rebuilds the bloom + clears the verdict cache). It **does not panic**: a panic would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with capped exponential backoff until it succeeds or its context is canceled; both HTTP requests and the retry wait observe that context.
 - `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
 - `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` tasks and their event stores are gone; the replacement traffic prune joins every other feature worker in the injected `background.Runner`. The runner starts **after `HydrateAll`** so every immediate job run sees effective settings rather than seed values, and waits for all jobs when its shared context is canceled. The same injected `trafficRetention` instance is captured by the settings Apply hook and read by every prune tick. The current `backgroundCtx` becomes the signal-derived application context in the graceful-shutdown step. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.

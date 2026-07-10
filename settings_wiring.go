@@ -17,9 +17,14 @@ import (
 // dynamicSettingsDeps bundles the runtime sinks that the DB-backed settings
 // push their values into. It is assembled at the composition root where every
 // sink already exists.
+type runtimeLogger interface {
+	GetLogLevel() string
+	UpdateLogLevel(string)
+}
+
 type dynamicSettingsDeps struct {
 	conf               *config.Config
-	logr               *logger.ChanLogger
+	logr               runtimeLogger
 	resolver           *dns.ReloadableResolver
 	cache              *dns_cache.CacheWithMetrics
 	dnsServer          *dns.DnsServer

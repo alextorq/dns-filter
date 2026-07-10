@@ -10,6 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
+type silentMetricLogger struct{}
+
+func (silentMetricLogger) Error(error) {}
+
 // histSampleCount reports how many observations the duration histogram has
 // recorded for op so far. The metric is process-global, so tests assert on the
 // delta around an operation rather than an absolute value.
@@ -29,7 +33,7 @@ func histSampleCount(t *testing.T, op string) uint64 {
 func instrumentedTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	conn := newTestDB(t)
-	instrumentQueries(conn)
+	instrumentQueries(conn, silentMetricLogger{})
 	return conn
 }
 

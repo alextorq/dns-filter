@@ -6,21 +6,24 @@ import (
 
 	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/domain-inspect/checks"
-	"github.com/alextorq/dns-filter/logger"
 	"github.com/alextorq/dns-filter/settings"
 	suggest_inspect "github.com/alextorq/dns-filter/suggest-to-block/inspect"
 	traffic_prune "github.com/alextorq/dns-filter/traffic/business/use-cases/prune"
 )
 
+type fakeRuntimeLogger struct{ level string }
+
+func (l *fakeRuntimeLogger) UpdateLogLevel(level string) { l.level = level }
+func (l *fakeRuntimeLogger) GetLogLevel() string         { return l.level }
+
 // wiringDepsForRegister собирает минимальные зависимости для
 // registerDynamicSettings: дескрипторы строятся без обращения к dns/cache-
-// sink'ам (они нужны только в Apply), но `log_level.Default` дергает
-// logger.GetLogLevel() в момент Register — поэтому реальный logger всё-таки
-// нужен. Это безопасный синглтон, инициализированный пакетом.
+// sink'ам (они нужны только в Apply). Для log_level достаточно узкого
+// runtimeLogger-порта, поэтому тесты не поднимают process-level logger.
 func wiringDepsForRegister(c *config.Config) dynamicSettingsDeps {
 	return dynamicSettingsDeps{
 		conf:               c,
-		logr:               logger.GetLogger(),
+		logr:               &fakeRuntimeLogger{level: "ERROR"},
 		inspectEnabled:     suggest_inspect.NewEnabledState(),
 		inspectCredentials: checks.NewCredentials(),
 		trafficRetention:   traffic_prune.NewRetentionState(),
@@ -133,6 +136,28 @@ func TestTrafficRetentionSetting_HydrateFallsBackToEnvDefault(t *testing.T) {
 	}
 	if got := state.Days(); got != 30 {
 		t.Errorf("hydrate must apply env default 30 when no override, got %d", got)
+	}
+}
+
+func TestLogLevelSetting_ApplyUsesInjectedLogger(t *testing.T) {
+	repo := newFakeSettingsRepo()
+	m := settings.NewModule(repo)
+	deps := wiringDepsForRegister(&config.Config{})
+	logr := &fakeRuntimeLogger{level: "INFO"}
+	deps.logr = logr
+	registerDynamicSettings(m, deps)
+
+	if err := m.Set("log_level", "WARN"); err != nil {
+		t.Fatalf("set valid log level: %v", err)
+	}
+	if got := logr.GetLogLevel(); got != "WARN" {
+		t.Errorf("injected logger level = %q, want WARN", got)
+	}
+	if err := m.Set("log_level", "verbose"); err == nil {
+		t.Error("invalid log level must be rejected")
+	}
+	if got := logr.GetLogLevel(); got != "WARN" {
+		t.Errorf("invalid value changed injected logger to %q", got)
 	}
 }
 

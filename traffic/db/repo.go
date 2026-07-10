@@ -10,7 +10,7 @@ import (
 
 // Repo is the output adapter for the unified per-device traffic counter table.
 // Construct with NewRepo(gormDB) in main and pass it to consumers instead of
-// reaching for db.GetConnection() package-level state — same convention as
+// reaching for a package-level database accessor — same convention as
 // blocked-domain/db.Repo.
 type Repo struct {
 	db *gorm.DB

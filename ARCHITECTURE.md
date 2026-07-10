@@ -277,9 +277,9 @@ The contract is pinned by the regression test `web/server_test.go::TestBuildRout
 
 **DB metrics (`db/`):**
 - `sqlite_file_size_bytes` — the on-disk SQLite file size. `main` explicitly constructs `db.DBSizeMonitor` with the DB path, logger and Prometheus registerer, then runs it with the application context; it samples immediately and every 10 minutes until cancellation. There is no import-time ticker/goroutine.
-- `db_query_duration_seconds{operation}` — a latency histogram for each GORM operation (`create`/`query`/`update`/`delete`/`row`/`raw`); captured by before/after callbacks attached in `GetConnection`. The buckets are tuned for sub-millisecond reads with headroom up to 5s — the upper tail is the "DB is slow" signal. This is the **primary** DB-latency indicator (p50/p95/p99 via `histogram_quantile`)
+- `db_query_duration_seconds{operation}` — a latency histogram for each GORM operation (`create`/`query`/`update`/`delete`/`row`/`raw`); captured by before/after callbacks attached in `db.Open`. The buckets are tuned for sub-millisecond reads with headroom up to 5s — the upper tail is the "DB is slow" signal. This is the **primary** DB-latency indicator (p50/p95/p99 via `histogram_quantile`)
 - `db_query_errors_total{operation}` — operations that ended in an error; `gorm.ErrRecordNotFound` is deliberately **not** counted (an empty `First()` on the DNS path is normal control flow, not a failure)
-- `go_sql_*{db_name="main"}` — `database/sql` pool stats via `collectors.NewDBStatsCollector` (open/in-use/idle connections, `wait_count_total`, `wait_duration_seconds_total`). For the glebarez/modernc driver the pool is the write-serialization point, so a growing `go_sql_wait_duration` is the clearest sign the DB has become the bottleneck
+- `go_sql_*{db_name="main"}` — `database/sql` pool stats via `collectors.NewDBStatsCollector` (open/in-use/idle connections, `wait_count_total`, `wait_duration_seconds_total`). `db.Open` receives both the target registerer and a DB name; names must be unique within that registerer, and a duplicate rejects the new pool rather than leaving its metrics attached to an older connection. For the glebarez/modernc driver the pool is the write-serialization point, so a growing `go_sql_wait_duration` is the clearest sign the DB has become the bottleneck
 
 **Connection tuning (`db/connect.go`).** PRAGMAs are set via the **DSN** (`?_pragma=...` in `buildDSN`), not by a one-off `db.Exec` after opening: the modernc driver runs `_pragma` on **every** new pool connection, whereas `db.Exec("PRAGMA …")` configures only the single connection that served it (in prod the pool opened 3 — `synchronous=NORMAL` and the 64 MB cache settled on one, the others silently ran `FULL` + 2 MB). `journal_mode=WAL` persists in the file header and is global either way; `busy_timeout=5000` is set by the driver on each connection — it is duplicated in the DSN only for clarity. The pool is bounded by `SetMaxOpenConns(maxOpenConns)`: the former default `0` (unlimited) only amplified write contention; a small limit preserves concurrent reads (WAL), while writes serialize behind `busy_timeout`.
 
@@ -551,19 +551,26 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ## Entry point (main.go)
 
-`main.go` is the composition root for the DI-enabled feature set. `db.GetConnection()` is called exactly once there; migrations and the repos listed below receive that connection explicitly. The domain-inspect HTTP handler, all injected checks and their shared runtime credentials are composed here too:
+`main.go` is the composition root for the DI-enabled feature set. It loads configuration, creates the channel logger with its handlers, and calls `db.Open` exactly once with the shared metrics registerer and DB name; migrations and the repos listed below receive that connection explicitly. The domain-inspect HTTP handler, all injected checks and their shared runtime credentials are composed here too:
 
 ```go
 func main() {
-    // 1. DB migration and admin bootstrap
-    conn := app_db.GetConnection()
-    migrate.Migrate(conn)
+    // 1. Process-owned config, logger and DB
     conf := config.GetConfig()
-    chanLogger := logger.GetLogger()
+    chanLogger := logger.NewChanLogger(1000, conf.LogLevel)
+    chanLogger.AddHandler(&console.ConsoleHandler{})
+    conn, err := app_db.Open(app_db.OpenDeps{
+        Path: conf.DbPath, Log: chanLogger,
+        Registerer: metric.Registry, DBName: "main",
+    })
+    if err != nil { panic(err) }
+    migrate.Migrate(conn)
+
+    // 2. Admin bootstrap
     authModule := authBusiness.NewModule(auth_db.NewRepo(conn), conf.AdminLogin, conf.AdminPassword)
     if err := authModule.BootstrapAdmin(); err != nil { panic(err) }
 
-    // 2. Repos (one per feature) — the only place where *gorm.DB appears
+    // 3. Repos (one per feature) — the only place where *gorm.DB appears
     blockRepo    := blocked_domain_db.NewRepo(conn)
     sourceRepo   := source_db.NewRepo(conn)
     suggestRepo  := suggest_to_block_db.NewRepo(conn)
@@ -571,12 +578,12 @@ func main() {
     trafficRepo  := traffic_db.NewRepo(conn)
     clientRepo   := clients_db.NewRepo(conn)
 
-    // 3. filter.Module: owns explicit process-local bloom + verdict cache instances
+    // 4. filter.Module: owns explicit process-local bloom + verdict cache instances
     bloom := filter_bloom.NewFilter()
     cache := filter_cache.NewCacheWithMetrics(1500)
     filterModule := filter.NewModule(blockRepo, bloom, cache, conf, chanLogger)
 
-    // 4. Sources: seed the catalog (the list sync moves to the background, step 7)
+    // 5. Sources: seed the catalog (the list sync moves to the background, step 7)
     sourceModule := source.NewModule(sourceRepo, blockRepo, chanLogger)
     sourceModule.Seed()
 
@@ -661,7 +668,7 @@ func main() {
 ```
 
 Load-bearing ordering:
-- `migrate.Migrate(conn)` must run before `NewRepo(conn)` — a Repo silently breaks on its first write without a schema. The connection is resolved once in `main` and passed into migration explicitly; the migration package no longer calls `db.GetConnection()` itself.
+- `migrate.Migrate(conn)` must run before `NewRepo(conn)` — a Repo silently breaks on its first write without a schema. The connection is opened once in `main` and passed into migration explicitly; the migration package never resolves a process-level connection itself.
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
 - `sourceModule.Sync(ctx)` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds or its context is canceled; both HTTP requests and the retry wait observe that context.
 - `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
@@ -685,12 +692,13 @@ Load-bearing ordering:
 
 4. **In-memory maps** — for the Bloom filter and the client exclusion list (fast synchronized access)
 
-5. **Process-owned state** — `main.go` explicitly constructs the bloom filter,
-   filter verdict LRU and DNS response cache, then injects them into their
-   consumers. Logger and config still use process-level `sync.Once`
-   constructors.
+5. **Process-owned state** — `main.go` explicitly loads configuration,
+   constructs the logger and shared DB connection, then constructs the bloom
+   filter, filter verdict LRU and DNS response cache before injecting them into
+   their consumers. `config.GetConfig()` remains the env-loading boundary; DB
+   and logger expose constructors rather than production singleton accessors.
 
-6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. `db.GetConnection()` is called exactly once there; migrations and the DI-enabled features get explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`), and orchestration is a `*Module`. DNS cache and domain-inspect (handler, local readers, URLScan, VT/SB credentials and provider checks) are explicitly instantiated and injected:
+6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. It calls `db.Open` exactly once with `OpenDeps` (path, logger, metrics registerer and a unique pool name) and passes the resulting connection to migrations and explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`); orchestration is a `*Module`. DNS cache and domain-inspect (handler, local readers, URLScan, VT/SB credentials and provider checks) are explicitly instantiated and injected:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.

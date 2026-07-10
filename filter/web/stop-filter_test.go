@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/filter"
+	runtime_state "github.com/alextorq/dns-filter/filter/runtime-state"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,8 +18,8 @@ import (
 // — they only flip atomic config fields — so stubs return zero values.
 type stubRepo struct{}
 
-func (stubRepo) GetAllActiveURLs() ([]string, error)            { return nil, nil }
-func (stubRepo) IsActivelyBlocked(domain string) (bool, error)  { return false, nil }
+func (stubRepo) GetAllActiveURLs() ([]string, error)           { return nil, nil }
+func (stubRepo) IsActivelyBlocked(domain string) (bool, error) { return false, nil }
 
 type stubBloom struct{}
 
@@ -38,11 +38,10 @@ func (stubLog) Info(args ...any)  {}
 func (stubLog) Debug(args ...any) {}
 func (stubLog) Error(err error)   {}
 
-func newTestHandlers() (*Handlers, *config.Config) {
-	conf := &config.Config{}
-	conf.Enabled.Store(true)
-	module := filter.NewModule(stubRepo{}, stubBloom{}, stubCache{}, conf, stubLog{})
-	return &Handlers{Module: module}, conf
+func newTestHandlers() (*Handlers, *runtime_state.State) {
+	state := runtime_state.New(true)
+	module := filter.NewModule(stubRepo{}, stubBloom{}, stubCache{}, state, stubLog{})
+	return &Handlers{Module: module}, state
 }
 
 func postJSON(t *testing.T, fn gin.HandlerFunc, path string, body any) *httptest.ResponseRecorder {
@@ -79,8 +78,8 @@ func TestHandlerPauseFilter_InvalidDuration_Returns400(t *testing.T) {
 // state precludes the operation. 500 here would mask a known business error
 // behind a server fault.
 func TestHandlerPauseFilter_FilterDisabled_Returns409(t *testing.T) {
-	h, conf := newTestHandlers()
-	conf.Enabled.Store(false)
+	h, state := newTestHandlers()
+	state.SetEnabled(false)
 
 	w := postJSON(t, h.PauseFilter, "/api/filter/pause", PauseFilterRequest{Minutes: 5})
 	if w.Code != http.StatusConflict {
@@ -149,7 +148,7 @@ func TestHandlerResumeFilter_NoActivePause_Returns200(t *testing.T) {
 
 // ChangeFilterStatus toggles Enabled and clears any active pause atomically.
 func TestHandlerChangeFilterStatus_TogglesAndClearsPause(t *testing.T) {
-	h, conf := newTestHandlers()
+	h, state := newTestHandlers()
 	// Pre-arm a pause so we can assert it gets cleared by the toggle.
 	if _, err := h.Module.Pause(5); err != nil {
 		t.Fatalf("Pause failed: %v", err)
@@ -165,10 +164,10 @@ func TestHandlerChangeFilterStatus_TogglesAndClearsPause(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
 	}
-	if conf.Enabled.Load() {
+	if state.Enabled() {
 		t.Error("Enabled must flip from true to false on toggle")
 	}
-	if conf.PausedUntilUnix.Load() != 0 {
+	if state.PausedUntil() != 0 {
 		t.Error("toggle must clear active pause")
 	}
 }

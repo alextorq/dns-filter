@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alextorq/dns-filter/config"
+	runtime_state "github.com/alextorq/dns-filter/filter/runtime-state"
 )
 
 type fakeStore struct {
@@ -54,6 +54,21 @@ func TestPersistHook_WritesBothKeys(t *testing.T) {
 	}
 }
 
+func TestNewModule_RejectsMissingRuntimeState(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("missing runtime state must fail during construction")
+		}
+	}()
+	NewModule(nil, nil, nil, nil, nopLogger{})
+}
+
+func TestRestoreState_RejectsMissingRuntimeState(t *testing.T) {
+	if err := RestoreState(newFakeStore(), nil); err == nil {
+		t.Fatal("missing runtime state must return an error")
+	}
+}
+
 // A persist failure must not panic or propagate — the in-memory toggle has
 // already taken effect; we only lose durability.
 func TestPersistHook_SwallowsStoreError(t *testing.T) {
@@ -68,13 +83,12 @@ func TestRestoreState_DisabledSurvivesRestart(t *testing.T) {
 	store := newFakeStore()
 	store.data[StateKeyEnabled] = "false"
 
-	conf := &config.Config{}
-	conf.Enabled.Store(true) // compiled default
+	state := runtime_state.New(true) // compiled default
 
-	if err := RestoreState(store, conf); err != nil {
+	if err := RestoreState(store, state); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
-	if conf.Enabled.Load() {
+	if state.Enabled() {
 		t.Error("a persisted disabled filter must stay disabled after restore")
 	}
 }
@@ -82,13 +96,12 @@ func TestRestoreState_DisabledSurvivesRestart(t *testing.T) {
 func TestRestoreState_MissingRowKeepsDefault(t *testing.T) {
 	store := newFakeStore() // empty
 
-	conf := &config.Config{}
-	conf.Enabled.Store(true)
+	state := runtime_state.New(true)
 
-	if err := RestoreState(store, conf); err != nil {
+	if err := RestoreState(store, state); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
-	if !conf.Enabled.Load() {
+	if !state.Enabled() {
 		t.Error("missing row must leave the compiled default (enabled) intact")
 	}
 }
@@ -98,13 +111,12 @@ func TestRestoreState_ExpiredPauseNormalizedToZero(t *testing.T) {
 	store.data[StateKeyEnabled] = "true"
 	store.data[StateKeyPausedUntil] = strconv.FormatInt(time.Now().Add(-time.Hour).Unix(), 10)
 
-	conf := &config.Config{}
-	conf.Enabled.Store(true)
+	state := runtime_state.New(true)
 
-	if err := RestoreState(store, conf); err != nil {
+	if err := RestoreState(store, state); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
-	if got := conf.PausedUntilUnix.Load(); got != 0 {
+	if got := state.PausedUntil(); got != 0 {
 		t.Errorf("expired pause must restore as 0, got %d", got)
 	}
 }
@@ -114,13 +126,12 @@ func TestRestoreState_FuturePauseRestored(t *testing.T) {
 	future := time.Now().Add(time.Hour).Unix()
 	store.data[StateKeyPausedUntil] = strconv.FormatInt(future, 10)
 
-	conf := &config.Config{}
-	conf.Enabled.Store(true)
+	state := runtime_state.New(true)
 
-	if err := RestoreState(store, conf); err != nil {
+	if err := RestoreState(store, state); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
-	if got := conf.PausedUntilUnix.Load(); got != future {
+	if got := state.PausedUntil(); got != future {
 		t.Errorf("future pause must be restored, got %d want %d", got, future)
 	}
 }
@@ -130,13 +141,12 @@ func TestRestoreState_MalformedValueIgnored(t *testing.T) {
 	store := newFakeStore()
 	store.data[StateKeyEnabled] = "yes-please"
 
-	conf := &config.Config{}
-	conf.Enabled.Store(true)
+	state := runtime_state.New(true)
 
-	if err := RestoreState(store, conf); err != nil {
+	if err := RestoreState(store, state); err != nil {
 		t.Fatalf("restore must not fail on malformed value: %v", err)
 	}
-	if !conf.Enabled.Load() {
+	if !state.Enabled() {
 		t.Error("malformed value must leave the default (enabled) intact")
 	}
 }
@@ -146,13 +156,13 @@ func TestRestoreState_ReadErrorSurfaces(t *testing.T) {
 	store := newFakeStore()
 	store.getErr = errors.New("db down")
 
-	conf := &config.Config{}
-	if err := RestoreState(store, conf); err == nil {
+	state := runtime_state.New(true)
+	if err := RestoreState(store, state); err == nil {
 		t.Error("expected read error to surface")
 	}
 }
 
-// End-to-end: persist from one config, restore into a fresh one — the toggle
+// End-to-end: persist from one state, restore into a fresh one — the toggle
 // round-trips across a simulated restart.
 func TestFilterState_RoundTripsAcrossRestart(t *testing.T) {
 	store := newFakeStore()
@@ -161,13 +171,12 @@ func TestFilterState_RoundTripsAcrossRestart(t *testing.T) {
 	// "Running" process disables the filter.
 	hook(false, 0)
 
-	// "Restart": a brand-new config that defaults to enabled.
-	restarted := &config.Config{}
-	restarted.Enabled.Store(true)
+	// "Restart": a brand-new runtime state that defaults to enabled.
+	restarted := runtime_state.New(true)
 	if err := RestoreState(store, restarted); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
-	if restarted.Enabled.Load() {
+	if restarted.Enabled() {
 		t.Error("filter should come back disabled after restart")
 	}
 }

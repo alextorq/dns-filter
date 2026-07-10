@@ -46,8 +46,8 @@ in-memory `:memory:`-sqlite.
 принадлежит `main`.
 
 **DNS hot path** — `Module.CheckExist`:
-1. `Conf.Enabled.Load()` (atomic) — глобальный toggle.
-2. `Conf.PausedUntilUnix.Load()` (atomic) — активная пауза.
+1. `State.Enabled()` (atomic) — глобальный toggle.
+2. `State.PausedUntil()` (atomic) — активная пауза.
 3. `Bloom.DomainExist` — O(1), 10M элементов, 0.1% FP.
 4. `Cache.Get` — LRU 1500 элементов, только при bloom-hit.
 5. `Repo.IsActivelyBlocked` — авторитетная проверка с учётом `Active=true`.
@@ -55,8 +55,9 @@ in-memory `:memory:`-sqlite.
 
 Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь создаются
 обычными конструкторами в `main.go`; package-level singleton state в них
-удалён. `config.GetConfig()` остаётся единственным process-boundary loader'ом
-окружения; DB и logger создаются явными конструкторами в `main`. **Все
+удалён. `config.Load()` каждый раз строит свежий набор boot-настроек, а mutable
+filter state создаётся отдельно через `runtime_state.New(true)`; DB и logger
+создаются явными конструкторами в `main`. **Все
 зависимости впитываются `*Module` в `main.go`** — фичи их сами не вызывают.
 `domain-inspect/checks/local_stats.go`
 тоже больше не читает singleton-коннекшен: check создаётся через
@@ -339,6 +340,20 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - Тесты закрепляют независимость двух registry, duplicate-registration errors и
   использование injected bundle в cache/DNS/inspect/DB callbacks.
 
+### Этап 10.6 — filter runtime state отделён от config singleton
+
+- `config.Config` содержит только boot-time/default values; атомики `Enabled` и
+  `PausedUntilUnix`, process-level `instance` и `sync.Once` удалены.
+- `config.Load()` возвращает свежий config при каждом вызове, поэтому в одном
+  процессе можно собрать несколько независимых application graphs.
+- `main` создаёт один `filter/runtime-state.State`, передаёт его в
+  `filter.Module` и `RestoreState`; use-case'ы зависят от consumer-owned runtime
+  state ports и больше не импортируют `config`.
+- Сохранены toggle/pause contracts: concurrent toggle parity, очистка pause при
+  toggle, fail-open hot path и persisted restore до старта DNS.
+- Тесты закрепляют независимость config/state экземпляров и весь прежний
+  concurrent/race-контракт фильтра.
+
 ---
 
 ## Кандидат на следующий рефакторинг
@@ -437,10 +452,9 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 - **Bloom + LRU cache — атомарный сброс** в `Module.UpdateFromDb`:
   сначала `bloom.UpdateFilter`, потом `cache.Clear`. Любой порядок
   наоборот = залипший verdict в LRU после смены блок-листа (issue #26).
-- **`Conf.Enabled.Load()` и `PausedUntilUnix.Load()`** дёргаются на
-  каждый запрос — атомики, дешёвые. Любая прослойка (interface call
-  вместо поля) видна на бенчмарке. Если будут менять `Deps.Conf` на
-  плагинный интерфейс — мерить через DNS-бенчмарк.
+- **`State.Enabled()` и `State.PausedUntil()`** дёргаются на каждый запрос;
+  внутри это atomic loads. RuntimeState interface — consumer-owned port, а
+  production implementation один раз внедряется из `main`.
 
 ### Graceful shutdown — специфичные риски
 - **DNS-server.Shutdown() vs in-flight upstream call.** `s.Shutdown()`
@@ -495,14 +509,14 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core, bootstrap DB/logger, component metrics, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU**. Остаток: background helpers и process-boundary config loader |
+| 3 | DI вместо singleton'ов | **готово для core, bootstrap DB/logger, component metrics, config/filter state, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU**. Остаток: background helpers |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |
 | 7 | Свести фоновые задачи в один scheduler | не начат |
 | 8 | Конвенция именования пакетов | не начат |
 | 9 | Graceful shutdown (HTTP + DNS + workers) | **следующий кандидат** |
-| 10 | Hot path не читает глобальный config | частично (через `Deps.Conf` use-case'ы получают конфиг явно, но `*config.Config` всё ещё singleton) |
+| 10 | Hot path не читает глобальный config | **готово**: hot path читает injected `RuntimeState`, `config.Load()` не singleton |
 
 Логично закрывать в порядке п.9 → п.4. Пункты 1, 6, 7, 8, 10 —
 независимы и можно включать по мере касания соответствующих файлов.

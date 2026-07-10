@@ -5,26 +5,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alextorq/dns-filter/config"
+	runtime_state "github.com/alextorq/dns-filter/filter/runtime-state"
 )
 
 type nopLog struct{}
 
 func (nopLog) Info(args ...any) {}
 
-func freshConf() *config.Config {
-	c := &config.Config{}
-	c.Enabled.Store(true)
-	return c
-}
+func freshState() *runtime_state.State { return runtime_state.New(true) }
 
 // Locks in the #28 fix: concurrent toggles must not lose updates.
 // With an even total number of toggles, parity must return Enabled to its
 // starting value. The previous read-modify-write would drop updates and
 // also race under -race.
 func TestChangeFilterDnsRecords_ConcurrentTogglesPreserveParity(t *testing.T) {
-	conf := freshConf()
-	start := conf.Enabled.Load()
+	state := freshState()
+	start := state.Enabled()
 
 	const goroutines = 32
 	const togglesPerG = 500
@@ -36,7 +32,7 @@ func TestChangeFilterDnsRecords_ConcurrentTogglesPreserveParity(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range togglesPerG {
-				ChangeFilterDnsRecords(conf, nopLog{})
+				ChangeFilterDnsRecords(state, nopLog{})
 			}
 		}()
 	}
@@ -45,7 +41,7 @@ func TestChangeFilterDnsRecords_ConcurrentTogglesPreserveParity(t *testing.T) {
 	if total%2 != 0 {
 		t.Fatalf("test invariant: total toggles must be even, got %d", total)
 	}
-	if got := conf.Enabled.Load(); got != start {
+	if got := state.Enabled(); got != start {
 		t.Fatalf("Enabled flipped after even number of toggles: start=%v end=%v", start, got)
 	}
 }
@@ -53,12 +49,12 @@ func TestChangeFilterDnsRecords_ConcurrentTogglesPreserveParity(t *testing.T) {
 // Toggling the filter must invalidate any in-flight pause. Otherwise the UI
 // would show "Active" while the deadline still suppresses blocking.
 func TestChangeFilterDnsRecords_ClearsPause(t *testing.T) {
-	conf := freshConf()
-	conf.PausedUntilUnix.Store(time.Now().Add(10 * time.Minute).Unix())
+	state := freshState()
+	state.SetPausedUntil(time.Now().Add(10 * time.Minute).Unix())
 
-	ChangeFilterDnsRecords(conf, nopLog{})
+	ChangeFilterDnsRecords(state, nopLog{})
 
-	if got := conf.PausedUntilUnix.Load(); got != 0 {
+	if got := state.PausedUntil(); got != 0 {
 		t.Fatalf("toggle did not clear pause: got %d, want 0", got)
 	}
 }

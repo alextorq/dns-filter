@@ -6,8 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -34,10 +32,6 @@ type Config struct {
 	DoHUpstream     string
 	DoHBootstrapIPs []string
 	DbPath          string
-	Enabled         atomic.Bool
-	// PausedUntilUnix holds the unix-second deadline of a temporary pause.
-	// 0 means no pause; any value <= time.Now().Unix() is treated as expired.
-	PausedUntilUnix atomic.Int64
 
 	LogLevel string
 
@@ -106,15 +100,6 @@ type Config struct {
 	// before the worker gives up and caches "unknown".
 	SuggestInspectMaxErrors int
 }
-
-func (c *Config) UpdateLogLevel(l string) {
-	c.LogLevel = l
-}
-
-var (
-	instance *Config
-	once     sync.Once
-)
 
 // getEnv возвращает значение переменной или дефолт
 func getEnv(key, fallback string) string {
@@ -235,49 +220,48 @@ func getDoHBootstrapIPs() []string {
 	return ips
 }
 
-func GetConfig() *Config {
-	once.Do(func() {
-		if err := godotenv.Load(); err != nil {
-			log.Println(err)
-			log.Println("Нет .env файла, читаем только из окружения")
-		}
+// Load reads the boot-time configuration from .env/environment into a fresh
+// value. It deliberately does not cache process state: main owns the returned
+// instance, while tests and embedded callers can build independent application
+// graphs in one process.
+func Load() *Config {
+	if err := godotenv.Load(); err != nil {
+		log.Println(err)
+		log.Println("Нет .env файла, читаем только из окружения")
+	}
 
-		instance = &Config{
-			Mode:            getMode(),
-			DoHUpstream:     getDoHUpstream(),
-			DoHBootstrapIPs: getDoHBootstrapIPs(),
-			DbPath:          getEnv("DNS_FILTER_DBPATH", "./filter.sqlite"),
+	return &Config{
+		Mode:            getMode(),
+		DoHUpstream:     getDoHUpstream(),
+		DoHBootstrapIPs: getDoHBootstrapIPs(),
+		DbPath:          getEnv("DNS_FILTER_DBPATH", "./filter.sqlite"),
 
-			MetricPort:   getEnv("DNS_FILTER_METRIC_PORT", "2112"),
-			MetricEnable: getEnv("DNS_FILTER_METRIC_ENABLE", "false") == "true",
+		MetricPort:   getEnv("DNS_FILTER_METRIC_PORT", "2112"),
+		MetricEnable: getEnv("DNS_FILTER_METRIC_ENABLE", "false") == "true",
 
-			LogLevel: getEnv("DNS_FILTER_LOG_LEVEL", ""),
+		LogLevel: getEnv("DNS_FILTER_LOG_LEVEL", ""),
 
-			AdminLogin:     os.Getenv("DNS_FILTER_ADMIN_LOGIN"),
-			AdminPassword:  os.Getenv("DNS_FILTER_ADMIN_PASSWORD"),
-			CookieSecure:   os.Getenv("DNS_FILTER_COOKIE_SECURE") == "true",
-			CookieSameSite: getEnv("DNS_FILTER_COOKIE_SAMESITE", "Lax"),
+		AdminLogin:     os.Getenv("DNS_FILTER_ADMIN_LOGIN"),
+		AdminPassword:  os.Getenv("DNS_FILTER_ADMIN_PASSWORD"),
+		CookieSecure:   os.Getenv("DNS_FILTER_COOKIE_SECURE") == "true",
+		CookieSameSite: getEnv("DNS_FILTER_COOKIE_SAMESITE", "Lax"),
 
-			VirusTotalKey:   os.Getenv("DNS_FILTER_VT_KEY"),
-			URLScanKey:      os.Getenv("DNS_FILTER_URLSCAN_KEY"),
-			SafeBrowsingKey: os.Getenv("DNS_FILTER_SAFE_BROWSING_KEY"),
+		VirusTotalKey:   os.Getenv("DNS_FILTER_VT_KEY"),
+		URLScanKey:      os.Getenv("DNS_FILTER_URLSCAN_KEY"),
+		SafeBrowsingKey: os.Getenv("DNS_FILTER_SAFE_BROWSING_KEY"),
 
-			CacheSWR:                getBool("DNS_FILTER_CACHE_SWR", true),
-			CacheStaleGrace:         getDuration("DNS_FILTER_CACHE_STALE_GRACE", 24*time.Hour),
-			CacheStaleTTL:           getDuration("DNS_FILTER_CACHE_STALE_TTL", 30*time.Second),
-			CacheRefreshConcurrency: getInt("DNS_FILTER_CACHE_REFRESH_CONCURRENCY", 32),
-			TrafficRetentionDays:    getInt("DNS_FILTER_TRAFFIC_RETENTION_DAYS", 30),
+		CacheSWR:                getBool("DNS_FILTER_CACHE_SWR", true),
+		CacheStaleGrace:         getDuration("DNS_FILTER_CACHE_STALE_GRACE", 24*time.Hour),
+		CacheStaleTTL:           getDuration("DNS_FILTER_CACHE_STALE_TTL", 30*time.Second),
+		CacheRefreshConcurrency: getInt("DNS_FILTER_CACHE_REFRESH_CONCURRENCY", 32),
+		TrafficRetentionDays:    getInt("DNS_FILTER_TRAFFIC_RETENTION_DAYS", 30),
 
-			SuggestInspectEnabled:   getBool("DNS_FILTER_SUGGEST_INSPECT_ENABLED", false),
-			SuggestInspectBudget:    getInt("DNS_FILTER_SUGGEST_INSPECT_BUDGET", 5),
-			SuggestInspectInterval:  getDurationPositive("DNS_FILTER_SUGGEST_INSPECT_INTERVAL", time.Hour),
-			SuggestInspectCacheTTL:  getDurationPositive("DNS_FILTER_SUGGEST_INSPECT_CACHE_TTL", 7*24*time.Hour),
-			SuggestInspectPause:     getDuration("DNS_FILTER_SUGGEST_INSPECT_PAUSE", 20*time.Second),
-			SuggestInspectBackoff:   getDuration("DNS_FILTER_SUGGEST_INSPECT_BACKOFF", 30*time.Minute),
-			SuggestInspectMaxErrors: getInt("DNS_FILTER_SUGGEST_INSPECT_MAX_ERRORS", 3),
-		}
-		instance.Enabled.Store(true)
-	})
-
-	return instance
+		SuggestInspectEnabled:   getBool("DNS_FILTER_SUGGEST_INSPECT_ENABLED", false),
+		SuggestInspectBudget:    getInt("DNS_FILTER_SUGGEST_INSPECT_BUDGET", 5),
+		SuggestInspectInterval:  getDurationPositive("DNS_FILTER_SUGGEST_INSPECT_INTERVAL", time.Hour),
+		SuggestInspectCacheTTL:  getDurationPositive("DNS_FILTER_SUGGEST_INSPECT_CACHE_TTL", 7*24*time.Hour),
+		SuggestInspectPause:     getDuration("DNS_FILTER_SUGGEST_INSPECT_PAUSE", 20*time.Second),
+		SuggestInspectBackoff:   getDuration("DNS_FILTER_SUGGEST_INSPECT_BACKOFF", 30*time.Minute),
+		SuggestInspectMaxErrors: getInt("DNS_FILTER_SUGGEST_INSPECT_MAX_ERRORS", 3),
+	}
 }

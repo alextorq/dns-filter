@@ -4,8 +4,6 @@ import (
 	"errors"
 	"slices"
 	"time"
-
-	"github.com/alextorq/dns-filter/config"
 )
 
 // AllowedMinutes is the whitelist of pause durations exposed to the UI.
@@ -21,6 +19,13 @@ type Logger interface {
 	Info(args ...any)
 }
 
+type RuntimeState interface {
+	Enabled() bool
+	PausedUntil() int64
+	SetPausedUntil(int64)
+	ClearPause() bool
+}
+
 func isAllowed(minutes int) bool {
 	return slices.Contains(AllowedMinutes, minutes)
 }
@@ -30,30 +35,30 @@ func isAllowed(minutes int) bool {
 // if the duration is not whitelisted, or ErrFilterDisabled if the filter is
 // already off (pause has no meaning then). Last writer wins under concurrent
 // successful calls.
-func PauseFilter(conf *config.Config, log Logger, minutes int) (int64, error) {
+func PauseFilter(state RuntimeState, log Logger, minutes int) (int64, error) {
 	if !isAllowed(minutes) {
 		return 0, ErrInvalidDuration
 	}
-	if !conf.Enabled.Load() {
+	if !state.Enabled() {
 		return 0, ErrFilterDisabled
 	}
 	until := time.Now().Add(time.Duration(minutes) * time.Minute).Unix()
-	conf.PausedUntilUnix.Store(until)
+	state.SetPausedUntil(until)
 	log.Info("Filter paused for", minutes, "minutes, until unix:", until)
 	return until, nil
 }
 
 // ResumeFilter clears any active pause. Safe to call when not paused.
-func ResumeFilter(conf *config.Config, log Logger) {
-	if conf.PausedUntilUnix.Swap(0) != 0 {
+func ResumeFilter(state RuntimeState, log Logger) {
+	if state.ClearPause() {
 		log.Info("Filter pause cleared")
 	}
 }
 
 // GetPausedUntil returns the active pause deadline (unix seconds), or 0 if no
 // pause is active or the deadline has already passed.
-func GetPausedUntil(conf *config.Config) int64 {
-	until := conf.PausedUntilUnix.Load()
+func GetPausedUntil(state RuntimeState) int64 {
+	until := state.PausedUntil()
 	if until <= time.Now().Unix() {
 		return 0
 	}

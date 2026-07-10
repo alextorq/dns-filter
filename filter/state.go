@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/alextorq/dns-filter/config"
+	runtime_state "github.com/alextorq/dns-filter/filter/runtime-state"
 )
 
 // Keys under which the filter's runtime toggle is persisted in the settings
@@ -41,20 +41,23 @@ func PersistHook(store StateStore, log Logger) func(enabled bool, pausedUntil in
 	}
 }
 
-// RestoreState loads the persisted toggle into conf at startup. It must run
+// RestoreState loads the persisted toggle into state at startup. It must run
 // before the DNS server serves traffic so a restart preserves a deliberately
 // disabled/paused filter.
 //
 // Precedence matches the rest of settings: a stored row overrides the
-// compiled default (Enabled=true). A missing row leaves conf untouched. An
+// compiled default (Enabled=true). A missing row leaves state untouched. An
 // already-expired pause deadline is normalized to 0 (no pause). A malformed
 // stored value is ignored (leaves the default) rather than failing startup.
-func RestoreState(store StateStore, conf *config.Config) error {
+func RestoreState(store StateStore, state *runtime_state.State) error {
+	if state == nil {
+		return fmt.Errorf("load filter state: runtime state is required")
+	}
 	if raw, found, err := store.Get(StateKeyEnabled); err != nil {
 		return fmt.Errorf("load filter enabled state: %w", err)
 	} else if found {
 		if b, perr := strconv.ParseBool(raw); perr == nil {
-			conf.Enabled.Store(b)
+			state.SetEnabled(b)
 		}
 	}
 
@@ -63,9 +66,9 @@ func RestoreState(store StateStore, conf *config.Config) error {
 	} else if found {
 		if until, perr := strconv.ParseInt(raw, 10, 64); perr == nil {
 			if until > time.Now().Unix() {
-				conf.PausedUntilUnix.Store(until)
+				state.SetPausedUntil(until)
 			} else {
-				conf.PausedUntilUnix.Store(0)
+				state.SetPausedUntil(0)
 			}
 		}
 	}

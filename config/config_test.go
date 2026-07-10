@@ -36,3 +36,21 @@ func TestGetDurationPositive(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_ReturnsIndependentInstancesAndReadsCurrentEnvironment(t *testing.T) {
+	t.Setenv("DNS_FILTER_DBPATH", "first.sqlite")
+	first := Load()
+
+	t.Setenv("DNS_FILTER_DBPATH", "second.sqlite")
+	second := Load()
+
+	if first == second {
+		t.Fatal("Load must return a fresh config instance")
+	}
+	if first.DbPath != "first.sqlite" {
+		t.Fatalf("first DbPath = %q, want first.sqlite", first.DbPath)
+	}
+	if second.DbPath != "second.sqlite" {
+		t.Fatalf("second DbPath = %q, want second.sqlite", second.DbPath)
+	}
+}

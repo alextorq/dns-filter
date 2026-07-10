@@ -38,6 +38,7 @@ import (
 	"github.com/alextorq/dns-filter/filter"
 	filter_cache "github.com/alextorq/dns-filter/filter/cache"
 	filter_bloom "github.com/alextorq/dns-filter/filter/filter"
+	filter_state "github.com/alextorq/dns-filter/filter/runtime-state"
 	filterWeb "github.com/alextorq/dns-filter/filter/web"
 	"github.com/alextorq/dns-filter/logger"
 	consoleHandler "github.com/alextorq/dns-filter/logger/handlers/console"
@@ -178,7 +179,7 @@ func runBackgroundSync(
 }
 
 func main() {
-	conf := config.GetConfig()
+	conf := config.Load()
 	chanLogger := logger.NewChanLogger(1000, conf.LogLevel)
 	chanLogger.AddHandler(&consoleHandler.ConsoleHandler{})
 	registry := prometheus.NewRegistry()
@@ -218,7 +219,8 @@ func main() {
 
 	bloom := filter_bloom.NewFilter()
 	cache := filter_cache.NewCacheWithMetrics(1500)
-	filterModule := filter.NewModule(blockRepo, bloom, cache, conf, chanLogger)
+	filterRuntimeState := filter_state.New(true)
+	filterModule := filter.NewModule(blockRepo, bloom, cache, filterRuntimeState, chanLogger)
 
 	sourceModule := source.NewModule(sourceRepo, blockRepo, chanLogger)
 	sourceModule.Seed()
@@ -384,7 +386,7 @@ func main() {
 		trafficRetention:   trafficRetention,
 	})
 	filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
-	if err := filter.RestoreState(settingsRepo, conf); err != nil {
+	if err := filter.RestoreState(settingsRepo, filterRuntimeState); err != nil {
 		// Non-fatal: a failed restore leaves the filter at its compiled default
 		// (enabled) rather than aborting an otherwise-healthy boot.
 		chanLogger.Error(fmt.Errorf("restore filter state: %w", err))

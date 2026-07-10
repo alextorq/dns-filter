@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alextorq/dns-filter/config"
+	runtime_state "github.com/alextorq/dns-filter/filter/runtime-state"
 )
 
 type fakeRepo struct {
@@ -63,26 +63,24 @@ type silentLog struct {
 func (l *silentLog) Debug(args ...any) {}
 func (l *silentLog) Error(err error)   { l.errs = append(l.errs, err) }
 
-func freshConf(t *testing.T) *config.Config {
+func freshState(t *testing.T) *runtime_state.State {
 	t.Helper()
-	c := &config.Config{}
-	c.Enabled.Store(true)
-	return c
+	return runtime_state.New(true)
 }
 
-func newDeps(repo *fakeRepo, cache *mapCache, bloom *setBloom, conf *config.Config) (Deps, *silentLog) {
+func newDeps(repo *fakeRepo, cache *mapCache, bloom *setBloom, state *runtime_state.State) (Deps, *silentLog) {
 	log := &silentLog{}
-	return Deps{Repo: repo, Cache: cache, Bloom: bloom, Conf: conf, Log: log}, log
+	return Deps{Repo: repo, Cache: cache, Bloom: bloom, State: state, Log: log}, log
 }
 
 // CheckBlock must not consult bloom or DB when the global toggle is off.
 func TestCheckBlock_DisabledShortCircuits(t *testing.T) {
-	conf := freshConf(t)
-	conf.Enabled.Store(false)
+	state := freshState(t)
+	state.SetEnabled(false)
 
 	repo := &fakeRepo{verdict: map[string]bool{"x.example": true}}
 	bloom := &setBloom{known: map[string]struct{}{"x.example": {}}}
-	d, _ := newDeps(repo, newMapCache(), bloom, conf)
+	d, _ := newDeps(repo, newMapCache(), bloom, state)
 
 	if got := CheckBlock(d, "x.example"); got {
 		t.Fatal("disabled filter must return false")
@@ -94,18 +92,18 @@ func TestCheckBlock_DisabledShortCircuits(t *testing.T) {
 
 // CheckBlock must respect an active pause even when the domain is in bloom + DB.
 func TestCheckBlock_PauseSuppressesBlocking(t *testing.T) {
-	conf := freshConf(t)
-	conf.PausedUntilUnix.Store(time.Now().Add(5 * time.Minute).Unix())
+	state := freshState(t)
+	state.SetPausedUntil(time.Now().Add(5 * time.Minute).Unix())
 
 	repo := &fakeRepo{verdict: map[string]bool{"x.example": true}}
 	bloom := &setBloom{known: map[string]struct{}{"x.example": {}}}
-	d, _ := newDeps(repo, newMapCache(), bloom, conf)
+	d, _ := newDeps(repo, newMapCache(), bloom, state)
 
 	if got := CheckBlock(d, "x.example"); got {
 		t.Fatal("paused filter must return false even for an actively blocked domain")
 	}
 
-	conf.PausedUntilUnix.Store(0)
+	state.SetPausedUntil(0)
 	if got := CheckBlock(d, "x.example"); !got {
 		t.Fatal("after clearing pause, blocked domain must be reported as blocked")
 	}
@@ -113,10 +111,10 @@ func TestCheckBlock_PauseSuppressesBlocking(t *testing.T) {
 
 // Bloom miss must short-circuit without consulting the cache or DB.
 func TestCheckBlock_BloomMissSkipsDB(t *testing.T) {
-	conf := freshConf(t)
+	state := freshState(t)
 	repo := &fakeRepo{verdict: map[string]bool{"x.example": true}}
 	bloom := &setBloom{known: map[string]struct{}{}} // empty
-	d, _ := newDeps(repo, newMapCache(), bloom, conf)
+	d, _ := newDeps(repo, newMapCache(), bloom, state)
 
 	if got := CheckBlock(d, "x.example"); got {
 		t.Fatal("bloom miss must return false")
@@ -129,11 +127,11 @@ func TestCheckBlock_BloomMissSkipsDB(t *testing.T) {
 // Bloom hit + DB-confirmed active → blocked, and the verdict must land in cache
 // so a second call hits the cache path.
 func TestCheckBlock_BloomHitConsultsDBAndCachesVerdict(t *testing.T) {
-	conf := freshConf(t)
+	state := freshState(t)
 	repo := &fakeRepo{verdict: map[string]bool{"x.example": true}}
 	bloom := &setBloom{known: map[string]struct{}{"x.example": {}}}
 	cache := newMapCache()
-	d, _ := newDeps(repo, cache, bloom, conf)
+	d, _ := newDeps(repo, cache, bloom, state)
 
 	if !CheckBlock(d, "x.example") {
 		t.Fatal("expected blocked verdict")
@@ -149,11 +147,11 @@ func TestCheckBlock_BloomHitConsultsDBAndCachesVerdict(t *testing.T) {
 // Locks in #25: bloom hit but DB says inactive → not blocked, and the negative
 // verdict is cached so we don't re-hit the DB.
 func TestCheckBlock_DeactivatedDomainNotBlocked(t *testing.T) {
-	conf := freshConf(t)
+	state := freshState(t)
 	repo := &fakeRepo{verdict: map[string]bool{}} // domain not in DB == inactive
 	bloom := &setBloom{known: map[string]struct{}{"deactivated.example": {}}}
 	cache := newMapCache()
-	d, _ := newDeps(repo, cache, bloom, conf)
+	d, _ := newDeps(repo, cache, bloom, state)
 
 	if CheckBlock(d, "deactivated.example") {
 		t.Fatal("deactivated domain must not be reported as blocked (issue #25)")
@@ -168,10 +166,10 @@ func TestCheckBlock_DeactivatedDomainNotBlocked(t *testing.T) {
 // Fail-open contract: a DB error returns false AND must NOT cache, so a
 // transient blip can't lock in a "not blocked" verdict for the LRU window.
 func TestCheckCacheOrDb_DBErrorFailsOpenWithoutCaching(t *testing.T) {
-	conf := freshConf(t)
+	state := freshState(t)
 	repo := &fakeRepo{err: errors.New("db down")}
 	cache := newMapCache()
-	d, log := newDeps(repo, cache, &setBloom{}, conf)
+	d, log := newDeps(repo, cache, &setBloom{}, state)
 
 	if got := CheckCacheOrDb(d, "x.example"); got {
 		t.Fatal("DB error must fail open (return false)")

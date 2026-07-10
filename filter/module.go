@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/alextorq/dns-filter/config"
 	changefilter "github.com/alextorq/dns-filter/filter/business/use-cases/change-filter-dns-records"
 	checkexist "github.com/alextorq/dns-filter/filter/business/use-cases/check-exist"
 	pausefilter "github.com/alextorq/dns-filter/filter/business/use-cases/pause-filter"
+	runtime_state "github.com/alextorq/dns-filter/filter/runtime-state"
 	"github.com/alextorq/dns-filter/utils"
 )
 
@@ -50,7 +50,7 @@ type Module struct {
 	repo  BlockChecker
 	bloom Bloom
 	cache Cache
-	conf  *config.Config
+	state *runtime_state.State
 	log   Logger
 	// persist, when set, is invoked after every successful toggle with the new
 	// (enabled, pausedUntil) state so it survives a restart. nil disables
@@ -58,8 +58,11 @@ type Module struct {
 	persist func(enabled bool, pausedUntil int64)
 }
 
-func NewModule(repo BlockChecker, bloom Bloom, cache Cache, conf *config.Config, log Logger) *Module {
-	return &Module{repo: repo, bloom: bloom, cache: cache, conf: conf, log: log}
+func NewModule(repo BlockChecker, bloom Bloom, cache Cache, state *runtime_state.State, log Logger) *Module {
+	if state == nil {
+		panic("filter: runtime state is required")
+	}
+	return &Module{repo: repo, bloom: bloom, cache: cache, state: state, log: log}
 }
 
 // SetStateSink installs the persistence hook. Wire it at the composition root
@@ -74,7 +77,7 @@ func (m *Module) SetStateSink(persist func(enabled bool, pausedUntil int64)) {
 // what the use-case just stored.
 func (m *Module) persistState() {
 	if m.persist != nil {
-		m.persist(m.conf.Enabled.Load(), m.conf.PausedUntilUnix.Load())
+		m.persist(m.state.Enabled(), m.state.PausedUntil())
 	}
 }
 
@@ -89,7 +92,7 @@ func (m *Module) CheckExist(domain string) bool {
 		Repo:  m.repo,
 		Cache: m.cache,
 		Bloom: m.bloom,
-		Conf:  m.conf,
+		State: m.state,
 		Log:   m.log,
 	}, utils.CanonicalDomain(domain))
 }
@@ -110,14 +113,14 @@ func (m *Module) UpdateFromDb() error {
 
 // ChangeStatus toggles the global filter on/off, returning the new value.
 func (m *Module) ChangeStatus() bool {
-	v := changefilter.ChangeFilterDnsRecords(m.conf, m.log)
+	v := changefilter.ChangeFilterDnsRecords(m.state, m.log)
 	m.persistState()
 	return v
 }
 
 // Pause pauses filtering for the given number of minutes.
 func (m *Module) Pause(minutes int) (int64, error) {
-	until, err := pausefilter.PauseFilter(m.conf, m.log, minutes)
+	until, err := pausefilter.PauseFilter(m.state, m.log, minutes)
 	if err != nil {
 		return until, err
 	}
@@ -127,16 +130,16 @@ func (m *Module) Pause(minutes int) (int64, error) {
 
 // Resume clears any active pause.
 func (m *Module) Resume() {
-	pausefilter.ResumeFilter(m.conf, m.log)
+	pausefilter.ResumeFilter(m.state, m.log)
 	m.persistState()
 }
 
 // PausedUntil returns the active pause deadline (unix seconds), or 0.
 func (m *Module) PausedUntil() int64 {
-	return pausefilter.GetPausedUntil(m.conf)
+	return pausefilter.GetPausedUntil(m.state)
 }
 
 // Enabled returns the current global toggle.
 func (m *Module) Enabled() bool {
-	return m.conf.Enabled.Load()
+	return m.state.Enabled()
 }

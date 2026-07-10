@@ -3,8 +3,6 @@ package check_exist_domain
 import (
 	"fmt"
 	"time"
-
-	"github.com/alextorq/dns-filter/config"
 )
 
 // BlockChecker is the output port for the authoritative DB verdict.
@@ -30,13 +28,18 @@ type Logger interface {
 	Error(err error)
 }
 
+type RuntimeState interface {
+	Enabled() bool
+	PausedUntil() int64
+}
+
 // Deps groups the narrow ports CheckBlock / CheckCacheOrDb need. Constructed
 // once at the composition root and reused across DNS queries.
 type Deps struct {
 	Repo  BlockChecker
 	Cache Cache
 	Bloom Bloom
-	Conf  *config.Config
+	State RuntimeState
 	Log   Logger
 }
 
@@ -63,10 +66,10 @@ func CheckCacheOrDb(d Deps, domain string) bool {
 // active pause, then consults bloom → cache → DB. Bloom miss short-circuits
 // without touching the DB; bloom hit defers to CheckCacheOrDb.
 func CheckBlock(d Deps, domain string) bool {
-	if !d.Conf.Enabled.Load() {
+	if !d.State.Enabled() {
 		return false
 	}
-	if until := d.Conf.PausedUntilUnix.Load(); until > time.Now().Unix() {
+	if until := d.State.PausedUntil(); until > time.Now().Unix() {
 		return false
 	}
 	if d.Bloom.DomainExist(domain) {

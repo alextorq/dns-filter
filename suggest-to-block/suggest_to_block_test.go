@@ -6,10 +6,10 @@ import (
 	"time"
 
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
-	"github.com/alextorq/dns-filter/config"
 	"github.com/alextorq/dns-filter/filter"
 	filter_cache "github.com/alextorq/dns-filter/filter/cache"
 	filter_bloom "github.com/alextorq/dns-filter/filter/filter"
+	runtime_state "github.com/alextorq/dns-filter/filter/runtime-state"
 	source_db "github.com/alextorq/dns-filter/source/db"
 	collect "github.com/alextorq/dns-filter/suggest-to-block/business/use-cases/collect"
 	suggest_to_block_db "github.com/alextorq/dns-filter/suggest-to-block/db"
@@ -63,14 +63,13 @@ func newHarness(t *testing.T) *harness {
 	sourceRepo := source_db.NewRepo(conn)
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
 
-	conf := &config.Config{}
-	conf.Enabled.Store(true)
+	state := runtime_state.New(true)
 	log := silentLog{}
 
 	bloom := &filter_bloom.Filter{}
 	bloom.UpdateFilter(nil) // initialise so DomainExist is safe
 	cache := filter_cache.NewCacheWithMetrics(1500)
-	filterModule := filter.NewModule(blockRepo, bloom, cache, conf, log)
+	filterModule := filter.NewModule(blockRepo, bloom, cache, state, log)
 
 	module := NewModule(blockRepo, allowRepo, sourceRepo, filterModule, suggestRepo, log)
 	return &harness{t: t, conn: conn, module: module, filterModule: filterModule}

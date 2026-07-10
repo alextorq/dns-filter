@@ -240,9 +240,9 @@ normal env-var mechanism (`docker compose --env-file …`, K8s `Secret`, etc.).
 
 ### Why a restart is required after editing keys
 
-Config is loaded once at process startup via `sync.Once` in
-`config/GetConfig()`. Changing `.env` while the server runs has no effect
-until the process restarts. `air` will restart on the next Go file change;
+Config is loaded once by the composition root at process startup via
+`config.Load()`. Changing `.env` while the server runs has no effect until the
+process restarts. `air` will restart on the next Go file change;
 otherwise just rerun `go run main.go` or restart the container.
 
 ### What happens when a key is wrong or revoked

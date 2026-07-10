@@ -82,7 +82,7 @@ dns-filter/
 #### Domain check (`filter/business/use-cases/check-exist/check-block.go`)
 ```go
 func CheckBlock(deps Deps, domain string) bool {
-    // 1. Check whether the filter is enabled (deps.Conf.Enabled) and there is no active pause
+    // 1. Check injected runtime state: enabled and no active pause
     // 2. Check the Bloom filter (deps.Bloom)
     // 3. If present in the Bloom → check the LRU cache (deps.Cache)
     // 4. If not in the cache → query the DB via deps.Repo (BlockChecker)
@@ -556,7 +556,7 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 ```go
 func main() {
     // 1. Process-owned config, logger and DB
-    conf := config.GetConfig()
+	conf := config.Load()
     chanLogger := logger.NewChanLogger(1000, conf.LogLevel)
     chanLogger.AddHandler(&console.ConsoleHandler{})
     registry := prometheus.NewRegistry()
@@ -584,7 +584,8 @@ func main() {
     // 4. filter.Module: owns explicit process-local bloom + verdict cache instances
     bloom := filter_bloom.NewFilter()
     cache := filter_cache.NewCacheWithMetrics(1500)
-    filterModule := filter.NewModule(blockRepo, bloom, cache, conf, chanLogger)
+    filterState := runtime_state.New(true)
+    filterModule := filter.NewModule(blockRepo, bloom, cache, filterState, chanLogger)
 
     // 5. Sources: seed the catalog (the list sync moves to the background, step 7)
     sourceModule := source.NewModule(sourceRepo, blockRepo, chanLogger)
@@ -649,7 +650,7 @@ func main() {
         trafficRetention: trafficRetention,
     })
     filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
-    _ = filter.RestoreState(settingsRepo, conf)
+    _ = filter.RestoreState(settingsRepo, filterState)
     _ = settingsModule.HydrateAll()
     // The retention prune over domain_traffic starts ONLY after HydrateAll: the first
     // (immediate) run already sees the effective window, not the seed sentinel.
@@ -698,15 +699,15 @@ Load-bearing ordering:
 
 4. **In-memory maps** — for the Bloom filter and the client exclusion list (fast synchronized access)
 
-5. **Process-owned state** — `main.go` explicitly loads configuration,
-   constructs the logger and shared DB connection, then constructs the bloom
-   filter, filter verdict LRU and DNS response cache before injecting them into
-   their consumers. `config.GetConfig()` remains the env-loading boundary; DB
-   and logger expose constructors rather than production singleton accessors.
+5. **Process-owned state** — `main.go` explicitly calls `config.Load()` for a
+   fresh immutable boot/default config, constructs the logger and shared DB,
+   then creates the filter `runtime_state.State`, bloom, verdict LRU and DNS
+   response cache before injecting them into consumers. Config, DB and logger
+   expose constructors/loaders rather than production singleton accessors.
 
 6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. It owns the Prometheus registry and component metrics bundles, calls `db.Open` exactly once with `OpenDeps` (path, logger, DB metrics and a unique pool name), and passes the resulting connection to migrations and explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`); orchestration is a `*Module`. DNS cache and domain-inspect (handler, local readers, URLScan, VT/SB credentials and provider checks) are explicitly instantiated and injected:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
-   - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
+   - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`; it receives the process-local `filter/runtime-state.State`, while filter use-cases depend on narrow consumer-owned state ports and do not import `config`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.
    - `suggest_to_block.Module` — `Collect` and `Start(ctx)` (12h ticker).
    - `clients.Module` — CRUD, exclusion-snapshot synchronization and discovery annotation; `clients/web.Handlers`, the DNS hot path and ARP watcher receive its explicit instances from `main`.

@@ -235,7 +235,7 @@ filter state создаётся отдельно через `runtime_state.New(t
 
 ### Этап 6 — source sync принимает context
 
-- `context.Context` проброшен через `backgroundSync` → `source.Module.Sync` →
+- `context.Context` проброшен через `background/sourcesync.Job` → `source.Module.Sync` →
   use-case `sync.Sync` → EasyList/hosts loaders.
 - HTTP-запросы создаются через `http.NewRequestWithContext`; cancellation не
   логируется как сетевая ошибка и не запускает add/prune/refresh.
@@ -454,7 +454,7 @@ crt.sh и DNS checks пока используют package-level HTTP/resolver/e
 5. **`source.LoadAndParseActiveSources` — context для HTTP — готово**
    - Context проброшен через `source.Module.Sync` и use-case `sync.Sync` в оба
      loader'а; `suggestModule.Collect` эти loader'ы не вызывает.
-   - `backgroundSync` использует отменяемый timer/select и не делает refresh
+   - `background/sourcesync.Job` использует отменяемый timer/select и не делает refresh
      или success-log после cancellation.
 
 6. **Главный блок shutdown в main**

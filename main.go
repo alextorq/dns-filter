@@ -59,6 +59,7 @@ import (
 	traffic_db "github.com/alextorq/dns-filter/traffic/db"
 	trafficWeb "github.com/alextorq/dns-filter/traffic/web"
 	"github.com/alextorq/dns-filter/web"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // buildIdentifier picks the per-request client identifier strategy based on
@@ -180,17 +181,22 @@ func main() {
 	conf := config.GetConfig()
 	chanLogger := logger.NewChanLogger(1000, conf.LogLevel)
 	chanLogger.AddHandler(&consoleHandler.ConsoleHandler{})
+	registry := prometheus.NewRegistry()
+	dbMetrics, err := app_db.NewMetrics(registry)
+	if err != nil {
+		panic(fmt.Errorf("create DB metrics: %w", err))
+	}
 	conn, err := app_db.Open(app_db.OpenDeps{
-		Path:       conf.DbPath,
-		Log:        chanLogger,
-		Registerer: metric.Registry,
-		DBName:     "main",
+		Path:    conf.DbPath,
+		Log:     chanLogger,
+		Metrics: dbMetrics,
+		DBName:  "main",
 	})
 	if err != nil {
 		panic(fmt.Errorf("open database: %w", err))
 	}
 	migrate.Migrate(conn)
-	if err := metric.RegisterRuntimeCollectors(metric.Registry, chanLogger.DroppedCount); err != nil {
+	if err := metric.RegisterRuntimeCollectors(registry, chanLogger.DroppedCount); err != nil {
 		chanLogger.Error(fmt.Errorf("register runtime metrics: %w", err))
 	}
 	authModule := authBusiness.NewModule(auth_db.NewRepo(conn), conf.AdminLogin, conf.AdminPassword)
@@ -268,15 +274,19 @@ func main() {
 	// runtime-состояния уже соответствовали БД-override до первого тика; иначе zero-value
 	// gate (false) погасил бы первый Collect/RunOnce даже при включённой фиче.
 	inspectRepo := inspect_db.NewRepo(conn)
+	inspectMetrics, err := suggest_inspect.NewMetrics(registry)
+	if err != nil {
+		panic(fmt.Errorf("create inspect metrics: %w", err))
+	}
 	suggestModule.SetInspectQueue(inspectRepo)
 	inspectGate := func() bool { return inspectEnabled.Enabled() && inspectCredentials.HasAnyKey() }
 	suggestModule.SetInspectGate(inspectGate)
 	inspectAdapter := suggest_inspect.NewAdapter(inspectRepo, conf.SuggestInspectCacheTTL, suggest_inspect.ProviderChecks{
 		VirusTotal:   virusTotalCheck,
 		SafeBrowsing: safeBrowsingCheck,
-	})
+	}, inspectMetrics)
 	inspectWorker := suggest_inspect.NewWorker(
-		inspectRepo, inspectAdapter, blockRepo, suggestRepo, sourceRepo, filterModule, chanLogger,
+		inspectRepo, inspectAdapter, blockRepo, suggestRepo, sourceRepo, filterModule, chanLogger, inspectMetrics,
 		suggest_inspect.WorkerConfig{
 			Budget:    conf.SuggestInspectBudget,
 			Interval:  conf.SuggestInspectInterval,
@@ -291,7 +301,7 @@ func main() {
 	backgroundCtx := context.Background()
 	go authModule.ClearExpiredSessions(backgroundCtx, chanLogger)
 	dbSizeMonitor, err := app_db.NewDBSizeMonitor(
-		metric.Registry,
+		registry,
 		conf.DbPath,
 		chanLogger,
 		app_db.DefaultDBSizeMonitorInterval,
@@ -322,8 +332,15 @@ func main() {
 		}).Run(backgroundCtx)
 	}
 
-	cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL)
-	metricInstance := dns.CreateMetric()
+	cacheMetrics, err := dns_cache.NewMetrics(registry)
+	if err != nil {
+		panic(fmt.Errorf("create DNS cache metrics: %w", err))
+	}
+	cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL, cacheMetrics)
+	dnsMetrics, err := dns.NewMetrics(registry)
+	if err != nil {
+		panic(fmt.Errorf("create DNS metrics: %w", err))
+	}
 	// Per-device traffic counter (the unified table). It is the sole recorder of
 	// block/allow verdicts now that the legacy event stores are gone. Capacity
 	// bounds DISTINCT aggregation keys held in RAM between flushes, not raw
@@ -342,7 +359,7 @@ func main() {
 		Logger:             chanLogger,
 		Cache:              cacheWithMetric,
 		Filter:             filterModule.CheckExist,
-		Metric:             metricInstance,
+		Metric:             dnsMetrics,
 		Identifier:         ident,
 		Clients:            clientStore,
 		Upstream:           resolver,
@@ -412,7 +429,7 @@ func main() {
 	var metricsServer *http.Server
 	if conf.MetricEnable {
 		metricsAddr := ":" + conf.MetricPort
-		metricsServer = metric.NewServer(metricsAddr, metric.Registry)
+		metricsServer = metric.NewServer(metricsAddr, registry)
 		chanLogger.Info("Метрики Prometheus доступны на", metricsAddr+"/metrics")
 		go func(server *http.Server) {
 			reportServerError("metrics", server.ListenAndServe(), chanLogger)

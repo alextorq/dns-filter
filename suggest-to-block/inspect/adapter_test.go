@@ -56,7 +56,7 @@ func newTestAdapter(t *testing.T) *Adapter {
 	return NewAdapter(newFakeRDAPCache(), time.Hour, ProviderChecks{
 		VirusTotal:   noop,
 		SafeBrowsing: noop,
-	})
+	}, newTestMetrics(t))
 }
 
 func TestNewAdapter_RejectsMissingProviderChecks(t *testing.T) {
@@ -76,7 +76,7 @@ func TestNewAdapter_RejectsMissingProviderChecks(t *testing.T) {
 					t.Fatal("expected missing provider check to panic")
 				}
 			}()
-			NewAdapter(newFakeRDAPCache(), time.Hour, tc.providers)
+			NewAdapter(newFakeRDAPCache(), time.Hour, tc.providers, newTestMetrics(t))
 		})
 	}
 }
@@ -84,7 +84,7 @@ func TestNewAdapter_RejectsMissingProviderChecks(t *testing.T) {
 func TestWithRDAPCache_UsesRegistrableCacheKey(t *testing.T) {
 	cache := newFakeRDAPCache()
 	noop := fakeCheck(domain_inspect.StatusSkipped, domain_inspect.VerdictUnknown, nil)
-	a := NewAdapter(cache, time.Hour, ProviderChecks{VirusTotal: noop, SafeBrowsing: noop})
+	a := NewAdapter(cache, time.Hour, ProviderChecks{VirusTotal: noop, SafeBrowsing: noop}, newTestMetrics(t))
 	wrapped := a.withRDAPCache(fakeCheck(domain_inspect.StatusOK, domain_inspect.VerdictSuspicious,
 		map[string]any{"age_days": 7}))
 

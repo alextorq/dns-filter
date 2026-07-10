@@ -5,9 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/alextorq/dns-filter/metric"
 	"github.com/miekg/dns"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // swrRefreshTimeout caps how long a background refresh may take. It is
@@ -15,25 +13,6 @@ import (
 // served (a Stale answer) and its ctx may have been cancelled, but the
 // refresh must still complete so the next request gets a Fresh entry.
 const swrRefreshTimeout = 5 * time.Second
-
-var refreshTotal = prometheus.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "dns_swr_refresh_total",
-		Help: "Background SWR refresh attempts, broken down by outcome (ok, error, dropped)",
-	},
-	[]string{"result"},
-)
-
-func init() {
-	metric.Registry.MustRegister(refreshTotal)
-	// Pre-touch every label so all three series are visible on dashboards
-	// from process start, even before the first refresh fires. Without this
-	// an alert like "absent(dns_swr_refresh_total{result='error'})" would
-	// page on a perfectly healthy fresh-boot resolver.
-	for _, result := range []string{"ok", "error", "dropped"} {
-		refreshTotal.WithLabelValues(result)
-	}
-}
 
 // refreshCache is the subset of the cache surface a refresh needs: it
 // writes back the freshly fetched response. The same *CacheWithMetrics
@@ -70,14 +49,16 @@ type refreshWorker struct {
 	upstream UpstreamResolver
 	coord    *upstreamCoordinator
 	logger   Logger
+	metric   Metric
 }
 
-func newRefreshWorker(cache refreshCache, upstream UpstreamResolver, coord *upstreamCoordinator, logger Logger, concurrency int) *refreshWorker {
+func newRefreshWorker(cache refreshCache, upstream UpstreamResolver, coord *upstreamCoordinator, logger Logger, metric Metric, concurrency int) *refreshWorker {
 	w := &refreshWorker{
 		cache:    cache,
 		upstream: upstream,
 		coord:    coord,
 		logger:   logger,
+		metric:   metric,
 	}
 	w.SetConcurrency(concurrency)
 	return w
@@ -101,7 +82,7 @@ func (w *refreshWorker) Refresh(key string, question dns.Question) {
 	select {
 	case sem.tokens <- struct{}{}:
 	default:
-		refreshTotal.WithLabelValues("dropped").Inc()
+		w.metric.IncRefresh("dropped")
 		return
 	}
 
@@ -126,12 +107,12 @@ func (w *refreshWorker) Refresh(key string, question dns.Question) {
 			return resp, nil
 		})
 		if err != nil {
-			refreshTotal.WithLabelValues("error").Inc()
+			w.metric.IncRefresh("error")
 			if w.logger != nil {
 				w.logger.Debug("SWR refresh failed for", key, ":", err)
 			}
 			return
 		}
-		refreshTotal.WithLabelValues("ok").Inc()
+		w.metric.IncRefresh("ok")
 	}()
 }

@@ -23,17 +23,26 @@ type discardErrorLogger struct{}
 
 func (discardErrorLogger) Error(error) {}
 
-func openDeps(path string, registerer prometheus.Registerer, name string) OpenDeps {
+func mustMetrics(t *testing.T, registerer prometheus.Registerer) *Metrics {
+	t.Helper()
+	metrics, err := NewMetrics(registerer)
+	if err != nil {
+		t.Fatalf("NewMetrics: %v", err)
+	}
+	return metrics
+}
+
+func openDeps(path string, metrics *Metrics, name string) OpenDeps {
 	return OpenDeps{
-		Path:       path,
-		Log:        discardErrorLogger{},
-		Registerer: registerer,
-		DBName:     name,
+		Path:    path,
+		Log:     discardErrorLogger{},
+		Metrics: metrics,
+		DBName:  name,
 	}
 }
 
 func TestOpen_UsesExplicitPath(t *testing.T) {
-	conn, err := Open(openDeps(filepath.Join(t.TempDir(), "filter.sqlite"), prometheus.NewRegistry(), "test"))
+	conn, err := Open(openDeps(filepath.Join(t.TempDir(), "filter.sqlite"), mustMetrics(t, prometheus.NewRegistry()), "test"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -52,14 +61,15 @@ func TestOpen_UsesExplicitPath(t *testing.T) {
 func TestOpen_ReturnsConnectionError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing", "filter.sqlite")
 
-	if _, err := Open(openDeps(path, prometheus.NewRegistry(), "test")); err == nil {
+	if _, err := Open(openDeps(path, mustMetrics(t, prometheus.NewRegistry()), "test")); err == nil {
 		t.Fatal("Open must return an error for a database under a missing directory")
 	}
 }
 
 func TestOpen_RegistersEachPoolUnderItsExplicitName(t *testing.T) {
 	registerer := prometheus.NewRegistry()
-	first, err := Open(openDeps(filepath.Join(t.TempDir(), "first.sqlite"), registerer, "first"))
+	metrics := mustMetrics(t, registerer)
+	first, err := Open(openDeps(filepath.Join(t.TempDir(), "first.sqlite"), metrics, "first"))
 	if err != nil {
 		t.Fatalf("open first pool: %v", err)
 	}
@@ -69,7 +79,7 @@ func TestOpen_RegistersEachPoolUnderItsExplicitName(t *testing.T) {
 	}
 	defer firstSQL.Close()
 
-	second, err := Open(openDeps(filepath.Join(t.TempDir(), "second.sqlite"), registerer, "second"))
+	second, err := Open(openDeps(filepath.Join(t.TempDir(), "second.sqlite"), metrics, "second"))
 	if err != nil {
 		t.Fatalf("open second pool: %v", err)
 	}
@@ -105,7 +115,8 @@ func TestOpen_RegistersEachPoolUnderItsExplicitName(t *testing.T) {
 
 func TestOpen_RejectsDuplicatePoolNameInOneRegistry(t *testing.T) {
 	registerer := prometheus.NewRegistry()
-	first, err := Open(openDeps(filepath.Join(t.TempDir(), "first.sqlite"), registerer, "main"))
+	metrics := mustMetrics(t, registerer)
+	first, err := Open(openDeps(filepath.Join(t.TempDir(), "first.sqlite"), metrics, "main"))
 	if err != nil {
 		t.Fatalf("open first pool: %v", err)
 	}
@@ -115,7 +126,7 @@ func TestOpen_RejectsDuplicatePoolNameInOneRegistry(t *testing.T) {
 	}
 	defer firstSQL.Close()
 
-	if _, err := Open(openDeps(filepath.Join(t.TempDir(), "second.sqlite"), registerer, "main")); err == nil {
+	if _, err := Open(openDeps(filepath.Join(t.TempDir(), "second.sqlite"), metrics, "main")); err == nil {
 		t.Fatal("Open must reject a duplicate db_name in the same registry")
 	}
 }
@@ -129,18 +140,18 @@ func TestOpen_RejectsIncompleteInstrumentationDeps(t *testing.T) {
 		{
 			name: "missing logger",
 			deps: OpenDeps{
-				Path:       path,
-				Registerer: prometheus.NewRegistry(),
-				DBName:     "test",
+				Path:    path,
+				Metrics: mustMetrics(t, prometheus.NewRegistry()),
+				DBName:  "test",
 			},
 		},
 		{
-			name: "missing registry",
+			name: "missing metrics",
 			deps: openDeps(path, nil, "test"),
 		},
 		{
 			name: "missing DB name",
-			deps: openDeps(path, prometheus.NewRegistry(), ""),
+			deps: openDeps(path, mustMetrics(t, prometheus.NewRegistry()), ""),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

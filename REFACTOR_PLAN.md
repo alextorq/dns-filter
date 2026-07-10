@@ -11,9 +11,10 @@
 DNS-фильтр — single-binary Go-сервис: DNS на `:53` (UDP+TCP), HTTP API на
 `:8080`, опциональные Prometheus-метрики на `:2112`. SQLite через GORM.
 
-**Composition root — `main.go`.** Он загружает конфиг, создаёт logger с
-handler'ами и один раз вызывает `db.Open(OpenDeps{Path, Log, Registerer,
-DBName})`. Дальше каждая фича получает явные зависимости:
+**Composition root — `main.go`.** Он загружает конфиг, создаёт logger и
+Prometheus registry, конструирует component metrics bundles и один раз вызывает
+`db.Open(OpenDeps{Path, Log, Metrics, DBName})`. Дальше каждая фича получает
+явные зависимости:
 
 ```
 main.go
@@ -277,8 +278,7 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   `http.DefaultServeMux`; bind/runtime errors идут через общий server reporter.
 - Server запускается после регистрации component collectors и готов для
   `Shutdown(ctx)` в общем lifecycle.
-- Глобальный `metric.Registry` пока сохранён: DNS/cache/inspect collectors всё
-  ещё регистрируются туда из package init. Их инстанцирование — отдельный этап.
+- Глобальный registry и component `init()` collectors удалены на этапе 10.5.
 
 ### Этап 10.1 — consumer-owned port в `source/web`
 
@@ -310,7 +310,7 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 ### Этап 10.4 — bootstrap DI для DB и logger
 
 - `main` явно создаёт `ChanLogger`, подключает console handler и передаёт его
-  в `db.Open(OpenDeps{Path, Log, Registerer, DBName})`; ошибка открытия БД
+  в `db.Open(OpenDeps{Path, Log, Metrics, DBName})`; ошибка открытия БД
   возвращается вызывающему, а не завершает процесс из пакета `db` через
   `log.Fatal`. Pool metrics получают явный registerer и уникальный `DBName`;
   дублирующее имя отклоняется при открытии, поэтому `go_sql_*` никогда не
@@ -325,6 +325,19 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
   его тесты используют fake без process-level logger.
 - Тесты закрепляют успешное открытие DB по явному пути, ошибку несуществующей
   директории и применение/валидацию `log_level` через injected logger.
+
+### Этап 10.5 — component metrics через DI
+
+- `main` создаёт единственный `prometheus.Registry`; package-level
+  `metric.Registry` удалён.
+- DNS, DNS cache, DB query instrumentation и suggest-inspect получили
+  `NewMetrics(registerer)` и принимают созданные bundles через конструкторы.
+- Feature packages больше не регистрируют collectors из `init()` и не вызывают
+  `MustRegister`; ошибка регистрации возвращается composition root.
+- DB query bundle один на приложение и разделяет наблюдения по `db_name`, поэтому
+  несколько GORM connections используют общий registry без повторной регистрации.
+- Тесты закрепляют независимость двух registry, duplicate-registration errors и
+  использование injected bundle в cache/DNS/inspect/DB callbacks.
 
 ---
 
@@ -482,7 +495,7 @@ Bloom (`filter/filter`) и verdict LRU (`filter/cache`) теперь созда�
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для core, bootstrap DB/logger, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU**. Остаток: observability/background helpers, global metrics registry/init collectors и process-boundary config loader |
+| 3 | DI вместо singleton'ов | **готово для core, bootstrap DB/logger, component metrics, db/web, auth, clients, dns-cache, domain-inspect, bloom и verdict LRU**. Остаток: background helpers и process-boundary config loader |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |

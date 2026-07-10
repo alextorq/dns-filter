@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite" // Pure-Go SQLite driver (modernc.org/sqlite)
-	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -36,13 +35,13 @@ const (
 )
 
 // OpenDeps is the complete construction contract for an instrumented SQLite
-// connection. DBName must be unique within Registerer so every pool keeps its
-// own go_sql_* metric series.
+// connection. DBName must be unique within Metrics' registry so every pool
+// keeps its own go_sql_* metric series.
 type OpenDeps struct {
-	Path       string
-	Log        ErrorLogger
-	Registerer prometheus.Registerer
-	DBName     string
+	Path    string
+	Log     ErrorLogger
+	Metrics *Metrics
+	DBName  string
 }
 
 // buildDSN appends the per-connection PRAGMAs to the SQLite path as DSN query
@@ -97,8 +96,8 @@ func Open(deps OpenDeps) (*gorm.DB, error) {
 	if deps.Log == nil {
 		return nil, errors.New("db open: error logger is required")
 	}
-	if deps.Registerer == nil {
-		return nil, errors.New("db open: metrics registerer is required")
+	if deps.Metrics == nil {
+		return nil, errors.New("db open: metrics are required")
 	}
 	if strings.TrimSpace(deps.DBName) == "" {
 		return nil, errors.New("db open: metrics DB name is required")
@@ -112,7 +111,7 @@ func Open(deps OpenDeps) (*gorm.DB, error) {
 	// Query callback registration remains best-effort, but a pool collector name
 	// collision would silently leave this connection unobserved. Reject it at
 	// construction time rather than returning a pool with stale metrics.
-	if err := instrumentConnection(conn, deps.Log, deps.Registerer, deps.DBName); err != nil {
+	if err := instrumentConnection(conn, deps.Log, deps.Metrics, deps.DBName); err != nil {
 		if sqlDB, dbErr := conn.DB(); dbErr == nil {
 			_ = sqlDB.Close()
 		}

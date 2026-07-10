@@ -45,7 +45,8 @@ var _ RDAPCache = (*inspect_db.Repo)(nil)
 // Adapter runs the reduced, cache-aware reputation check set for one FQDN and
 // collapses the result into a verdict plus the reasons that explain it.
 type Adapter struct {
-	cache RDAPCache
+	cache   RDAPCache
+	metrics *Metrics
 	// rdapTTL bounds how long a cached registration age stays fresh. Age grows
 	// only monotonically, so a generous TTL is safe; wired from config.
 	rdapTTL time.Duration
@@ -61,11 +62,14 @@ type ProviderChecks struct {
 // Safe Browsing only. crt.sh / urlscan / dns_resolve / local_stats are
 // deliberately excluded — for an already-allowed candidate they return
 // "unknown" and add nothing but latency and quota pressure.
-func NewAdapter(cache RDAPCache, rdapTTL time.Duration, providers ProviderChecks) *Adapter {
+func NewAdapter(cache RDAPCache, rdapTTL time.Duration, providers ProviderChecks, metrics *Metrics) *Adapter {
 	if providers.VirusTotal == nil || providers.SafeBrowsing == nil {
 		panic("suggest-to-block/inspect: provider checks are required")
 	}
-	a := &Adapter{cache: cache, rdapTTL: rdapTTL}
+	if metrics == nil {
+		panic("suggest-to-block/inspect: metrics are required")
+	}
+	a := &Adapter{cache: cache, rdapTTL: rdapTTL, metrics: metrics}
 	a.checks = map[string]domain_inspect.CheckFunc{
 		"rdap":          a.withRDAPCache(checks.RDAPAge),
 		"virustotal":    providers.VirusTotal,
@@ -145,7 +149,7 @@ func (a *Adapter) withRDAPCache(inner domain_inspect.CheckFunc) domain_inspect.C
 			return inner(ctx, fqdn)
 		}
 		if c, ok, _ := a.cache.GetRDAP(reg, a.rdapTTL); ok {
-			inspectRDAPCacheHits.Inc()
+			a.metrics.rdapCacheHits.Inc()
 			return domain_inspect.CheckResult{
 				Status:  domain_inspect.StatusOK,
 				Verdict: checks.RDAPVerdictForAge(c.AgeDays),

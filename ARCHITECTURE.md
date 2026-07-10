@@ -613,14 +613,23 @@ func main() {
             URLScan:    urlScanCheck,
         })
     }
-    backgroundCtx := context.Background()
-    go suggestModule.Start(backgroundCtx)
-    go authModule.ClearExpiredSessions(backgroundCtx, chanLogger)
+    // Abbreviated job assembly: main.go also appends DBSizeMonitor and both
+    // inspect jobs through the same Job/JobFunc port.
+    backgroundJobs := []background.Job{
+        background.JobFunc(func(ctx context.Context) {
+            authModule.ClearExpiredSessions(ctx, chanLogger)
+        }),
+        background.JobFunc(suggestModule.Start),
+    }
     // LAN mode: arpwatcher (IP↔MAC) + the hostname collector (mDNS → host_names).
     if conf.Mode == config.ModeLAN {
         arpWatcher := arpwatcher.NewWatcher(arpCache, clientRepo, clientModule.Sync)
-        go arpWatcher.Run(backgroundCtx, chanLogger, arpwatcher.DefaultInterval)
-        go (&hostnames.Collector{Browse: discovery.BrowseMDNS, MACs: arpCache, Store: hostnamesRepo, Log: chanLogger}).Run(backgroundCtx)
+        backgroundJobs = append(backgroundJobs,
+            background.JobFunc(func(ctx context.Context) {
+                arpWatcher.Run(ctx, chanLogger, arpwatcher.DefaultInterval)
+            }),
+            &hostnames.Collector{Browse: discovery.BrowseMDNS, MACs: arpCache, Store: hostnamesRepo, Log: chanLogger},
+        )
     }
 
     // 7. DNS server: filter.CheckExist as a method value; trafficWorker is the single
@@ -652,10 +661,19 @@ func main() {
     filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
     _ = filter.RestoreState(settingsRepo, filterState)
     _ = settingsModule.HydrateAll()
-    // The retention prune over domain_traffic starts ONLY after HydrateAll: the first
-    // (immediate) run already sees the effective window, not the seed sentinel.
-    go traffic_prune.Run(backgroundCtx, trafficRepo, trafficRetention, chanLogger)
-    go backgroundSync(backgroundCtx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
+    // Every job starts through one process-owned runner ONLY after HydrateAll:
+    // immediate runs see effective settings, not pre-hydrate seed values.
+    backgroundJobs = append(backgroundJobs,
+        background.JobFunc(func(ctx context.Context) {
+            traffic_prune.Run(ctx, trafficRepo, trafficRetention, chanLogger)
+        }),
+        background.JobFunc(func(ctx context.Context) {
+            backgroundSync(ctx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
+        }),
+    )
+    backgroundRunner, _ := background.NewRunner(backgroundJobs...)
+    backgroundCtx := context.Background()
+    go backgroundRunner.Run(backgroundCtx)
 
     // 9. HTTP API: all per-feature *Handlers are gathered and the server handle
     //    is owned and started explicitly by main.
@@ -679,7 +697,7 @@ Load-bearing ordering:
 - `filterModule.UpdateFromDb()` (the startup, synchronous one) raises the bloom from what is **already** in the DB, BEFORE the DNS starts — a restart immediately serves the previous block list. On a genuine first run the DB is empty and nothing is blocked until the background sync completes (a deliberate trade-off for a non-blocking start).
 - `sourceModule.Sync(ctx)` moved out of the synchronous path into the `backgroundSync` goroutine — the DNS server starts without waiting on the network. When the sync completes, `backgroundSync` calls `filterModule.UpdateFromDb()` again (rebuilds the bloom + clears the verdict cache). The goroutine **does not panic**: a `panic` would kill an already-serving DNS server. A failed sync (usually no network on first boot) is retried with exponential backoff (`syncRetryBaseDelay` → `syncRetryMaxDelay`) until it succeeds or its context is canceled; both HTTP requests and the retry wait observe that context.
 - `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
-- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` goroutines (block/allow) and their event stores are gone; in their place is a single `traffic_prune.Run(backgroundCtx, trafficRepo, trafficRetention, chanLogger)` goroutine (daily retention over `domain_traffic`), launched **after `HydrateAll`** so the first immediate run already sees the effective retention window rather than the seed sentinel. The same injected `trafficRetention` instance is captured by the settings Apply hook and read by every prune tick. All jobs built on `periodic.Run` receive context and logger explicitly; the current `backgroundCtx` becomes the signal-derived application context in the graceful-shutdown step. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
+- `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` tasks and their event stores are gone; the replacement traffic prune joins every other feature worker in the injected `background.Runner`. The runner starts **after `HydrateAll`** so every immediate job run sees effective settings rather than seed values, and waits for all jobs when its shared context is canceled. The same injected `trafficRetention` instance is captured by the settings Apply hook and read by every prune tick. The current `backgroundCtx` becomes the signal-derived application context in the graceful-shutdown step. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.
 - **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
 - `web.NewServer` only builds `*http.Server`; `main` owns the handle, starts `ListenAndServe` explicitly and logs unexpected serve errors. The blocking `dnsServer.Serve()` still keeps main alive until the common lifecycle/shutdown orchestrator is added.
@@ -704,6 +722,10 @@ Load-bearing ordering:
    then creates the filter `runtime_state.State`, bloom, verdict LRU and DNS
    response cache before injecting them into consumers. Config, DB and logger
    expose constructors/loaders rather than production singleton accessors.
+
+   Background lifecycle follows the same rule: `main` injects its complete set
+   of context-aware feature jobs into one `background.Runner`; the runner only
+   coordinates concurrent start/wait and does not resolve feature dependencies.
 
 6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. It owns the Prometheus registry and component metrics bundles, calls `db.Open` exactly once with `OpenDeps` (path, logger, DB metrics and a unique pool name), and passes the resulting connection to migrations and explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`); orchestration is a `*Module`. DNS cache and domain-inspect (handler, local readers, URLScan, VT/SB credentials and provider checks) are explicitly instantiated and injected:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.

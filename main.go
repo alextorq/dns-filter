@@ -14,6 +14,7 @@ import (
 	authBusiness "github.com/alextorq/dns-filter/auth/business"
 	auth_db "github.com/alextorq/dns-filter/auth/db"
 	authWeb "github.com/alextorq/dns-filter/auth/web"
+	"github.com/alextorq/dns-filter/background"
 	blocked_domain_db "github.com/alextorq/dns-filter/blocked-domain/db"
 	blockedWeb "github.com/alextorq/dns-filter/blocked-domain/web"
 	"github.com/alextorq/dns-filter/clients"
@@ -300,8 +301,11 @@ func main() {
 	)
 	inspectWorker.SetFeatureGate(inspectGate)
 
-	backgroundCtx := context.Background()
-	go authModule.ClearExpiredSessions(backgroundCtx, chanLogger)
+	backgroundJobs := []background.Job{
+		background.JobFunc(func(ctx context.Context) {
+			authModule.ClearExpiredSessions(ctx, chanLogger)
+		}),
+	}
 	dbSizeMonitor, err := app_db.NewDBSizeMonitor(
 		registry,
 		conf.DbPath,
@@ -311,7 +315,7 @@ func main() {
 	if err != nil {
 		chanLogger.Error(fmt.Errorf("create DB size monitor: %w", err))
 	} else {
-		go dbSizeMonitor.Run(backgroundCtx)
+		backgroundJobs = append(backgroundJobs, dbSizeMonitor)
 	}
 	// Start the ARP watcher only in LAN mode. Public mode has no LAN to
 	// observe; the watcher would just spam ErrUnsupported (or, in a hosted
@@ -319,19 +323,22 @@ func main() {
 	// pairs). The watcher exits its own loop on non-Linux platforms.
 	if conf.Mode == config.ModeLAN {
 		arpWatcher := arpwatcher.NewWatcher(arpCache, clientRepo, clientModule.Sync)
-		go arpWatcher.Run(backgroundCtx, chanLogger, arpwatcher.DefaultInterval)
+		backgroundJobs = append(backgroundJobs, background.JobFunc(func(ctx context.Context) {
+			arpWatcher.Run(ctx, chanLogger, arpwatcher.DefaultInterval)
+		}))
 
 		// Background mDNS sweep that learns friendly device names and persists
 		// them as MAC→hostname rows. It resolves discovered IPs to MACs via the
 		// same arpwatcher cache the hot path uses, so a device's traffic rows and
 		// its learned name share the stable MAC key. LAN-only: there is no LAN to
 		// browse behind a public DoH endpoint.
-		go (&hostnames.Collector{
+		hostnameCollector := &hostnames.Collector{
 			Browse: discovery.BrowseMDNS,
 			MACs:   arpCache,
 			Store:  hostnamesRepo,
 			Log:    chanLogger,
-		}).Run(backgroundCtx)
+		}
+		backgroundJobs = append(backgroundJobs, hostnameCollector)
 	}
 
 	cacheMetrics, err := dns_cache.NewMetrics(registry)
@@ -404,9 +411,13 @@ func main() {
 	// дропал weak-band кандидатов даже при включённой фиче — следующий шанс был
 	// бы через Interval. StartPrune работает независимо, обслуживая retention
 	// `inspect_candidate`/`rdap_cache` даже когда воркер пассивен.
-	go suggestModule.Start(backgroundCtx)
-	go inspectWorker.Start(backgroundCtx)
-	go suggest_inspect.StartPrune(backgroundCtx, inspectRepo, 4*conf.SuggestInspectCacheTTL, chanLogger)
+	backgroundJobs = append(backgroundJobs,
+		background.JobFunc(suggestModule.Start),
+		background.JobFunc(inspectWorker.Start),
+		background.JobFunc(func(ctx context.Context) {
+			suggest_inspect.StartPrune(ctx, inspectRepo, 4*conf.SuggestInspectCacheTTL, chanLogger)
+		}),
+	)
 
 	// Daily retention prune over the unified domain_traffic table — the sole
 	// retention task (the two legacy block/allow clear-events tasks were removed
@@ -415,7 +426,9 @@ func main() {
 	// applies on the next prune. Launched AFTER HydrateAll so the very first
 	// (immediate) prune already sees the effective window — otherwise it could
 	// hard-delete rows using the pre-hydrate seed (see traffic_prune.RetentionState).
-	go traffic_prune_uc.Run(backgroundCtx, trafficRepo, trafficRetention, chanLogger)
+	backgroundJobs = append(backgroundJobs, background.JobFunc(func(ctx context.Context) {
+		traffic_prune_uc.Run(ctx, trafficRepo, trafficRetention, chanLogger)
+	}))
 
 	// Pull the block lists in the background and refresh the filter once done.
 	// The DNS server (started below via dnsServer.Serve) does not wait on this.
@@ -424,7 +437,16 @@ func main() {
 	// races ahead of hydrate and prints even when the level was raised to WARN,
 	// while the matching "finished" line (logged later, post-hydrate) is
 	// suppressed, making a healthy sync look stuck.
-	go backgroundSync(backgroundCtx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
+	backgroundJobs = append(backgroundJobs, background.JobFunc(func(ctx context.Context) {
+		backgroundSync(ctx, sourceModule.Sync, filterModule.UpdateFromDb, chanLogger)
+	}))
+
+	backgroundRunner, err := background.NewRunner(backgroundJobs...)
+	if err != nil {
+		panic(fmt.Errorf("create background runner: %w", err))
+	}
+	backgroundCtx := context.Background()
+	go backgroundRunner.Run(backgroundCtx)
 
 	// Start metrics only after every component-specific collector has been
 	// registered. main keeps the handle for the common shutdown lifecycle.

@@ -8,52 +8,77 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var (
-	cacheHits = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns_cache_hits_total",
-		Help: "Total number of cache hits",
-	})
-	cacheMisses = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns_cache_misses_total",
-		Help: "Total number of cache misses",
-	})
-	cacheEvictions = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns_cache_evictions_total",
-		Help: "Total number of cache evictions",
-	})
-	cacheSize = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dns_cache_size",
-		Help: "Current number of items in cache",
-	})
-	// cacheExpired tracks lookups that found an entry whose TTL had
-	// elapsed. Split from misses so we can tell "upstream gave us a
-	// short TTL" apart from "cold cache" — the former is the signal
-	// that this counter is doing its job.
-	cacheExpired = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns_cache_expired_total",
-		Help: "Total number of cache lookups that hit an expired entry",
-	})
-	// cacheStaleHits tracks lookups inside the stale-window — TTL has
-	// elapsed but the entry is still served (with a clamped RR.Ttl) while
-	// a background refresh is fired. A non-zero value means SWR is doing
-	// its job and clients are seeing instant responses on TTL boundaries.
-	cacheStaleHits = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "dns_cache_stale_hits_total",
-		Help: "Cache lookups served from the SWR stale-window (past TTL but within staleUntil)",
-	})
-)
+type Metrics struct {
+	cacheHits      prometheus.Counter
+	cacheMisses    prometheus.Counter
+	cacheEvictions prometheus.Counter
+	cacheSize      prometheus.Gauge
+	cacheExpired   prometheus.Counter
+	cacheStaleHits prometheus.Counter
+}
 
-func init() {
-	metric.Registry.MustRegister(cacheHits, cacheMisses, cacheEvictions, cacheSize, cacheExpired, cacheStaleHits)
+// NewMetrics constructs and registers cache collectors in the caller-owned
+// registry. Cache instances receive the resulting bundle explicitly.
+func NewMetrics(registerer prometheus.Registerer) (*Metrics, error) {
+	m := &Metrics{
+		cacheHits: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "dns_cache_hits_total",
+			Help: "Total number of cache hits",
+		}),
+		cacheMisses: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "dns_cache_misses_total",
+			Help: "Total number of cache misses",
+		}),
+		cacheEvictions: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "dns_cache_evictions_total",
+			Help: "Total number of cache evictions",
+		}),
+		cacheSize: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "dns_cache_size",
+			Help: "Current number of items in cache",
+		}),
+		// cacheExpired tracks lookups that found an entry whose TTL had
+		// elapsed. Split from misses so we can tell "upstream gave us a
+		// short TTL" apart from "cold cache" — the former is the signal
+		// that this counter is doing its job.
+		cacheExpired: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "dns_cache_expired_total",
+			Help: "Total number of cache lookups that hit an expired entry",
+		}),
+		// cacheStaleHits tracks lookups inside the stale-window — TTL has
+		// elapsed but the entry is still served (with a clamped RR.Ttl) while
+		// a background refresh is fired. A non-zero value means SWR is doing
+		// its job and clients are seeing instant responses on TTL boundaries.
+		cacheStaleHits: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "dns_cache_stale_hits_total",
+			Help: "Cache lookups served from the SWR stale-window (past TTL but within staleUntil)",
+		}),
+	}
+	if err := metric.RegisterCollectors(registerer,
+		m.cacheHits,
+		m.cacheMisses,
+		m.cacheEvictions,
+		m.cacheSize,
+		m.cacheExpired,
+		m.cacheStaleHits,
+	); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 type CacheWithMetrics struct {
-	inner *Cache
+	inner   *Cache
+	metrics *Metrics
 }
 
-func NewCacheWithMetrics(cap int) *CacheWithMetrics {
+func NewCacheWithMetrics(cap int, metrics *Metrics) *CacheWithMetrics {
+	if metrics == nil {
+		panic("dns-cache: metrics are required")
+	}
 	return &CacheWithMetrics{
-		inner: NewCache(cap),
+		inner:   NewCache(cap),
+		metrics: metrics,
 	}
 }
 
@@ -61,9 +86,13 @@ func NewCacheWithMetrics(cap int) *CacheWithMetrics {
 // entries past their TTL for up to staleGrace, returning them with RR.Ttl
 // clamped to staleTTL. staleGrace=0 makes Lookup behave exactly like the
 // non-SWR cache (no Stale state).
-func NewCacheWithMetricsAndSWR(cap int, staleGrace, staleTTL time.Duration) *CacheWithMetrics {
+func NewCacheWithMetricsAndSWR(cap int, staleGrace, staleTTL time.Duration, metrics *Metrics) *CacheWithMetrics {
+	if metrics == nil {
+		panic("dns-cache: metrics are required")
+	}
 	return &CacheWithMetrics{
-		inner: NewCacheWithSWR(cap, staleGrace, staleTTL),
+		inner:   NewCacheWithSWR(cap, staleGrace, staleTTL),
+		metrics: metrics,
 	}
 }
 
@@ -73,21 +102,21 @@ func (c *CacheWithMetrics) Add(key string, val *dns.Msg) {
 		return
 	}
 	if res.Evicted {
-		cacheEvictions.Inc()
+		c.metrics.cacheEvictions.Inc()
 	}
-	cacheSize.Set(float64(res.Size))
+	c.metrics.cacheSize.Set(float64(res.Size))
 }
 
 func (c *CacheWithMetrics) Get(key string) (*dns.Msg, bool) {
 	res := c.inner.Get(key)
 	if res.Hit {
-		cacheHits.Inc()
+		c.metrics.cacheHits.Inc()
 		return res.Msg, true
 	}
 	if res.Expired {
-		cacheExpired.Inc()
+		c.metrics.cacheExpired.Inc()
 	}
-	cacheMisses.Inc()
+	c.metrics.cacheMisses.Inc()
 	return nil, false
 }
 
@@ -104,7 +133,7 @@ func (c *CacheWithMetrics) Get(key string) (*dns.Msg, bool) {
 // size on the next mutation.
 func (c *CacheWithMetrics) Clear() int {
 	n := c.inner.Clear()
-	cacheSize.Set(float64(c.inner.Len()))
+	c.metrics.cacheSize.Set(float64(c.inner.Len()))
 	return n
 }
 
@@ -126,14 +155,14 @@ func (c *CacheWithMetrics) Lookup(key string) Lookup {
 	r := c.inner.Lookup(key)
 	switch r.State {
 	case StateFresh:
-		cacheHits.Inc()
+		c.metrics.cacheHits.Inc()
 	case StateStale:
-		cacheStaleHits.Inc()
+		c.metrics.cacheStaleHits.Inc()
 	case StateExpired:
-		cacheExpired.Inc()
-		cacheMisses.Inc()
+		c.metrics.cacheExpired.Inc()
+		c.metrics.cacheMisses.Inc()
 	default: // StateMiss
-		cacheMisses.Inc()
+		c.metrics.cacheMisses.Inc()
 	}
 	return r
 }

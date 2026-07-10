@@ -13,6 +13,7 @@ import (
 	"github.com/alextorq/dns-filter/clients/identifier"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
 	dnsLib "github.com/miekg/dns"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -109,6 +110,9 @@ func (r *blockingResolver) Exchange(_ context.Context, msg *dnsLib.Msg) (*dnsLib
 type noopMetric struct{}
 
 func (noopMetric) HandleDNSRequest(_ string, _ string, _ string, _ int, _ time.Duration) {}
+func (noopMetric) IncServeStaleOnError()                                                 {}
+func (noopMetric) IncSingleflightCoalesced()                                             {}
+func (noopMetric) IncRefresh(_ string)                                                   {}
 
 type noopClientStore struct{}
 
@@ -170,6 +174,15 @@ func TestNewServerClampsInvalidRefreshConcurrency(t *testing.T) {
 	if got := cap(server.Refresh.limiter.Load().tokens); got != 1 {
 		t.Fatalf("refresh concurrency = %d, want clamp to 1", got)
 	}
+}
+
+func TestNewServerRejectsMissingMetrics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("missing metrics must fail during construction")
+		}
+	}()
+	NewServer(ServerDeps{})
 }
 
 type captureResponseWriter struct {
@@ -532,7 +545,7 @@ func TestGetFromCacheOrCreateRequest_SWRStaleHitTriggersAsyncRefresh(t *testing.
 		Upstream: resolver,
 	}
 	server.SetSWR(true)
-	server.Refresh = newRefreshWorker(cache, resolver, &server.upstream, noopLogger{}, 4)
+	server.Refresh = newRefreshWorker(cache, resolver, &server.upstream, noopLogger{}, noopMetric{}, 4)
 
 	question := dnsLib.Question{Name: "example.com.", Qtype: dnsLib.TypeA, Qclass: dnsLib.ClassINET}
 
@@ -569,6 +582,7 @@ func TestGetFromCacheOrCreateRequest_SWRDisabledStaleFallsThroughToUpstream(t *t
 		Logger:   noopLogger{},
 		Cache:    cache,
 		Upstream: resolver,
+		Metric:   noopMetric{},
 	}
 	server.SetSWR(false) // disabled
 
@@ -603,6 +617,7 @@ func TestGetFromCacheOrCreateRequest_ServeStaleOnError(t *testing.T) {
 		Logger:   noopLogger{},
 		Cache:    cache,
 		Upstream: resolver,
+		Metric:   noopMetric{},
 	}
 	server.SetSWR(false) // off so we exercise the synchronous-error → stale-fallback path
 
@@ -642,9 +657,15 @@ func TestGetFromCacheOrCreateRequest_RefreshDroppedWhenSemaphoreFull(t *testing.
 	}
 	server.SetSWR(true)
 	// concurrency=1 so a second refresh has nowhere to land.
-	server.Refresh = newRefreshWorker(cache, resolver, &server.upstream, noopLogger{}, 1)
+	registry := prometheus.NewRegistry()
+	metrics, err := NewMetrics(registry)
+	if err != nil {
+		t.Fatalf("create metrics: %v", err)
+	}
+	server.Metric = metrics
+	server.Refresh = newRefreshWorker(cache, resolver, &server.upstream, noopLogger{}, metrics, 1)
 
-	droppedBefore := testutil.ToFloat64(refreshTotal.WithLabelValues("dropped"))
+	droppedBefore := testutil.ToFloat64(metrics.refreshTotal.WithLabelValues("dropped"))
 
 	// First stale-hit: refresh acquires the only semaphore slot and blocks
 	// inside Exchange() until we close(release).
@@ -669,7 +690,7 @@ func TestGetFromCacheOrCreateRequest_RefreshDroppedWhenSemaphoreFull(t *testing.
 	}
 
 	eventuallyTrue(t, time.Second, func() bool {
-		return testutil.ToFloat64(refreshTotal.WithLabelValues("dropped"))-droppedBefore >= 1
+		return testutil.ToFloat64(metrics.refreshTotal.WithLabelValues("dropped"))-droppedBefore >= 1
 	}, "dropped counter increments when semaphore is full")
 }
 

@@ -124,7 +124,7 @@ func newTestWorker(t *testing.T) (*Worker, *workerFakes) {
 		filt:  &fakeFilter{},
 		sug:   &fakeSuggest{upserts: map[string][]suggest_db.SuggestBlockReason{}, scores: map[string]int{}},
 	}
-	w := NewWorker(f.repo, f.insp, f.block, f.sug, f.gate, f.filt, silentLogger{}, WorkerConfig{
+	w := NewWorker(f.repo, f.insp, f.block, f.sug, f.gate, f.filt, silentLogger{}, newTestMetrics(t), WorkerConfig{
 		Budget:    10,
 		Interval:  time.Hour,
 		CacheTTL:  time.Hour,

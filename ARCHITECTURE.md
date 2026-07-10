@@ -262,7 +262,7 @@ The contract is pinned by the regression test `web/server_test.go::TestBuildRout
 
 **Purpose:** Collect and export metrics to Prometheus.
 
-`metric` performs no listener startup during import. After constructing the logger, `main` explicitly registers the Go/process collectors and `logger_dropped_logs_total`, then — only when metrics are enabled — builds `metric.NewServer(addr, Registry)` and owns `ListenAndServe`/future `Shutdown`. The server uses a dedicated mux exposing only `/metrics`; bind/runtime failures are reported through the application logger. The shared `metric.Registry` remains a compatibility layer while DNS/cache/inspect collectors still register during package initialization; removing those remaining registration globals is a separate refactor.
+`main` owns one `prometheus.Registry`, explicitly constructs the DB, DNS, DNS-cache and suggest-inspect metrics bundles in it, and injects those bundles into their components. Feature packages perform no registration during import; every `NewMetrics(registerer)` returns duplicate/invalid registration errors to the composition root instead of panicking via `MustRegister`. After constructing the logger, `main` also registers the Go/process collectors and `logger_dropped_logs_total`, then — only when metrics are enabled — builds `metric.NewServer(addr, registry)` and owns `ListenAndServe`/future `Shutdown`. The server uses a dedicated mux exposing only `/metrics`; bind/runtime failures are reported through the application logger.
 
 **Metrics:**
 - `dns_cache_hits_total` — cache hits
@@ -277,9 +277,9 @@ The contract is pinned by the regression test `web/server_test.go::TestBuildRout
 
 **DB metrics (`db/`):**
 - `sqlite_file_size_bytes` — the on-disk SQLite file size. `main` explicitly constructs `db.DBSizeMonitor` with the DB path, logger and Prometheus registerer, then runs it with the application context; it samples immediately and every 10 minutes until cancellation. There is no import-time ticker/goroutine.
-- `db_query_duration_seconds{operation}` — a latency histogram for each GORM operation (`create`/`query`/`update`/`delete`/`row`/`raw`); captured by before/after callbacks attached in `db.Open`. The buckets are tuned for sub-millisecond reads with headroom up to 5s — the upper tail is the "DB is slow" signal. This is the **primary** DB-latency indicator (p50/p95/p99 via `histogram_quantile`)
-- `db_query_errors_total{operation}` — operations that ended in an error; `gorm.ErrRecordNotFound` is deliberately **not** counted (an empty `First()` on the DNS path is normal control flow, not a failure)
-- `go_sql_*{db_name="main"}` — `database/sql` pool stats via `collectors.NewDBStatsCollector` (open/in-use/idle connections, `wait_count_total`, `wait_duration_seconds_total`). `db.Open` receives both the target registerer and a DB name; names must be unique within that registerer, and a duplicate rejects the new pool rather than leaving its metrics attached to an older connection. For the glebarez/modernc driver the pool is the write-serialization point, so a growing `go_sql_wait_duration` is the clearest sign the DB has become the bottleneck
+- `db_query_duration_seconds{db_name,operation}` — a latency histogram for each GORM operation (`create`/`query`/`update`/`delete`/`row`/`raw`); captured by before/after callbacks attached in `db.Open`. The buckets are tuned for sub-millisecond reads with headroom up to 5s — the upper tail is the "DB is slow" signal. This is the **primary** DB-latency indicator (p50/p95/p99 via `histogram_quantile`)
+- `db_query_errors_total{db_name,operation}` — operations that ended in an error; `gorm.ErrRecordNotFound` is deliberately **not** counted (an empty `First()` on the DNS path is normal control flow, not a failure)
+- `go_sql_*{db_name="main"}` — `database/sql` pool stats via `collectors.NewDBStatsCollector` (open/in-use/idle connections, `wait_count_total`, `wait_duration_seconds_total`). `db.Open` receives the injected DB metrics bundle and a DB name; names must be unique within that bundle's registry, and a duplicate rejects the new pool rather than leaving its metrics attached to an older connection. For the glebarez/modernc driver the pool is the write-serialization point, so a growing `go_sql_wait_duration` is the clearest sign the DB has become the bottleneck
 
 **Connection tuning (`db/connect.go`).** PRAGMAs are set via the **DSN** (`?_pragma=...` in `buildDSN`), not by a one-off `db.Exec` after opening: the modernc driver runs `_pragma` on **every** new pool connection, whereas `db.Exec("PRAGMA …")` configures only the single connection that served it (in prod the pool opened 3 — `synchronous=NORMAL` and the 64 MB cache settled on one, the others silently ran `FULL` + 2 MB). `journal_mode=WAL` persists in the file header and is global either way; `busy_timeout=5000` is set by the driver on each connection — it is duplicated in the DSN only for clarity. The pool is bounded by `SetMaxOpenConns(maxOpenConns)`: the former default `0` (unlimited) only amplified write contention; a small limit preserves concurrent reads (WAL), while writes serialize behind `busy_timeout`.
 
@@ -551,7 +551,7 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ## Entry point (main.go)
 
-`main.go` is the composition root for the DI-enabled feature set. It loads configuration, creates the channel logger with its handlers, and calls `db.Open` exactly once with the shared metrics registerer and DB name; migrations and the repos listed below receive that connection explicitly. The domain-inspect HTTP handler, all injected checks and their shared runtime credentials are composed here too:
+`main.go` is the composition root for the DI-enabled feature set. It loads configuration, creates the channel logger, one Prometheus registry and component metrics bundles, and calls `db.Open` exactly once with the DB metrics bundle and DB name; migrations and the repos listed below receive that connection explicitly. The domain-inspect HTTP handler, all injected checks and their shared runtime credentials are composed here too:
 
 ```go
 func main() {
@@ -559,9 +559,12 @@ func main() {
     conf := config.GetConfig()
     chanLogger := logger.NewChanLogger(1000, conf.LogLevel)
     chanLogger.AddHandler(&console.ConsoleHandler{})
+    registry := prometheus.NewRegistry()
+    dbMetrics, err := app_db.NewMetrics(registry)
+    if err != nil { panic(err) }
     conn, err := app_db.Open(app_db.OpenDeps{
         Path: conf.DbPath, Log: chanLogger,
-        Registerer: metric.Registry, DBName: "main",
+        Metrics: dbMetrics, DBName: "main",
     })
     if err != nil { panic(err) }
     migrate.Migrate(conn)
@@ -621,14 +624,17 @@ func main() {
 
     // 7. DNS server: filter.CheckExist as a method value; trafficWorker is the single
     //    verdict recorder (the event stores were removed).
-    cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL)
-    metricInstance := dns.CreateMetric()
+    cacheMetrics, err := dns_cache.NewMetrics(registry)
+    if err != nil { panic(err) }
+    cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL, cacheMetrics)
+    dnsMetrics, err := dns.NewMetrics(registry)
+    if err != nil { panic(err) }
     trafficWorker := traffic_record.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
     trafficRetention := traffic_prune.NewRetentionState()
     resolver := dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)
     dnsServer := dns.NewServer(dns.ServerDeps{
         Logger: chanLogger, Cache: cacheWithMetric,
-        Filter: filterModule.CheckExist, Metric: metricInstance,
+        Filter: filterModule.CheckExist, Metric: dnsMetrics,
         Identifier: buildIdentifier(conf.Mode, arpCache), Clients: clientStore,
         Upstream: resolver, SWREnabled: conf.CacheSWR,
         RefreshConcurrency: conf.CacheRefreshConcurrency,
@@ -698,7 +704,7 @@ Load-bearing ordering:
    their consumers. `config.GetConfig()` remains the env-loading boundary; DB
    and logger expose constructors rather than production singleton accessors.
 
-6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. It calls `db.Open` exactly once with `OpenDeps` (path, logger, metrics registerer and a unique pool name) and passes the resulting connection to migrations and explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`); orchestration is a `*Module`. DNS cache and domain-inspect (handler, local readers, URLScan, VT/SB credentials and provider checks) are explicitly instantiated and injected:
+6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. It owns the Prometheus registry and component metrics bundles, calls `db.Open` exactly once with `OpenDeps` (path, logger, DB metrics and a unique pool name), and passes the resulting connection to migrations and explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`); orchestration is a `*Module`. DNS cache and domain-inspect (handler, local readers, URLScan, VT/SB credentials and provider checks) are explicitly instantiated and injected:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.

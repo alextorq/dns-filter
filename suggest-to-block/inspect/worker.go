@@ -86,6 +86,7 @@ type Worker struct {
 	gate      SourceGate
 	filter    Filter
 	log       Logger
+	metrics   *Metrics
 	cfg       WorkerConfig
 	// sleep is the pacing primitive, injectable so tests run instantly. The
 	// default is ctx-aware so a pause aborts promptly on shutdown.
@@ -105,8 +106,12 @@ func NewWorker(
 	gate SourceGate,
 	filter Filter,
 	log Logger,
+	metrics *Metrics,
 	cfg WorkerConfig,
 ) *Worker {
+	if metrics == nil {
+		panic("suggest-to-block/inspect: metrics are required")
+	}
 	return &Worker{
 		repo:      repo,
 		inspector: inspector,
@@ -115,6 +120,7 @@ func NewWorker(
 		gate:      gate,
 		filter:    filter,
 		log:       log,
+		metrics:   metrics,
 		cfg:       cfg,
 		sleep:     ctxSleep,
 	}
@@ -155,7 +161,7 @@ func (w *Worker) RunOnce(ctx context.Context) {
 	}
 
 	if depth, err := w.repo.QueueDepth(); err == nil {
-		inspectQueueDepth.Set(float64(depth))
+		w.metrics.queueDepth.Set(float64(depth))
 	}
 
 	candidates, err := w.repo.PickForInspection(w.cfg.CacheTTL, w.cfg.Budget)
@@ -190,17 +196,17 @@ func (w *Worker) RunOnce(ctx context.Context) {
 			// Quota exhausted for the whole provider — stop the run and leave
 			// THIS candidate untouched (no SaveResult/ScheduleRetry): it is not a
 			// per-domain failure, just "try again next tick".
-			inspectRateLimited.Inc()
+			w.metrics.rateLimited.Inc()
 			w.log.Info("inspect: rate-limited, pausing run after", i, "domains")
 			break
 		}
 		if err != nil {
-			inspectErrors.Inc()
+			w.metrics.errors.Inc()
 			w.log.Error(err)
 			w.retryOrGiveUp(c)
 			continue
 		}
-		inspectDecisions.WithLabelValues(result.Verdict).Inc()
+		w.metrics.decisions.WithLabelValues(result.Verdict).Inc()
 
 		switch result.Verdict {
 		case string(domain_inspect.VerdictMalicious):

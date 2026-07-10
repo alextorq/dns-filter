@@ -1,32 +1,16 @@
 package dns
 
 import (
-	"github.com/alextorq/dns-filter/metric"
 	"github.com/miekg/dns"
-	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/singleflight"
 )
-
-// singleflightCoalesced counts DNS queries that returned a result shared with
-// other concurrent callers — incremented per caller (including the owner of
-// the group), not per saved upstream call. For a coalesced group of N callers
-// the counter grows by N, while the number of upstream calls avoided is N-1.
-// Spikes here mean a popular domain just fell out of cache and many clients
-// piled on at once — exactly the thundering-herd this coordinator absorbs.
-var singleflightCoalesced = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "dns_singleflight_coalesced_total",
-	Help: "DNS queries that received a singleflight-shared upstream result (counts every caller in a coalesced group, including the owner; saved upstream calls = value minus number of groups)",
-})
-
-func init() {
-	metric.Registry.MustRegister(singleflightCoalesced)
-}
 
 // upstreamCoordinator collapses concurrent identical queries into a single
 // in-flight upstream call. The key is the same (name+qtype) we use for the
 // DNS cache, so coalescing aligns with the cache's notion of identity.
 type upstreamCoordinator struct {
-	group singleflight.Group
+	group  singleflight.Group
+	metric Metric
 }
 
 // Do runs fn under the singleflight key. If another caller is already running
@@ -38,8 +22,8 @@ func (c *upstreamCoordinator) Do(key string, fn func() (*dns.Msg, error)) (*dns.
 	v, err, shared := c.group.Do(key, func() (any, error) {
 		return fn()
 	})
-	if shared {
-		singleflightCoalesced.Inc()
+	if shared && c.metric != nil {
+		c.metric.IncSingleflightCoalesced()
 	}
 	if err != nil {
 		return nil, err

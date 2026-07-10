@@ -10,23 +10,9 @@ import (
 
 	"github.com/alextorq/dns-filter/clients/identifier"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
-	"github.com/alextorq/dns-filter/metric"
 	"github.com/alextorq/dns-filter/utils"
 	"github.com/miekg/dns"
-	"github.com/prometheus/client_golang/prometheus"
 )
-
-// serveStaleOnError counts responses where upstream failed but a stale-window
-// entry rescued us (RFC 8767). A non-zero value means the resolver kept
-// answering during a Cloudflare/DoH blip — without SWR these would be SERVFAIL.
-var serveStaleOnError = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "dns_serve_stale_on_error_total",
-	Help: "DNS responses served from the stale-window because upstream returned an error (RFC 8767)",
-})
-
-func init() {
-	metric.Registry.MustRegister(serveStaleOnError)
-}
 
 // ClientStore is the subset of the in-memory exclusion snapshot the hot path
 // needs. Defined as an interface so tests can inject a stub without standing
@@ -91,6 +77,9 @@ type Cache interface {
 
 type Metric interface {
 	HandleDNSRequest(clientIP, qtype, rcode string, respSize int, duration time.Duration)
+	IncServeStaleOnError()
+	IncSingleflightCoalesced()
+	IncRefresh(result string)
 }
 
 // TrafficRecorder is the narrow port the hot path uses to record per-device
@@ -162,7 +151,7 @@ func (s *DnsServer) GetFromCacheOrCreateRequest(ctx context.Context, question dn
 			lk.Msg.Id = id
 			return lk.Msg, nil
 		case dns_cache.StateStale:
-			serveStaleOnError.Inc()
+			s.Metric.IncServeStaleOnError()
 			s.Logger.Warn("Upstream упал, отдаём stale из кэша:", name, "Тип:", qtype)
 			lk.Msg.Id = id
 			return lk.Msg, nil
@@ -332,6 +321,9 @@ type ServerDeps struct {
 // Upstream instance backs both the synchronous hot path and the SWR refresh
 // worker, so a runtime resolver swap remains visible to both.
 func NewServer(deps ServerDeps) *DnsServer {
+	if deps.Metric == nil {
+		panic("dns: metrics are required")
+	}
 	s := &DnsServer{
 		Logger:     deps.Logger,
 		Cache:      deps.Cache,
@@ -341,11 +333,12 @@ func NewServer(deps ServerDeps) *DnsServer {
 		Identifier: deps.Identifier,
 		Clients:    deps.Clients,
 	}
+	s.upstream.metric = deps.Metric
 	s.swrEnabled.Store(deps.SWREnabled)
 	// Refresh worker shares the singleflight group with the synchronous hot
 	// path, so a refresh that fires while a client miss is in flight (or vice
 	// versa) collapses to a single upstream call.
-	s.Refresh = newRefreshWorker(deps.Cache, deps.Upstream, &s.upstream, deps.Logger, deps.RefreshConcurrency)
+	s.Refresh = newRefreshWorker(deps.Cache, deps.Upstream, &s.upstream, deps.Logger, deps.Metric, deps.RefreshConcurrency)
 	return s
 }
 

@@ -10,7 +10,7 @@ import (
 // SetConcurrency must swap in a semaphore of the requested capacity so the
 // refresh pool can be resized at runtime via the settings module.
 func TestRefreshWorker_SetConcurrency_Resizes(t *testing.T) {
-	w := newRefreshWorker(newMemoryCache(), &staticResolver{}, &upstreamCoordinator{}, noopLogger{}, 2)
+	w := newRefreshWorker(newMemoryCache(), &staticResolver{}, &upstreamCoordinator{}, noopLogger{}, noopMetric{}, 2)
 
 	if got := cap(w.limiter.Load().tokens); got != 2 {
 		t.Fatalf("initial limiter cap = %d, want 2", got)
@@ -25,7 +25,7 @@ func TestRefreshWorker_SetConcurrency_Resizes(t *testing.T) {
 // A non-positive concurrency must clamp to 1 rather than create an unusable
 // zero-capacity semaphore (which would drop every refresh).
 func TestRefreshWorker_SetConcurrency_ClampsNonPositive(t *testing.T) {
-	w := newRefreshWorker(newMemoryCache(), &staticResolver{}, &upstreamCoordinator{}, noopLogger{}, 4)
+	w := newRefreshWorker(newMemoryCache(), &staticResolver{}, &upstreamCoordinator{}, noopLogger{}, noopMetric{}, 4)
 
 	w.SetConcurrency(0)
 	if got := cap(w.limiter.Load().tokens); got != 1 {
@@ -47,7 +47,7 @@ func TestRefreshWorker_ResizeWhileRefreshInFlight(t *testing.T) {
 	release := make(chan struct{})
 	resolver := &blockingResolver{release: release, rcode: dnsLib.RcodeSuccess}
 	cache := newMemoryCache()
-	w := newRefreshWorker(cache, resolver, &upstreamCoordinator{}, noopLogger{}, 1)
+	w := newRefreshWorker(cache, resolver, &upstreamCoordinator{}, noopLogger{}, noopMetric{}, 1)
 
 	q := func(name string) dnsLib.Question {
 		return dnsLib.Question{Name: name, Qtype: dnsLib.TypeA, Qclass: dnsLib.ClassINET}

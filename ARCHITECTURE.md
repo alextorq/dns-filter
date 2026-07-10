@@ -171,14 +171,15 @@ the canonical MAC key atomically with respect to client mutations.
 
 **Supported sources:** Steven Black's hosts, HaGeZi (hosts format); EasyList, RuAdList, AdGuardRussian (EasyList/AdBlock format).
 
-**Loader DI.** `main` owns one timeout-configured HTTP client and builds a
-`LoaderRegistry map[BlockListSource]Loader`: each entry is an `AdBlockLoader`
-or `HostsLoader` with its endpoint injected. `source.Module` receives this
-registry plus a consumer-owned `SourceRepo`; the sync use-case does not resolve
-HTTP clients, endpoints or a concrete DB adapter. Registry validation requires
-all remote sources and copies the map so a running module cannot be mutated by
-its caller. Local sources (`User`, `SuggestedToBlock`, `AutoBlocked`) correctly
-have no network loader.
+**Loader DI.** `main` owns one timeout-configured HTTP client and passes it to
+`source_sync.NewDefaultLoaders`. The source feature owns the stable production
+mapping `BlockListSource → format/parser/endpoint`, while transport policy stays
+in the composition root. `source.Module` receives the resulting
+`LoaderRegistry` plus a consumer-owned `SourceRepo`; the sync use-case does not
+resolve HTTP clients or a concrete DB adapter. Registry validation requires all
+remote sources and copies the map so a running module cannot be mutated by its
+caller. Local sources (`User`, `SuggestedToBlock`, `AutoBlocked`) correctly have
+no network loader.
 
 **EasyList-format parser (`easy-list/`).** Converts AdBlock rules into bare domains for the DNS block list. Only an unconditional `||domain^` rule can be flattened into a domain. A rule with contextual/partial modifiers (`$domain=`, `$third-party`, `$popup`, resource types, `$badfilter`, `$dnsrewrite`, …) is **discarded entirely** — the DNS filter does not know the page context, and stripping `$...` while blocking the bare domain would turn the browser rule `||mail.ru^$domain=dzen.ru` into a global block of `mail.ru`. Only `$important` and `$all` are allowed — they do not narrow a full domain block (`dnsSafeModifiers`, an allowlist approach: an unknown modifier makes the rule non-flattenable). Additionally, `IsSafeDNSDomain` discards bare public suffixes (`||ru^` → `ru`) and wildcard rules.
 
@@ -596,15 +597,10 @@ func main() {
     filterState := runtime_state.New(true)
     filterModule := filter.NewModule(blockRepo, bloom, cache, filterState, chanLogger)
 
-    // 5. Sources: main owns the HTTP client, endpoints and loader registry.
+    // 5. Sources: main owns HTTP policy; the feature owns source/format/URL mapping.
     sourceHTTPClient := &http.Client{Timeout: 60 * time.Second}
-    sourceLoaders := source_sync.LoaderRegistry{
-        source_db.SourceEasyList:       easy_list.NewAdBlockLoader(sourceHTTPClient, easy_list.EasyListURL),
-        source_db.SourceRuAdList:       easy_list.NewAdBlockLoader(sourceHTTPClient, easy_list.RuAdListURL),
-        source_db.SourceAdGuardRussian: easy_list.NewAdBlockLoader(sourceHTTPClient, easy_list.AdGuardRussianURL),
-        source_db.SourceStevenBlack:    source_sync.NewHostsLoader(sourceHTTPClient, source_sync.StevenBlackURL),
-        source_db.SourceHaGeZiMulti:    source_sync.NewHostsLoader(sourceHTTPClient, source_sync.HaGeZiMultiURL),
-    }
+    sourceLoaders, err := source_sync.NewDefaultLoaders(sourceHTTPClient)
+    if err != nil { panic(err) }
     sourceModule, err := source.NewModule(sourceRepo, blockRepo, sourceLoaders, chanLogger)
     if err != nil { panic(err) }
     sourceModule.Seed()

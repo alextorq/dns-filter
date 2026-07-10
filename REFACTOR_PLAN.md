@@ -372,8 +372,9 @@ filter state создаётся отдельно через `runtime_state.New(t
 ### Этап 10.8 — source loaders через DI
 
 - Package-level HTTP clients из EasyList/hosts loaders удалены. `main` создаёт
-  один timeout-configured `http.Client` и явно передаёт его в
-  `AdBlockLoader`/`HostsLoader` вместе с endpoint.
+  один timeout-configured `http.Client` и передаёт его в
+  `source_sync.NewDefaultLoaders`; source feature владеет стабильным mapping
+  source → adapter/endpoint, а composition root — transport policy.
 - Use-case получает `LoaderRegistry map[BlockListSource]Loader` и выбирает
   adapter по активному source вместо прямых package-вызовов и switch по URL.
 - Registry валидирует обязательные remote sources, отклоняет nil/typed-nil и

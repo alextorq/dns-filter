@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
 	"strings"
 
 	easy_list "github.com/alextorq/dns-filter/source/business/use-cases/sync/easy-list"
@@ -17,11 +16,6 @@ const (
 	StevenBlackURL = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
 	HaGeZiMultiURL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt"
 )
-
-// HTTPDoer is the consumer-owned HTTP port used by HostsLoader.
-type HTTPDoer interface {
-	Do(*http.Request) (*http.Response, error)
-}
 
 // HostsLoader downloads and parses one configured hosts-format source.
 type HostsLoader struct {
@@ -55,19 +49,6 @@ func (l *HostsLoader) Load(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return domains, nil
-}
-
-func isNilHTTPDoer(client HTTPDoer) bool {
-	if client == nil {
-		return true
-	}
-	v := reflect.ValueOf(client)
-	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return v.IsNil()
-	default:
-		return false
-	}
 }
 
 func ParseIpHostsLine(r io.Reader) []string {

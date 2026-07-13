@@ -54,6 +54,7 @@ func newTestAdapter(t *testing.T) *Adapter {
 	t.Helper()
 	noop := fakeCheck(domain_inspect.StatusSkipped, domain_inspect.VerdictUnknown, nil)
 	return NewAdapter(newFakeRDAPCache(), time.Hour, ProviderChecks{
+		RDAP:         noop,
 		VirusTotal:   noop,
 		SafeBrowsing: noop,
 	}, newTestMetrics(t))
@@ -65,8 +66,9 @@ func TestNewAdapter_RejectsMissingProviderChecks(t *testing.T) {
 		name      string
 		providers ProviderChecks
 	}{
-		{name: "VirusTotal", providers: ProviderChecks{SafeBrowsing: check}},
-		{name: "Safe Browsing", providers: ProviderChecks{VirusTotal: check}},
+		{name: "RDAP", providers: ProviderChecks{VirusTotal: check, SafeBrowsing: check}},
+		{name: "VirusTotal", providers: ProviderChecks{RDAP: check, SafeBrowsing: check}},
+		{name: "Safe Browsing", providers: ProviderChecks{RDAP: check, VirusTotal: check}},
 	}
 
 	for _, tc := range cases {
@@ -81,10 +83,35 @@ func TestNewAdapter_RejectsMissingProviderChecks(t *testing.T) {
 	}
 }
 
+func TestNewAdapter_UsesInjectedRDAPCheck(t *testing.T) {
+	calls := 0
+	rdap := func(context.Context, string) domain_inspect.CheckResult {
+		calls++
+		return domain_inspect.CheckResult{
+			Status:  domain_inspect.StatusOK,
+			Verdict: domain_inspect.VerdictSuspicious,
+			Details: map[string]any{"age_days": 5},
+		}
+	}
+	noop := fakeCheck(domain_inspect.StatusSkipped, domain_inspect.VerdictUnknown, nil)
+	a := NewAdapter(newFakeRDAPCache(), time.Hour, ProviderChecks{
+		RDAP:         rdap,
+		VirusTotal:   noop,
+		SafeBrowsing: noop,
+	}, newTestMetrics(t))
+
+	if _, err := a.Inspect(context.Background(), "fresh.example.com"); err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("injected RDAP calls = %d, want 1", calls)
+	}
+}
+
 func TestWithRDAPCache_UsesRegistrableCacheKey(t *testing.T) {
 	cache := newFakeRDAPCache()
 	noop := fakeCheck(domain_inspect.StatusSkipped, domain_inspect.VerdictUnknown, nil)
-	a := NewAdapter(cache, time.Hour, ProviderChecks{VirusTotal: noop, SafeBrowsing: noop}, newTestMetrics(t))
+	a := NewAdapter(cache, time.Hour, ProviderChecks{RDAP: noop, VirusTotal: noop, SafeBrowsing: noop}, newTestMetrics(t))
 	wrapped := a.withRDAPCache(fakeCheck(domain_inspect.StatusOK, domain_inspect.VerdictSuspicious,
 		map[string]any{"age_days": 7}))
 

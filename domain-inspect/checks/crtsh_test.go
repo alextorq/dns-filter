@@ -9,13 +9,6 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-func withCrtshEndpoint(t *testing.T, ts *httptest.Server) {
-	t.Helper()
-	prev := crtshEndpoint
-	crtshEndpoint = ts.URL + "/"
-	t.Cleanup(func() { crtshEndpoint = prev })
-}
-
 func TestCrtSh_CountsCertsAndUniqueNames(t *testing.T) {
 	// Two entries, one with a multi-line name_value (CT logs return CN + SAN
 	// joined with newlines). Unique subdomain count must dedupe across that.
@@ -28,9 +21,8 @@ func TestCrtSh_CountsCertsAndUniqueNames(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	}))
 	defer ts.Close()
-	withCrtshEndpoint(t, ts)
 
-	res := CrtSh(context.Background(), "example.com")
+	res := NewCrtSh(ts.Client(), ts.URL+"/")(context.Background(), "example.com")
 
 	if res.Status != domain_inspect.StatusOK {
 		t.Fatalf("status: got %s, want OK", res.Status)
@@ -51,9 +43,8 @@ func TestCrtSh_EmptyResultIsNotAnError(t *testing.T) {
 		_, _ = w.Write([]byte(`[]`))
 	}))
 	defer ts.Close()
-	withCrtshEndpoint(t, ts)
 
-	res := CrtSh(context.Background(), "nope.example")
+	res := NewCrtSh(ts.Client(), ts.URL+"/")(context.Background(), "nope.example")
 	if res.Status != domain_inspect.StatusOK {
 		t.Errorf("empty list should be OK, got %s", res.Status)
 	}

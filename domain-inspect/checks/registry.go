@@ -6,6 +6,9 @@ import (
 
 type DefaultDeps struct {
 	LocalStats   domain_inspect.CheckFunc
+	DNSResolve   domain_inspect.CheckFunc
+	RDAP         domain_inspect.CheckFunc
+	CrtSh        domain_inspect.CheckFunc
 	URLScan      domain_inspect.CheckFunc
 	VirusTotal   domain_inspect.CheckFunc
 	SafeBrowsing domain_inspect.CheckFunc
@@ -18,6 +21,15 @@ func Default(deps DefaultDeps) map[string]domain_inspect.CheckFunc {
 	if deps.LocalStats == nil {
 		panic("domain-inspect/checks: local stats check is required")
 	}
+	if deps.DNSResolve == nil {
+		panic("domain-inspect/checks: DNS resolve check is required")
+	}
+	if deps.RDAP == nil {
+		panic("domain-inspect/checks: RDAP check is required")
+	}
+	if deps.CrtSh == nil {
+		panic("domain-inspect/checks: crt.sh check is required")
+	}
 	if deps.URLScan == nil {
 		panic("domain-inspect/checks: urlscan check is required")
 	}
@@ -29,9 +41,9 @@ func Default(deps DefaultDeps) map[string]domain_inspect.CheckFunc {
 	}
 	return map[string]domain_inspect.CheckFunc{
 		"local_stats":   deps.LocalStats,
-		"dns_resolve":   DNSResolve,
-		"rdap":          RDAPAge,
-		"crtsh":         CrtSh,
+		"dns_resolve":   deps.DNSResolve,
+		"rdap":          deps.RDAP,
+		"crtsh":         deps.CrtSh,
 		"virustotal":    deps.VirusTotal,
 		"urlscan":       deps.URLScan,
 		"safe_browsing": deps.SafeBrowsing,

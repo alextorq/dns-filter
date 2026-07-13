@@ -12,8 +12,7 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// rdapEndpoint is a var (not const) so tests can point it at httptest.Server.
-var rdapEndpoint = "https://rdap.org/domain/"
+const DefaultRDAPEndpoint = "https://rdap.org/domain/"
 
 type rdapEvent struct {
 	EventAction string `json:"eventAction"`
@@ -35,7 +34,16 @@ type rdapResponse struct {
 // The original FQDN is preserved in the response only by virtue of the
 // caller's `domain` argument; `queried_domain` in details records what we
 // actually asked RDAP about, so the UI can explain the verdict.
-func RDAPAge(ctx context.Context, domain string) domain_inspect.CheckResult {
+func NewRDAP(client HTTPDoer, endpoint string, clock Clock) domain_inspect.CheckFunc {
+	requireDependency("RDAP HTTP client", client)
+	requireEndpoint("RDAP", endpoint)
+	requireDependency("RDAP clock", clock)
+	return func(ctx context.Context, domain string) domain_inspect.CheckResult {
+		return rdapAge(ctx, domain, client, endpoint, clock)
+	}
+}
+
+func rdapAge(ctx context.Context, domain string, client HTTPDoer, endpoint string, clock Clock) domain_inspect.CheckResult {
 	registrable, err := publicsuffix.EffectiveTLDPlusOne(domain)
 	if err != nil {
 		// Happens for bare TLDs ("com") or invalid inputs — RDAP has no
@@ -48,14 +56,14 @@ func RDAPAge(ctx context.Context, domain string) domain_inspect.CheckResult {
 		}
 	}
 
-	u := rdapEndpoint + url.PathEscape(registrable)
+	u := endpoint + url.PathEscape(registrable)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return errorResult(err)
 	}
 	req.Header.Set("Accept", "application/rdap+json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return contextErrorResult(ctx, err)
 	}
@@ -99,7 +107,7 @@ func RDAPAge(ctx context.Context, domain string) domain_inspect.CheckResult {
 
 	verdict := domain_inspect.VerdictUnknown
 	if !registered.IsZero() {
-		ageDays := int(time.Since(registered).Hours() / 24)
+		ageDays := int(clock.Now().Sub(registered).Hours() / 24)
 		details["age_days"] = ageDays
 		verdict = RDAPVerdictForAge(ageDays)
 	}

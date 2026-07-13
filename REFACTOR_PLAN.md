@@ -385,14 +385,34 @@ filter state создаётся отдельно через `runtime_state.New(t
 - Loader cancellation tests больше не подменяют globals и безопасно запускаются
   параллельно; module/use-case tests используют fake repo/loaders без HTTP/SQLite.
 
+### Этап 10.9 — полный domain-inspect checks catalog через DI
+
+- `checks.NewDefaultCatalog` получает от `main` только cross-package inputs:
+  block/traffic readers, runtime credentials и URLScan key. Фабрика пакета
+  владеет inspection-only HTTP client, системным DNS resolver, wall clock,
+  production endpoints и сборкой `dns_resolve`, RDAP, crt.sh, VirusTotal,
+  URLScan и Safe Browsing checks; `main` не знает внутренний dependency graph.
+- Каждый HTTP check получил конструктор с `HTTPDoer` и endpoint; RDAP дополнительно
+  принимает `Clock`, а DNS check — узкий `DNSResolver`. Package-level HTTP client
+  и mutable endpoint seams удалены. Эти leaf-конструкторы остаются публичными
+  для изолированных тестов и альтернативных фабрик.
+- `checks.Default` больше не подставляет package-функции: все семь `CheckFunc`
+  обязательны и проверяются при сборке каталога.
+- `suggest-to-block/inspect.Adapter` получает RDAP check через `ProviderChecks`
+  и оборачивает именно injected instance своим registrable-domain cache.
+- Тесты используют изолированные clients/endpoints/resolvers и фиксированный
+  RDAP clock; проверены независимость экземпляров, missing/typed-nil dependencies
+  и обязательность полного каталога.
+
 ---
 
 ## Следующий DI этап
 
-**Полностью сконструировать domain-inspect checks в composition root.** RDAP,
-crt.sh и DNS checks пока используют package-level HTTP/resolver/endpoint seams;
-следующий DI PR должен дать им явные конструкторы и собрать полный каталог в
-`main`, включая RDAP dependency inspect adapter.
+**Перевести LAN discovery на instance-based scanner.** `clients.Module.Discover`
+пока напрямую вызывает package-level `discovery.Discover`, который сам выбирает
+сетевые интерфейсы, ARP/mDNS adapters, Docker network provider и OUI lookup.
+Следующий DI PR должен внедрить consumer-owned `Discoverer` в `clients.Module`,
+а production scanner собрать из явных platform dependencies.
 
 ## Следующий lifecycle-рефакторинг
 
@@ -536,10 +556,11 @@ crt.sh и DNS checks пока используют package-level HTTP/resolver/e
   legacy-исключение.
 
 ### Внешние потребители не из scope DI
-- `domain-inspect/checks` больше не читает singleton DB: `local_stats` получает
-  `blocked-domain/db.Repo` и `traffic/db.Repo` через узкие порты. URLScan
-  получает env-only ключ через `NewURLScan`; VT/SB получают общий instance
-  `Credentials`, связанный с settings и обоими потребителями в `main`.
+- `domain-inspect/checks` не читает singleton DB или package-level network
+  dependencies: default-фабрика получает block/traffic readers, env-only
+  URLScan key и общий runtime-updatable `Credentials`, связанный с settings в
+  `main`, а внутренние remote checks получают от неё явные
+  HTTP/DNS/endpoint/clock dependencies.
 
 ---
 
@@ -549,7 +570,7 @@ crt.sh и DNS checks пока используют package-level HTTP/resolver/e
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, db/web, auth, clients, dns-cache, local domain-inspect adapters, bloom и verdict LRU. **Остаток:** полный domain-inspect checks catalog, LAN discovery, DB snapshot exporter и точечные clock/generator seams |
+| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, db/web, auth, clients, dns-cache, полного domain-inspect checks catalog, bloom и verdict LRU. **Остаток:** LAN discovery, DB snapshot exporter и точечные clock/generator seams |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |
@@ -558,6 +579,6 @@ crt.sh и DNS checks пока используют package-level HTTP/resolver/e
 | 9 | Graceful shutdown (HTTP + DNS + workers) | **следующий кандидат** |
 | 10 | Hot path не читает глобальный config | **готово**: hot path читает injected `RuntimeState`, `config.Load()` не singleton |
 
-В DI-потоке следующий шаг — полный domain-inspect checks catalog; lifecycle
-п.9 можно вести независимо. Пункты 1, 6, 7 и 8 также независимы и могут
+В DI-потоке следующий шаг — LAN discovery; lifecycle п.9 можно вести
+независимо. Пункты 1, 6, 7 и 8 также независимы и могут
 включаться по мере касания соответствующих файлов.

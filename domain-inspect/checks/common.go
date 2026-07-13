@@ -4,15 +4,48 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"reflect"
 	"time"
 
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-// httpClient is shared by all outbound-HTTP checks. Per-call deadlines are
-// driven by the request context passed into Inspect(); this timeout is the
-// hard ceiling that protects against a misbehaving caller that did not set one.
-var httpClient = &http.Client{Timeout: 10 * time.Second}
+// HTTPDoer is the outbound HTTP port shared by provider checks. Production
+// supplies one timeout-configured *http.Client from the composition root;
+// tests can inject isolated clients without swapping package globals.
+type HTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+// Clock is the wall-clock port used by checks whose verdict depends on age.
+// RDAP uses it to derive registration age deterministically.
+type Clock interface {
+	Now() time.Time
+}
+
+// ClockFunc adapts a function (normally time.Now) to Clock.
+type ClockFunc func() time.Time
+
+func (f ClockFunc) Now() time.Time { return f() }
+
+func requireDependency(name string, dep any) {
+	if dep == nil {
+		panic("domain-inspect/checks: " + name + " is required")
+	}
+	v := reflect.ValueOf(dep)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if v.IsNil() {
+			panic("domain-inspect/checks: " + name + " is required")
+		}
+	}
+}
+
+func requireEndpoint(name, endpoint string) {
+	if endpoint == "" {
+		panic("domain-inspect/checks: " + name + " endpoint is required")
+	}
+}
 
 func errorResult(err error) domain_inspect.CheckResult {
 	return domain_inspect.CheckResult{Status: domain_inspect.StatusError, Error: err.Error()}

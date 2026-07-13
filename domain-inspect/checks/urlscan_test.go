@@ -9,15 +9,8 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-func withURLScanEndpoint(t *testing.T, ts *httptest.Server) {
-	t.Helper()
-	prev := urlscanEndpoint
-	urlscanEndpoint = ts.URL + "/"
-	t.Cleanup(func() { urlscanEndpoint = prev })
-}
-
 func TestURLScan_NoKey_Skipped(t *testing.T) {
-	res := NewURLScan("")(context.Background(), "x.example")
+	res := NewURLScan(http.DefaultClient, DefaultURLScanEndpoint, "")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusSkipped {
 		t.Errorf("expected skipped, got %s", res.Status)
 	}
@@ -34,9 +27,8 @@ func TestURLScan_MaliciousHit(t *testing.T) {
 		]}`))
 	}))
 	defer ts.Close()
-	withURLScanEndpoint(t, ts)
 
-	res := NewURLScan("k")(context.Background(), "x.example")
+	res := NewURLScan(ts.Client(), ts.URL+"/", "k")(context.Background(), "x.example")
 	if res.Verdict != domain_inspect.VerdictMalicious {
 		t.Errorf("verdict: got %s, want malicious", res.Verdict)
 	}
@@ -57,9 +49,8 @@ func TestURLScan_HighScoreNotMalicious_IsSuspicious(t *testing.T) {
 		]}`))
 	}))
 	defer ts.Close()
-	withURLScanEndpoint(t, ts)
 
-	res := NewURLScan("k")(context.Background(), "x.example")
+	res := NewURLScan(ts.Client(), ts.URL+"/", "k")(context.Background(), "x.example")
 	if res.Verdict != domain_inspect.VerdictSuspicious {
 		t.Errorf("verdict: got %s, want suspicious", res.Verdict)
 	}
@@ -70,9 +61,8 @@ func TestURLScan_NoScans_IsUnknown(t *testing.T) {
 		_, _ = w.Write([]byte(`{"total":0,"results":[]}`))
 	}))
 	defer ts.Close()
-	withURLScanEndpoint(t, ts)
 
-	res := NewURLScan("k")(context.Background(), "x.example")
+	res := NewURLScan(ts.Client(), ts.URL+"/", "k")(context.Background(), "x.example")
 	if res.Verdict != domain_inspect.VerdictUnknown {
 		t.Errorf("verdict: got %s, want unknown", res.Verdict)
 	}

@@ -10,23 +10,16 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-func withVTEndpoint(t *testing.T, ts *httptest.Server) {
-	t.Helper()
-	prev := vtEndpoint
-	vtEndpoint = ts.URL + "/"
-	t.Cleanup(func() { vtEndpoint = prev })
-}
-
-func newVTCheck(key string) domain_inspect.CheckFunc {
+func newVTCheck(client HTTPDoer, endpoint, key string) domain_inspect.CheckFunc {
 	keys := NewCredentials()
 	keys.SetVirusTotal(key)
-	return NewVirusTotal(keys)
+	return NewVirusTotal(client, endpoint, keys)
 }
 
 // Without a key the check must be skipped, never errored — operators who
 // don't have a VT API key should still get a sensible aggregated result.
 func TestVirusTotal_NoKey_Skipped(t *testing.T) {
-	res := newVTCheck("")(context.Background(), "x.example")
+	res := newVTCheck(http.DefaultClient, DefaultVirusTotalEndpoint, "")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusSkipped {
 		t.Errorf("expected skipped, got %s", res.Status)
 	}
@@ -44,9 +37,8 @@ func TestVirusTotal_Malicious(t *testing.T) {
 		}}}`))
 	}))
 	defer ts.Close()
-	withVTEndpoint(t, ts)
 
-	res := newVTCheck(apiKey)(context.Background(), "x.example")
+	res := newVTCheck(ts.Client(), ts.URL+"/", apiKey)(context.Background(), "x.example")
 
 	if res.Status != domain_inspect.StatusOK {
 		t.Fatalf("status: got %s, want OK", res.Status)
@@ -66,9 +58,8 @@ func TestVirusTotal_OneMalicious_IsSuspicious(t *testing.T) {
 		}}}`))
 	}))
 	defer ts.Close()
-	withVTEndpoint(t, ts)
 
-	res := newVTCheck("k")(context.Background(), "x.example")
+	res := newVTCheck(ts.Client(), ts.URL+"/", "k")(context.Background(), "x.example")
 	if res.Verdict != domain_inspect.VerdictSuspicious {
 		t.Errorf("verdict: got %s, want suspicious", res.Verdict)
 	}
@@ -81,9 +72,8 @@ func TestVirusTotal_Clean(t *testing.T) {
 		}}}`))
 	}))
 	defer ts.Close()
-	withVTEndpoint(t, ts)
 
-	res := newVTCheck("k")(context.Background(), "x.example")
+	res := newVTCheck(ts.Client(), ts.URL+"/", "k")(context.Background(), "x.example")
 	if res.Verdict != domain_inspect.VerdictClean {
 		t.Errorf("verdict: got %s, want clean", res.Verdict)
 	}
@@ -96,9 +86,8 @@ func TestVirusTotal_NotFound_IsUnknown(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
-	withVTEndpoint(t, ts)
 
-	res := newVTCheck("k")(context.Background(), "x.example")
+	res := newVTCheck(ts.Client(), ts.URL+"/", "k")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusOK {
 		t.Fatalf("status: got %s, want OK", res.Status)
 	}
@@ -112,9 +101,8 @@ func TestVirusTotal_RateLimited_IsRateLimited(t *testing.T) {
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer ts.Close()
-	withVTEndpoint(t, ts)
 
-	res := newVTCheck("k")(context.Background(), "x.example")
+	res := newVTCheck(ts.Client(), ts.URL+"/", "k")(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusRateLimited {
 		t.Errorf("429 must surface as rate_limited (distinct from error), got status=%s", res.Status)
 	}

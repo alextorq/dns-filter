@@ -39,13 +39,9 @@ func TestCredentials_RuntimeUpdatesAreVisibleToChecks(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	prevVT, prevSB := vtEndpoint, sbEndpoint
-	vtEndpoint, sbEndpoint = ts.URL+"/vt/", ts.URL+"/sb"
-	t.Cleanup(func() { vtEndpoint, sbEndpoint = prevVT, prevSB })
-
 	keys := NewCredentials()
-	vt := NewVirusTotal(keys)
-	sb := NewSafeBrowsing(keys)
+	vt := NewVirusTotal(ts.Client(), ts.URL+"/vt/", keys)
+	sb := NewSafeBrowsing(ts.Client(), ts.URL+"/sb", keys)
 
 	if got := vt(context.Background(), "example.com"); got.Status != "skipped" {
 		t.Fatalf("VT without key: got %q", got.Status)
@@ -78,8 +74,8 @@ func TestProviderConstructors_RejectNilCredentials(t *testing.T) {
 		name string
 		call func()
 	}{
-		{name: "VirusTotal", call: func() { NewVirusTotal(nil) }},
-		{name: "Safe Browsing", call: func() { NewSafeBrowsing(nil) }},
+		{name: "VirusTotal", call: func() { NewVirusTotal(http.DefaultClient, DefaultVirusTotalEndpoint, nil) }},
+		{name: "Safe Browsing", call: func() { NewSafeBrowsing(http.DefaultClient, DefaultSafeBrowsingEndpoint, nil) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defer func() {

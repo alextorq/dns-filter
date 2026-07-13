@@ -39,20 +39,90 @@ type DiscoverOptions struct {
 	FilterDocker bool
 }
 
-// Discover runs the LAN sweep and returns merged results. The default budget
-// is short on purpose — discovery is invoked synchronously from a UI button
-// click, so a 5-second hard cap keeps the user from staring at a spinner if
-// any technique hangs. Pass a tighter ctx if needed.
-func Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
+// ScannerDeps are the platform operations used by one LAN scanner instance.
+// Keeping them explicit lets consumers test discovery without reading host
+// interfaces, opening raw ARP sockets or starting multicast DNS browses.
+type ScannerDeps struct {
+	Timeout          time.Duration
+	FindSubnet       func() (*LocalSubnet, error)
+	DiscoverARP      func(context.Context, *LocalSubnet) ([]ARPEntry, []error)
+	DiscoverMDNS     func(context.Context) ([]MDNSHost, []error)
+	DockerBridgeNets func() []*net.IPNet
+	LookupVendor     func(string) string
+}
+
+// Scanner owns an immutable set of platform adapters. It is safe to reuse for
+// concurrent UI requests because every sweep keeps its state in local values.
+type Scanner struct {
+	timeout          time.Duration
+	findSubnet       func() (*LocalSubnet, error)
+	discoverARP      func(context.Context, *LocalSubnet) ([]ARPEntry, []error)
+	discoverMDNS     func(context.Context) ([]MDNSHost, []error)
+	dockerBridgeNets func() []*net.IPNet
+	lookupVendor     func(string) string
+}
+
+// NewScanner constructs an instance from explicit platform dependencies.
+func NewScanner(deps ScannerDeps) *Scanner {
+	if deps.Timeout <= 0 {
+		panic("clients/discovery: scanner timeout must be positive")
 	}
+	if deps.FindSubnet == nil {
+		panic("clients/discovery: subnet finder is required")
+	}
+	if deps.DiscoverARP == nil {
+		panic("clients/discovery: ARP discoverer is required")
+	}
+	if deps.DiscoverMDNS == nil {
+		panic("clients/discovery: mDNS discoverer is required")
+	}
+	if deps.DockerBridgeNets == nil {
+		panic("clients/discovery: Docker network provider is required")
+	}
+	if deps.LookupVendor == nil {
+		panic("clients/discovery: vendor lookup is required")
+	}
+	return &Scanner{
+		timeout:          deps.Timeout,
+		findSubnet:       deps.FindSubnet,
+		discoverARP:      deps.DiscoverARP,
+		discoverMDNS:     deps.DiscoverMDNS,
+		dockerBridgeNets: deps.DockerBridgeNets,
+		lookupVendor:     deps.LookupVendor,
+	}
+}
+
+// NewDefaultScanner assembles the production scanner from package-owned
+// platform adapters. The factory performs no I/O; host access begins only when
+// Discover is called.
+func NewDefaultScanner() *Scanner {
+	return NewScanner(ScannerDeps{
+		Timeout:    5 * time.Second,
+		FindSubnet: FindLocalSubnet,
+		DiscoverARP: func(ctx context.Context, subnet *LocalSubnet) ([]ARPEntry, []error) {
+			res := runARPDiscovery(ctx, subnet)
+			return res.Entries, res.Errors
+		},
+		DiscoverMDNS: func(ctx context.Context) ([]MDNSHost, []error) {
+			entries, errs := runMDNSDiscovery(ctx)
+			return toMDNSHosts(entries), errs
+		},
+		DockerBridgeNets: dockerBridgeNets,
+		LookupVendor:     LookupVendor,
+	})
+}
+
+// Discover runs the LAN sweep and returns merged results. The default scanner
+// budget is short on purpose — discovery is invoked synchronously from a UI
+// button click, so a hard cap keeps the user from staring at a spinner if any
+// technique hangs. A tighter caller deadline always wins.
+func (s *Scanner) Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 
 	res := &Result{}
 
-	subnet, err := FindLocalSubnet()
+	subnet, err := s.findSubnet()
 	if err != nil {
 		// Without a subnet we can still do mDNS (it doesn't care about CIDR),
 		// but no ARP scan. Record the error and continue with whatever else
@@ -62,22 +132,24 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
 
 	var (
 		mu       sync.Mutex
-		arpRes   scanResult
-		mdnsRes  []mDNSEntry
+		arpRes   []ARPEntry
+		arpErrs  []error
+		mdnsRes  []MDNSHost
 		mdnsErrs []error
 		wg       sync.WaitGroup
 	)
 
 	if subnet != nil {
 		wg.Go(func() {
-			r := runARPDiscovery(ctx, subnet)
+			entries, errs := s.discoverARP(ctx, subnet)
 			mu.Lock()
-			arpRes = r
+			arpRes = entries
+			arpErrs = errs
 			mu.Unlock()
 		})
 	}
 	wg.Go(func() {
-		entries, errs := runMDNSDiscovery(ctx)
+		entries, errs := s.discoverMDNS(ctx)
 		mu.Lock()
 		mdnsRes = entries
 		mdnsErrs = errs
@@ -85,20 +157,20 @@ func Discover(ctx context.Context, opts DiscoverOptions) (*Result, error) {
 	})
 	wg.Wait()
 
-	for _, e := range arpRes.Errors {
+	for _, e := range arpErrs {
 		res.Errors = append(res.Errors, e.Error())
 	}
 	for _, e := range mdnsErrs {
 		res.Errors = append(res.Errors, e.Error())
 	}
 
-	res.Devices = merge(arpRes.Entries, mdnsRes)
+	res.Devices = merge(arpRes, mdnsRes, s.lookupVendor)
 	if opts.FilterDocker {
 		// Collect from every source first, then drop Docker in one pass: any
 		// device whose IP falls in one of the host's real bridge subnets. One
 		// exact check catches both ARP container neighbours and the box's own
 		// mDNS self-answers on docker0/br-* (172.18.0.1, 172.24.0.1, …).
-		res.Devices = filterDockerDevices(res.Devices, dockerBridgeNets())
+		res.Devices = filterDockerDevices(res.Devices, s.dockerBridgeNets())
 	}
 	res.Total = len(res.Devices)
 	return res, nil
@@ -146,7 +218,7 @@ func filterDockerARP(entries []ARPEntry, dockerNets []*net.IPNet) []ARPEntry {
 // for MAC; mDNS contributes Hostname. We also accept mDNS-only entries (an
 // IP that didn't show up in ARP results — happens when active scan is gated
 // off or didn't get a reply in time).
-func merge(arpEntries []ARPEntry, mdnsEntries []mDNSEntry) []Device {
+func merge(arpEntries []ARPEntry, mdnsEntries []MDNSHost, lookupVendor func(string) string) []Device {
 	devices := make(map[string]*Device)
 
 	for _, e := range arpEntries {
@@ -157,7 +229,7 @@ func merge(arpEntries []ARPEntry, mdnsEntries []mDNSEntry) []Device {
 			devices[ipStr] = dev
 		}
 		dev.MAC = e.MAC.String()
-		dev.Vendor = LookupVendor(dev.MAC)
+		dev.Vendor = lookupVendor(dev.MAC)
 		// Prefer the more authoritative source label when both surfaced this IP.
 		if dev.Source == "arp-table" && e.Source == "active-scan" {
 			dev.Source = "active-scan"
@@ -165,7 +237,11 @@ func merge(arpEntries []ARPEntry, mdnsEntries []mDNSEntry) []Device {
 	}
 
 	for _, e := range mdnsEntries {
-		ipStr := e.IP.String()
+		ip := net.ParseIP(e.IP)
+		if ip == nil {
+			continue
+		}
+		ipStr := ip.String()
 		dev, ok := devices[ipStr]
 		if !ok {
 			dev = &Device{IP: ipStr, Source: "mdns"}

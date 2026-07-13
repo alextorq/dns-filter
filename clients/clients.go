@@ -5,6 +5,7 @@ package clients
 import (
 	"context"
 	"net"
+	"reflect"
 	"sync"
 
 	"github.com/alextorq/dns-filter/clients/db"
@@ -33,17 +34,40 @@ type ExclusionStore interface {
 	RemoveClient(*db.Client)
 }
 
+// Discoverer is the LAN scan port owned by the clients consumer. Production
+// injects a discovery.Scanner; tests can supply a host-independent fake.
+type Discoverer interface {
+	Discover(context.Context, discovery.DiscoverOptions) (*discovery.Result, error)
+}
+
 type Module struct {
 	repo       Repo
 	exclusions ExclusionStore
+	discoverer Discoverer
 	// Mutations update persistent and in-memory state as one logical operation.
 	// Serialize them with full snapshot rebuilds so a stale Sync result cannot
 	// overwrite a concurrent create/remove/toggle.
 	mutationMu sync.Mutex
 }
 
-func NewModule(repo Repo, exclusions ExclusionStore) *Module {
-	return &Module{repo: repo, exclusions: exclusions}
+func NewModule(repo Repo, exclusions ExclusionStore, discoverer Discoverer) *Module {
+	requireDependency("repo", repo)
+	requireDependency("exclusion store", exclusions)
+	requireDependency("discoverer", discoverer)
+	return &Module{repo: repo, exclusions: exclusions, discoverer: discoverer}
+}
+
+func requireDependency(name string, dep any) {
+	if dep == nil {
+		panic("clients: " + name + " is required")
+	}
+	v := reflect.ValueOf(dep)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if v.IsNil() {
+			panic("clients: " + name + " is required")
+		}
+	}
 }
 
 // Sync rebuilds the in-memory exclusion snapshot from persistent state.
@@ -88,7 +112,7 @@ func (m *Module) Remove(id uint) error {
 // repository. A repository failure only removes the informational
 // already_registered badge; discovery results remain useful.
 func (m *Module) Discover(ctx context.Context, opts discovery.DiscoverOptions) (*discovery.Result, error) {
-	res, err := discovery.Discover(ctx, opts)
+	res, err := m.discoverer.Discover(ctx, opts)
 	if err != nil {
 		return nil, err
 	}

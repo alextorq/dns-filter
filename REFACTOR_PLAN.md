@@ -406,13 +406,30 @@ filter state создаётся отдельно через `runtime_state.New(t
 
 ---
 
+### Этап 10.10 — instance-based LAN discovery
+
+- `clients.Module` объявляет consumer-owned `Discoverer` и получает его через
+  `NewModule`; package-level `discovery.Discover` удалён.
+- `discovery.Scanner` собирается из явных `ScannerDeps`: timeout, subnet finder,
+  ARP/mDNS adapters, Docker network provider и OUI lookup. Экземпляр stateless и
+  безопасен для параллельных HTTP-запросов.
+- `discovery.NewDefaultScanner()` — package-owned production-фабрика без I/O;
+  доступ к interfaces/raw sockets/multicast начинается только в `Discover`.
+- Сохранены 5s default budget, более строгий caller deadline, best-effort partial
+  errors, единый Docker filter и stable IP ordering.
+- Тесты `clients.Module` используют fake `Discoverer`, а scanner tests — только
+  fake platform dependencies; проверены error propagation, subnet-degraded mDNS,
+  complete wiring, instance independence и DB-аннотация результатов.
+
+---
+
 ## Следующий DI этап
 
-**Перевести LAN discovery на instance-based scanner.** `clients.Module.Discover`
-пока напрямую вызывает package-level `discovery.Discover`, который сам выбирает
-сетевые интерфейсы, ARP/mDNS adapters, Docker network provider и OUI lookup.
-Следующий DI PR должен внедрить consumer-owned `Discoverer` в `clients.Module`,
-а production scanner собрать из явных platform dependencies.
+**Выделить DB snapshot exporter из HTTP handler.** `db/web.DownloadDb` пока сам
+создаёт temp directory, выполняет `VACUUM INTO`, открывает snapshot через GORM,
+удаляет secrets и повторно vacuum'ит файл. Следующий DI PR должен оставить в
+handler только HTTP orchestration, а filesystem/SQLite export собрать в
+injected `SnapshotExporter` с package-owned production-фабрикой.
 
 ## Следующий lifecycle-рефакторинг
 
@@ -570,7 +587,7 @@ filter state создаётся отдельно через `runtime_state.New(t
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, db/web, auth, clients, dns-cache, полного domain-inspect checks catalog, bloom и verdict LRU. **Остаток:** LAN discovery, DB snapshot exporter и точечные clock/generator seams |
+| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, db/web, auth, clients и LAN discovery, dns-cache, полного domain-inspect checks catalog, bloom и verdict LRU. **Остаток:** DB snapshot exporter и точечные clock/generator seams |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |
@@ -579,6 +596,6 @@ filter state создаётся отдельно через `runtime_state.New(t
 | 9 | Graceful shutdown (HTTP + DNS + workers) | **следующий кандидат** |
 | 10 | Hot path не читает глобальный config | **готово**: hot path читает injected `RuntimeState`, `config.Load()` не singleton |
 
-В DI-потоке следующий шаг — LAN discovery; lifecycle п.9 можно вести
+В DI-потоке следующий шаг — DB snapshot exporter; lifecycle п.9 можно вести
 независимо. Пункты 1, 6, 7 и 8 также независимы и могут
 включаться по мере касания соответствующих файлов.

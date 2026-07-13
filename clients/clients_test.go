@@ -1,6 +1,8 @@
 package clients
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -13,7 +15,27 @@ import (
 	"gorm.io/gorm"
 )
 
+type fakeDiscoverer struct {
+	result *discovery.Result
+	err    error
+	ctx    context.Context
+	opts   discovery.DiscoverOptions
+	calls  int
+}
+
+func (f *fakeDiscoverer) Discover(ctx context.Context, opts discovery.DiscoverOptions) (*discovery.Result, error) {
+	f.ctx = ctx
+	f.opts = opts
+	f.calls++
+	return f.result, f.err
+}
+
 func newTestModule(t *testing.T) (*Module, *clientdb.Repo, *store.Store) {
+	t.Helper()
+	return newTestModuleWithDiscoverer(t, &fakeDiscoverer{result: &discovery.Result{}})
+}
+
+func newTestModuleWithDiscoverer(t *testing.T, discoverer Discoverer) (*Module, *clientdb.Repo, *store.Store) {
 	t.Helper()
 	conn, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -30,7 +52,7 @@ func newTestModule(t *testing.T) (*Module, *clientdb.Repo, *store.Store) {
 	}
 	repo := clientdb.NewRepo(conn)
 	exclusions := store.New()
-	return NewModule(repo, exclusions), repo, exclusions
+	return NewModule(repo, exclusions, discoverer), repo, exclusions
 }
 
 func TestModule_SyncUsesCanonicalMACLookup(t *testing.T) {
@@ -128,7 +150,7 @@ func TestModule_SyncSerializesWithChangeFilter(t *testing.T) {
 		releaseSync: make(chan struct{}),
 	}
 	exclusions := store.New()
-	m := NewModule(repo, exclusions)
+	m := NewModule(repo, exclusions, &fakeDiscoverer{result: &discovery.Result{}})
 
 	syncDone := make(chan error, 1)
 	go func() { syncDone <- m.Sync() }()
@@ -157,6 +179,73 @@ func TestModule_SyncSerializesWithChangeFilter(t *testing.T) {
 	}
 	if exclusions.IsExcluded(identifier.Lookup{Kind: identifier.KindIP, Value: repo.client.IP}) {
 		t.Fatal("stale Sync snapshot overwrote the final filtered=true state")
+	}
+}
+
+func TestModule_DiscoverUsesInjectedDiscovererAndAnnotates(t *testing.T) {
+	discoverer := &fakeDiscoverer{result: &discovery.Result{Devices: []discovery.Device{
+		{IP: "10.0.0.20"},
+		{IP: "10.0.0.21", MAC: "AA-BB-CC-DD-EE-FF"},
+	}}}
+	m, repo, _ := newTestModuleWithDiscoverer(t, discoverer)
+	if err := repo.Create(&clientdb.Client{IP: "10.0.0.20"}); err != nil {
+		t.Fatalf("seed IP client: %v", err)
+	}
+	if err := repo.Create(&clientdb.Client{MAC: "aa:bb:cc:dd:ee:ff"}); err != nil {
+		t.Fatalf("seed MAC client: %v", err)
+	}
+
+	type contextKey string
+	ctx := context.WithValue(context.Background(), contextKey("request"), "scan")
+	res, err := m.Discover(ctx, discovery.DiscoverOptions{FilterDocker: true})
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if discoverer.calls != 1 || discoverer.ctx.Value(contextKey("request")) != "scan" || !discoverer.opts.FilterDocker {
+		t.Fatalf("discoverer call: calls=%d context=%v opts=%+v", discoverer.calls, discoverer.ctx, discoverer.opts)
+	}
+	if !res.Devices[0].AlreadyRegistered || !res.Devices[1].AlreadyRegistered {
+		t.Fatalf("registered devices were not annotated: %+v", res.Devices)
+	}
+}
+
+func TestModule_DiscoverPropagatesInjectedError(t *testing.T) {
+	wantErr := errors.New("scanner unavailable")
+	discoverer := &fakeDiscoverer{err: wantErr}
+	m, _, _ := newTestModuleWithDiscoverer(t, discoverer)
+
+	res, err := m.Discover(context.Background(), discovery.DiscoverOptions{})
+	if res != nil || !errors.Is(err, wantErr) {
+		t.Fatalf("Discover = (%v, %v), want (nil, %v)", res, err, wantErr)
+	}
+}
+
+func TestNewModule_RejectsMissingDependencies(t *testing.T) {
+	_, repo, exclusions := newTestModule(t)
+	discoverer := &fakeDiscoverer{result: &discovery.Result{}}
+	var typedNilRepo *clientdb.Repo
+	var typedNilExclusions *store.Store
+	var typedNilDiscoverer *fakeDiscoverer
+
+	for _, tc := range []struct {
+		name string
+		call func()
+	}{
+		{name: "nil repo", call: func() { NewModule(nil, exclusions, discoverer) }},
+		{name: "typed nil repo", call: func() { NewModule(typedNilRepo, exclusions, discoverer) }},
+		{name: "nil exclusions", call: func() { NewModule(repo, nil, discoverer) }},
+		{name: "typed nil exclusions", call: func() { NewModule(repo, typedNilExclusions, discoverer) }},
+		{name: "nil discoverer", call: func() { NewModule(repo, exclusions, nil) }},
+		{name: "typed nil discoverer", call: func() { NewModule(repo, exclusions, typedNilDiscoverer) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("expected incomplete module wiring to panic")
+				}
+			}()
+			tc.call()
+		})
 	}
 }
 

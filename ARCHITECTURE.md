@@ -248,7 +248,7 @@ The refresh context is *not* tied to the client's — the client already got a s
 - Every feature, including `domain-inspect`, exposes `RegisterRoutes` on an injected `*Handlers` value.
 - `source/web.Handlers` depends on its own narrow `SourceRepo` port (`GetAll`, `Amount`, `GetByID`, `Update`) rather than the concrete SQLite adapter; handler behavior and failure ordering are tested with DB-free fakes.
 - `blocked-domain/web.Handlers` splits persistence by operation: the list endpoint receives a read-only `RecordsRepo`, while create and update delegate through the existing use-case-owned `create-domain.Repo` and `update-dns-record.Repo` ports. The composition root may inject one adapter into all three slots without exposing its full API to any consumer.
-- `domain-inspect/web.Handlers` receives the check-catalog factory and logger explicitly. `local_stats` receives block-list and traffic readers explicitly too and canonicalizes the UI hostname to the stored FQDN form before both local lookups. URLScan captures its env-only key through `NewURLScan`; VT/SB checks share an injected, runtime-updatable `checks.Credentials` instance.
+- `domain-inspect/web.Handlers` receives the check-catalog factory and logger explicitly. `main` gives `checks.NewDefaultCatalog` only the block-list/traffic ports, URLScan key and shared runtime-updatable credentials. The package factory owns its inspection-only HTTP client, system resolver, wall clock, immutable endpoints and leaf-check assembly; each leaf constructor still accepts an explicit `HTTPDoer`/`DNSResolver`/`Clock` for isolated tests. `local_stats` canonicalizes the UI hostname before both local lookups, and the suggest-inspect adapter reuses the factory's RDAP/VT/SB instances, wrapping RDAP with its registrable-domain cache.
 - `auth/web` additionally exposes `RegisterPublic(r gin.IRouter)`, which mounts `POST /api/auth/login` outside its `RequireAuth()` middleware; protected auth routes use `RegisterRoutes(rg)`.
 
 The contract is pinned by the regression test `web/server_test.go::TestBuildRouter_RegistersAllExpectedRoutes` — a snapshot of the full `(method, path)` set is compared with what `gin.Engine.Routes()` returns after `buildRouter`. Any accidental route removal/rename fails in CI.
@@ -561,7 +561,7 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ## Entry point (main.go)
 
-`main.go` is the composition root for the DI-enabled feature set. It loads configuration, creates the channel logger, one Prometheus registry and component metrics bundles, and calls `db.Open` exactly once with the DB metrics bundle and DB name; migrations and the repos listed below receive that connection explicitly. The domain-inspect HTTP handler, all injected checks and their shared runtime credentials are composed here too:
+`main.go` is the composition root for the DI-enabled feature set. It loads configuration, creates the channel logger, one Prometheus registry and component metrics bundles, and calls `db.Open` exactly once with the DB metrics bundle and DB name; migrations and the repos listed below receive that connection explicitly. For domain-inspect it creates the shared runtime credentials and passes only cross-package inputs to the package-owned default catalog factory:
 
 ```go
 func main() {
@@ -619,14 +619,15 @@ func main() {
     suggestModule := suggest_to_block.NewModule(
         blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger,
     )
-    localStatsCheck := domain_inspect_checks.NewLocalStats(blockRepo, trafficRepo)
-    urlScanCheck := domain_inspect_checks.NewURLScan(conf.URLScanKey)
-    inspectChecks := func() map[string]domain_inspect.CheckFunc {
-        return domain_inspect_checks.Default(domain_inspect_checks.DefaultDeps{
-            LocalStats: localStatsCheck,
-            URLScan:    urlScanCheck,
-        })
-    }
+    inspectCredentials := domain_inspect_checks.NewCredentials()
+    inspectCatalog := domain_inspect_checks.NewDefaultCatalog(
+        domain_inspect_checks.CatalogDeps{
+            Blocks:      blockRepo,
+            Allowed:     trafficRepo,
+            Credentials: inspectCredentials,
+            URLScanKey:  conf.URLScanKey,
+        },
+    )
     // Abbreviated job assembly: main.go also appends DBSizeMonitor and both
     // inspect jobs through the same Job/JobFunc port.
     backgroundJobs := []background.Job{
@@ -740,7 +741,7 @@ Load-bearing ordering:
    of context-aware feature jobs into one `background.Runner`; the runner only
    coordinates concurrent start/wait and does not resolve feature dependencies.
 
-6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. It owns the Prometheus registry and component metrics bundles, calls `db.Open` exactly once with `OpenDeps` (path, logger, DB metrics and a unique pool name), and passes the resulting connection to migrations and explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`); orchestration is a `*Module`. DNS cache and domain-inspect (handler, local readers, URLScan, VT/SB credentials and provider checks) are explicitly instantiated and injected:
+6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. It owns the Prometheus registry and component metrics bundles, calls `db.Open` exactly once with `OpenDeps` (path, logger, DB metrics and a unique pool name), and passes the resulting connection to migrations and explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`); orchestration is a `*Module`. DNS cache is instantiated directly; domain-inspect uses a package-owned default catalog factory so `main` supplies its handler, local ports, URLScan key and runtime credentials without knowing the internal HTTP/DNS/clock/endpoint graph:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`; it receives the process-local `filter/runtime-state.State`, while filter use-cases depend on narrow consumer-owned state ports and do not import `config`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.

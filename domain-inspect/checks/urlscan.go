@@ -10,8 +10,7 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-// urlscanEndpoint is a var (not const) so tests can point it at httptest.Server.
-var urlscanEndpoint = "https://urlscan.io/api/v1/search/"
+const DefaultURLScanEndpoint = "https://urlscan.io/api/v1/search/"
 
 type urlscanSearchResponse struct {
 	Total   int `json:"total"`
@@ -36,9 +35,11 @@ type urlscanSearchResponse struct {
 // NewURLScan builds the urlscan.io check with its boot-time API key. URLScan
 // is env-only (unlike the runtime VT/SB settings), so capturing the value at
 // composition time keeps the check independent of global config.
-func NewURLScan(key string) domain_inspect.CheckFunc {
+func NewURLScan(client HTTPDoer, endpoint, key string) domain_inspect.CheckFunc {
+	requireDependency("URLScan HTTP client", client)
+	requireEndpoint("URLScan", endpoint)
 	return func(ctx context.Context, domain string) domain_inspect.CheckResult {
-		return urlScan(ctx, domain, key)
+		return urlScan(ctx, domain, key, client, endpoint)
 	}
 }
 
@@ -46,20 +47,20 @@ func NewURLScan(key string) domain_inspect.CheckFunc {
 // We do not submit new scans here — that costs an API quota per call and the
 // result is asynchronous. The search endpoint returns whatever was scanned by
 // the community already, which is typically enough for popular domains.
-func urlScan(ctx context.Context, domain, key string) domain_inspect.CheckResult {
+func urlScan(ctx context.Context, domain, key string, client HTTPDoer, endpoint string) domain_inspect.CheckResult {
 	if key == "" {
 		return skipped("DNS_FILTER_URLSCAN_KEY not set")
 	}
 
 	q := url.QueryEscape("domain:" + domain)
-	u := urlscanEndpoint + "?q=" + q + "&size=10"
+	u := endpoint + "?q=" + q + "&size=10"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return errorResult(err)
 	}
 	req.Header.Set("API-Key", key)
 
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return contextErrorResult(ctx, err)
 	}

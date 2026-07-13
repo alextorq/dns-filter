@@ -10,8 +10,7 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-// vtEndpoint is a var (not const) so tests can point it at httptest.Server.
-var vtEndpoint = "https://www.virustotal.com/api/v3/domains/"
+const DefaultVirusTotalEndpoint = "https://www.virustotal.com/api/v3/domains/"
 
 type vtResponse struct {
 	Data struct {
@@ -30,31 +29,31 @@ type vtResponse struct {
 	} `json:"data"`
 }
 
-func NewVirusTotal(keys *Credentials) domain_inspect.CheckFunc {
-	if keys == nil {
-		panic("domain-inspect/checks: credentials are required for VirusTotal")
-	}
+func NewVirusTotal(client HTTPDoer, endpoint string, keys *Credentials) domain_inspect.CheckFunc {
+	requireDependency("VirusTotal HTTP client", client)
+	requireEndpoint("VirusTotal", endpoint)
+	requireDependency("credentials for VirusTotal", keys)
 	return func(ctx context.Context, domain string) domain_inspect.CheckResult {
-		return virusTotal(ctx, domain, keys.VirusTotalKey())
+		return virusTotal(ctx, domain, keys.VirusTotalKey(), client, endpoint)
 	}
 }
 
 // virusTotal asks VT v3 for the aggregated verdict of ~90 antivirus engines.
 // Skipped silently when no API key is configured — the endpoint should still
 // run for environments that simply chose not to enable VT.
-func virusTotal(ctx context.Context, domain, key string) domain_inspect.CheckResult {
+func virusTotal(ctx context.Context, domain, key string, client HTTPDoer, endpoint string) domain_inspect.CheckResult {
 	if key == "" {
 		return skipped("virustotal_key not set")
 	}
 
-	u := vtEndpoint + url.PathEscape(domain)
+	u := endpoint + url.PathEscape(domain)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return errorResult(err)
 	}
 	req.Header.Set("x-apikey", key)
 
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return contextErrorResult(ctx, err)
 	}

@@ -54,6 +54,7 @@ type Adapter struct {
 }
 
 type ProviderChecks struct {
+	RDAP         domain_inspect.CheckFunc
 	VirusTotal   domain_inspect.CheckFunc
 	SafeBrowsing domain_inspect.CheckFunc
 }
@@ -63,7 +64,7 @@ type ProviderChecks struct {
 // deliberately excluded — for an already-allowed candidate they return
 // "unknown" and add nothing but latency and quota pressure.
 func NewAdapter(cache RDAPCache, rdapTTL time.Duration, providers ProviderChecks, metrics *Metrics) *Adapter {
-	if providers.VirusTotal == nil || providers.SafeBrowsing == nil {
+	if providers.RDAP == nil || providers.VirusTotal == nil || providers.SafeBrowsing == nil {
 		panic("suggest-to-block/inspect: provider checks are required")
 	}
 	if metrics == nil {
@@ -71,7 +72,7 @@ func NewAdapter(cache RDAPCache, rdapTTL time.Duration, providers ProviderChecks
 	}
 	a := &Adapter{cache: cache, rdapTTL: rdapTTL, metrics: metrics}
 	a.checks = map[string]domain_inspect.CheckFunc{
-		"rdap":          a.withRDAPCache(checks.RDAPAge),
+		"rdap":          a.withRDAPCache(providers.RDAP),
 		"virustotal":    providers.VirusTotal,
 		"safe_browsing": providers.SafeBrowsing,
 	}

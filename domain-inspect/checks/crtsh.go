@@ -11,8 +11,7 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-// crtshEndpoint is a var (not const) so tests can point it at httptest.Server.
-var crtshEndpoint = "https://crt.sh/"
+const DefaultCrtShEndpoint = "https://crt.sh/"
 
 type crtshEntry struct {
 	NameValue string `json:"name_value"`
@@ -24,14 +23,22 @@ type crtshEntry struct {
 // domain with diverse subdomains and certificates is a clean signal; a brand
 // new domain with no certs is mildly suspicious. We do not call this
 // authoritative — just useful context.
-func CrtSh(ctx context.Context, domain string) domain_inspect.CheckResult {
-	u := crtshEndpoint + "?q=" + url.QueryEscape(domain) + "&output=json"
+func NewCrtSh(client HTTPDoer, endpoint string) domain_inspect.CheckFunc {
+	requireDependency("crt.sh HTTP client", client)
+	requireEndpoint("crt.sh", endpoint)
+	return func(ctx context.Context, domain string) domain_inspect.CheckResult {
+		return crtSh(ctx, domain, client, endpoint)
+	}
+}
+
+func crtSh(ctx context.Context, domain string, client HTTPDoer, endpoint string) domain_inspect.CheckResult {
+	u := endpoint + "?q=" + url.QueryEscape(domain) + "&output=json"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return errorResult(err)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return contextErrorResult(ctx, err)
 	}

@@ -34,7 +34,6 @@ import (
 	"github.com/alextorq/dns-filter/dns"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
 	dns_cache_web "github.com/alextorq/dns-filter/dns-cache/web"
-	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 	domain_inspect_checks "github.com/alextorq/dns-filter/domain-inspect/checks"
 	domainInspectWeb "github.com/alextorq/dns-filter/domain-inspect/web"
 	"github.com/alextorq/dns-filter/filter"
@@ -176,20 +175,14 @@ func main() {
 	// only from traffic.
 	trafficAllowAdapter := traffic_db.NewAllowFilterAdapter(trafficRepo)
 	suggestModule := suggest_to_block.NewModule(blockRepo, trafficAllowAdapter, sourceRepo, filterModule, suggestRepo, chanLogger)
-	localStatsCheck := domain_inspect_checks.NewLocalStats(blockRepo, trafficRepo)
-	urlScanCheck := domain_inspect_checks.NewURLScan(conf.URLScanKey)
 	inspectCredentials := domain_inspect_checks.NewCredentials()
 	inspectEnabled := suggest_inspect.NewEnabledState()
-	virusTotalCheck := domain_inspect_checks.NewVirusTotal(inspectCredentials)
-	safeBrowsingCheck := domain_inspect_checks.NewSafeBrowsing(inspectCredentials)
-	inspectChecks := func() map[string]domain_inspect.CheckFunc {
-		return domain_inspect_checks.Default(domain_inspect_checks.DefaultDeps{
-			LocalStats:   localStatsCheck,
-			URLScan:      urlScanCheck,
-			VirusTotal:   virusTotalCheck,
-			SafeBrowsing: safeBrowsingCheck,
-		})
-	}
+	inspectCatalog := domain_inspect_checks.NewDefaultCatalog(domain_inspect_checks.CatalogDeps{
+		Blocks:      blockRepo,
+		Allowed:     trafficRepo,
+		Credentials: inspectCredentials,
+		URLScanKey:  conf.URLScanKey,
+	})
 
 	// Reputation-enrichment worker. Подключается всегда — мастер-тогл
 	// (suggest_inspect_enabled) и API-ключи (virustotal_key, safebrowsing_key)
@@ -215,8 +208,9 @@ func main() {
 	inspectGate := func() bool { return inspectEnabled.Enabled() && inspectCredentials.HasAnyKey() }
 	suggestModule.SetInspectGate(inspectGate)
 	inspectAdapter := suggest_inspect.NewAdapter(inspectRepo, conf.SuggestInspectCacheTTL, suggest_inspect.ProviderChecks{
-		VirusTotal:   virusTotalCheck,
-		SafeBrowsing: safeBrowsingCheck,
+		RDAP:         inspectCatalog.RDAP,
+		VirusTotal:   inspectCatalog.VirusTotal,
+		SafeBrowsing: inspectCatalog.SafeBrowsing,
 	}, inspectMetrics)
 	inspectWorker := suggest_inspect.NewWorker(
 		inspectRepo, inspectAdapter, blockRepo, suggestRepo, sourceRepo, filterModule, chanLogger, inspectMetrics,
@@ -407,7 +401,7 @@ func main() {
 			Cache: cacheWithMetric,
 			Log:   chanLogger,
 		},
-		Inspect: domainInspectWeb.NewHandlers(inspectChecks, chanLogger),
+		Inspect: domainInspectWeb.NewHandlers(inspectCatalog.Checks, chanLogger),
 		Blocked: &blockedWeb.Handlers{
 			Records:       blockRepo,
 			Creator:       blockRepo,

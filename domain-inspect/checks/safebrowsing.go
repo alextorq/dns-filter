@@ -10,8 +10,7 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-// sbEndpoint is a var (not const) so tests can point it at httptest.Server.
-var sbEndpoint = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+const DefaultSafeBrowsingEndpoint = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
 
 // Safe Browsing v4 operates on URLs, not bare domains. We submit both http://
 // and https:// forms with a trailing slash — Google's list cares about scheme
@@ -55,12 +54,12 @@ type sbMatch struct {
 	Threat       sbThreatEntryInput `json:"threat"`
 }
 
-func NewSafeBrowsing(keys *Credentials) domain_inspect.CheckFunc {
-	if keys == nil {
-		panic("domain-inspect/checks: credentials are required for Safe Browsing")
-	}
+func NewSafeBrowsing(client HTTPDoer, endpoint string, keys *Credentials) domain_inspect.CheckFunc {
+	requireDependency("Safe Browsing HTTP client", client)
+	requireEndpoint("Safe Browsing", endpoint)
+	requireDependency("credentials for Safe Browsing", keys)
 	return func(ctx context.Context, domain string) domain_inspect.CheckResult {
-		return safeBrowsing(ctx, domain, keys.SafeBrowsingKey())
+		return safeBrowsing(ctx, domain, keys.SafeBrowsingKey(), client, endpoint)
 	}
 }
 
@@ -70,7 +69,7 @@ func NewSafeBrowsing(keys *Credentials) domain_inspect.CheckFunc {
 // or unwanted-software endpoints. An empty matches[] from a 200 means
 // "Google has nothing on this", which we surface as `clean` — that's a
 // real endorsement, not "unknown".
-func safeBrowsing(ctx context.Context, domain, key string) domain_inspect.CheckResult {
+func safeBrowsing(ctx context.Context, domain, key string, client HTTPDoer, endpoint string) domain_inspect.CheckResult {
 	if key == "" {
 		return skipped("safebrowsing_key not set")
 	}
@@ -91,13 +90,13 @@ func safeBrowsing(ctx context.Context, domain, key string) domain_inspect.CheckR
 		return errorResult(fmt.Errorf("marshal safe browsing request: %w", err))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sbEndpoint+"?key="+key, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"?key="+key, bytes.NewReader(body))
 	if err != nil {
 		return errorResult(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return contextErrorResult(ctx, err)
 	}

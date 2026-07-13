@@ -12,19 +12,15 @@ import (
 	domain_inspect "github.com/alextorq/dns-filter/domain-inspect"
 )
 
-// withRDAPEndpoint swaps the package-level endpoint for the lifetime of a
-// single test. Restores the original value via t.Cleanup so parallel tests
-// (run via go test) cannot leak state.
-func withRDAPEndpoint(t *testing.T, ts *httptest.Server) {
-	t.Helper()
-	prev := rdapEndpoint
-	rdapEndpoint = ts.URL + "/"
-	t.Cleanup(func() { rdapEndpoint = prev })
-}
+var rdapTestNow = time.Date(2026, time.July, 13, 12, 0, 0, 0, time.UTC)
 
 func rdapBody(registeredDaysAgo int) string {
-	when := time.Now().AddDate(0, 0, -registeredDaysAgo).UTC().Format(time.RFC3339)
+	when := rdapTestNow.AddDate(0, 0, -registeredDaysAgo).Format(time.RFC3339)
 	return fmt.Sprintf(`{"ldhName":"x.example","status":["active"],"events":[{"eventAction":"registration","eventDate":%q}]}`, when)
+}
+
+func newRDAPCheck(ts *httptest.Server) domain_inspect.CheckFunc {
+	return NewRDAP(ts.Client(), ts.URL+"/", ClockFunc(func() time.Time { return rdapTestNow }))
 }
 
 func TestRDAPAge_YoungDomain_IsSuspicious(t *testing.T) {
@@ -33,9 +29,8 @@ func TestRDAPAge_YoungDomain_IsSuspicious(t *testing.T) {
 		fmt.Fprint(w, rdapBody(5))
 	}))
 	defer ts.Close()
-	withRDAPEndpoint(t, ts)
 
-	res := RDAPAge(context.Background(), "x.example")
+	res := newRDAPCheck(ts)(context.Background(), "x.example")
 
 	if res.Status != domain_inspect.StatusOK {
 		t.Fatalf("status: got %s, want OK", res.Status)
@@ -50,9 +45,8 @@ func TestRDAPAge_OldDomain_IsClean(t *testing.T) {
 		fmt.Fprint(w, rdapBody(400))
 	}))
 	defer ts.Close()
-	withRDAPEndpoint(t, ts)
 
-	res := RDAPAge(context.Background(), "x.example")
+	res := newRDAPCheck(ts)(context.Background(), "x.example")
 	if res.Verdict != domain_inspect.VerdictClean {
 		t.Errorf("verdict: got %s, want clean (400 days old)", res.Verdict)
 	}
@@ -66,9 +60,8 @@ func TestRDAPAge_NotFound_IsNotRegistered(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
-	withRDAPEndpoint(t, ts)
 
-	res := RDAPAge(context.Background(), "nope.example")
+	res := newRDAPCheck(ts)(context.Background(), "nope.example")
 	if res.Status != domain_inspect.StatusOK {
 		t.Fatalf("status: got %s, want OK", res.Status)
 	}
@@ -88,9 +81,8 @@ func TestRDAPAge_Subdomain_QueriesRegistrableParent(t *testing.T) {
 		fmt.Fprint(w, rdapBody(1000))
 	}))
 	defer ts.Close()
-	withRDAPEndpoint(t, ts)
 
-	res := RDAPAge(context.Background(), "report.appmetrica.yandex.net")
+	res := newRDAPCheck(ts)(context.Background(), "report.appmetrica.yandex.net")
 
 	if res.Status != domain_inspect.StatusOK {
 		t.Fatalf("status: got %s, want OK", res.Status)
@@ -118,9 +110,8 @@ func TestRDAPAge_ApexDomain_QueriesSelf(t *testing.T) {
 		fmt.Fprint(w, rdapBody(1000))
 	}))
 	defer ts.Close()
-	withRDAPEndpoint(t, ts)
 
-	RDAPAge(context.Background(), "example.com")
+	newRDAPCheck(ts)(context.Background(), "example.com")
 
 	if !strings.HasSuffix(lastPath, "/example.com") {
 		t.Errorf("apex domain must be queried as-is, but path was %q", lastPath)
@@ -135,9 +126,8 @@ func TestRDAPAge_BareTLD_IsUnknown(t *testing.T) {
 		t.Error("upstream must not be called for a bare TLD")
 	}))
 	defer ts.Close()
-	withRDAPEndpoint(t, ts)
 
-	res := RDAPAge(context.Background(), "com")
+	res := newRDAPCheck(ts)(context.Background(), "com")
 	if res.Status != domain_inspect.StatusOK {
 		t.Errorf("status: got %s, want OK", res.Status)
 	}
@@ -151,9 +141,8 @@ func TestRDAPAge_5xx_IsError(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer ts.Close()
-	withRDAPEndpoint(t, ts)
 
-	res := RDAPAge(context.Background(), "x.example")
+	res := newRDAPCheck(ts)(context.Background(), "x.example")
 	if res.Status != domain_inspect.StatusError {
 		t.Errorf("expected error status on 5xx, got %s", res.Status)
 	}

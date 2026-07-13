@@ -39,11 +39,15 @@ func BrowseMDNS(ctx context.Context) ([]MDNSHost, error) {
 		defer cancel()
 	}
 	entries, errs := runMDNSDiscovery(ctx)
+	return toMDNSHosts(entries), errors.Join(errs...)
+}
+
+func toMDNSHosts(entries []mDNSEntry) []MDNSHost {
 	hosts := make([]MDNSHost, 0, len(entries))
 	for _, e := range entries {
 		hosts = append(hosts, MDNSHost{IP: e.IP.String(), Hostname: e.Hostname})
 	}
-	return hosts, errors.Join(errs...)
+	return hosts
 }
 
 // mDNSEntry is a hostname-by-IP fact learned from a multicast browse. We don't

@@ -159,6 +159,11 @@ reserved for public mode.
 serializes DB mutations with exclusion-snapshot updates, and a per-process
 `store.Store` serves O(1) hot-path lookups behind an RWMutex. `main.go` creates
 and shares that store with both `clients.Module` and `dns.ServerDeps.Clients`.
+`clients.Module` also owns a narrow `Discoverer` port: production receives one
+instance from `discovery.NewDefaultScanner()`, while consumer tests inject a
+host-independent fake. `ScannerDeps` makes the subnet finder, ARP/mDNS scans,
+Docker-network provider, OUI lookup and timeout explicit; its default factory
+does no I/O until the UI invokes `Discover`.
 The ARP cache and watcher are also instance-based and explicitly wired; MAC
 backfill triggers `Module.Sync` so the snapshot switches from the old IP key to
 the canonical MAC key atomically with respect to client mutations.
@@ -608,7 +613,7 @@ func main() {
     // 5. Bloom = a snapshot of active domains from what is ALREADY in the DB
     if err := filterModule.UpdateFromDb(); err != nil { panic(err) }
     clientStore := clients_store.New()
-    clientModule := clients.NewModule(clientRepo, clientStore)
+    clientModule := clients.NewModule(clientRepo, clientStore, discovery.NewDefaultScanner())
     if err := clientModule.Sync(); err != nil { panic(err) }
     arpCache := arpwatcher.NewCache()
 
@@ -746,7 +751,7 @@ Load-bearing ordering:
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`; it receives the process-local `filter/runtime-state.State`, while filter use-cases depend on narrow consumer-owned state ports and do not import `config`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.
    - `suggest_to_block.Module` — `Collect` and `Start(ctx)` (12h ticker).
-   - `clients.Module` — CRUD, exclusion-snapshot synchronization and discovery annotation; `clients/web.Handlers`, the DNS hot path and ARP watcher receive its explicit instances from `main`.
+   - `clients.Module` — CRUD, exclusion-snapshot synchronization and discovery annotation; it receives a consumer-owned `Discoverer`, while `discovery.NewDefaultScanner` owns the platform-adapter assembly. `clients/web.Handlers`, the DNS hot path and ARP watcher receive explicit instances from `main`.
 
    The use-cases (`*/business/use-cases/*`) are functions that depend on **narrow output ports** declared next to the consumer (e.g. `create_domain.Repo interface{ DomainNotExist; CreateDomain }`, `check_exist_domain.Deps{Repo, Cache, Bloom, Conf, Log}`). The concrete `*Repo` satisfies all ports through structural typing — "accept interfaces, return structs". Use-case tests run on fakes without sqlite; the repositories are covered by separate integration tests with an in-memory `:memory:` sqlite.
 

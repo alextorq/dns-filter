@@ -163,7 +163,7 @@ func main() {
 		panic(err)
 	}
 	clientStore := clients_store.New()
-	clientModule := clients.NewModule(clientRepo, clientStore)
+	clientModule := clients.NewModule(clientRepo, clientStore, discovery.NewDefaultScanner())
 	if err := clientModule.Sync(); err != nil {
 		panic(err)
 	}

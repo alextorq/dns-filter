@@ -2,17 +2,16 @@ package web
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 )
 
 type testLogger struct {
@@ -25,158 +24,128 @@ func (l *testLogger) Info(args ...any) {
 	l.infos = append(l.infos, fmt.Sprint(args...))
 }
 
-func openTestDB(t *testing.T, path string) *gorm.DB {
-	t.Helper()
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	return db
+type trackingReadCloser struct {
+	*bytes.Reader
+	closed bool
 }
 
-func closeTestDB(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sql db: %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("close sqlite: %v", err)
-	}
+func (r *trackingReadCloser) Close() error {
+	r.closed = true
+	return nil
 }
 
-func TestDownloadDb_SanitizesSecretSettings(t *testing.T) {
+type fakeSnapshotExporter struct {
+	body       []byte
+	err        error
+	nilContent bool
+	calls      int
+	ctx        context.Context
+	reader     *trackingReadCloser
+}
+
+func (f *fakeSnapshotExporter) Export(ctx context.Context) (io.ReadCloser, int64, error) {
+	f.calls++
+	f.ctx = ctx
+	if f.err != nil {
+		return nil, 0, f.err
+	}
+	if f.nilContent {
+		return nil, 0, nil
+	}
+	f.reader = &trackingReadCloser{Reader: bytes.NewReader(f.body)}
+	return f.reader, int64(len(f.body)), nil
+}
+
+func TestDownloadDb_InvalidExporterResultFailsClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	srcPath := filepath.Join(t.TempDir(), "source.sqlite")
-	db := openTestDB(t, srcPath)
-	t.Cleanup(func() { closeTestDB(t, db) })
-
-	if err := db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)").Error; err != nil {
-		t.Fatalf("create settings: %v", err)
-	}
-	const secret = "vt-super-secret-value"
-	for key, value := range map[string]string{
-		"virustotal_key": secret,
-		"log_level":      "WARN",
-	} {
-		if err := db.Exec("INSERT INTO settings(key, value) VALUES (?, ?)", key, value).Error; err != nil {
-			t.Fatalf("seed %s: %v", key, err)
-		}
-	}
-
 	log := &testLogger{}
-	providerCalls := 0
-	h := &Handlers{
-		DB:     db,
-		DBPath: srcPath,
-		Log:    log,
-		SecretKeys: func() []string {
-			providerCalls++
-			return []string{"virustotal_key"}
-		},
-	}
+	h := &Handlers{Exporter: &fakeSnapshotExporter{nilContent: true}, Log: log}
 	r := gin.New()
 	r.GET("/download", h.DownloadDb)
 	w := httptest.NewRecorder()
+
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/download", nil))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(log.errs) != 1 || !strings.Contains(log.errs[0].Error(), "invalid snapshot") {
+		t.Fatalf("expected invalid snapshot log, got %v", log.errs)
+	}
+	if strings.Contains(w.Header().Get("Content-Disposition"), "filter.sqlite") {
+		t.Fatalf("invalid snapshot returned an attachment: %q", w.Header().Get("Content-Disposition"))
+	}
+}
+
+func TestDownloadDb_StreamsExportedSnapshotAndClosesIt(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	exporter := &fakeSnapshotExporter{body: []byte("sqlite snapshot")}
+	log := &testLogger{}
+	h := &Handlers{Exporter: exporter, Log: log}
+	r := gin.New()
+	r.GET("/download", h.DownloadDb)
+	req := httptest.NewRequest(http.MethodGet, "/download", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if providerCalls != 1 {
-		t.Fatalf("secret provider calls = %d, want 1", providerCalls)
+	if got := w.Body.String(); got != "sqlite snapshot" {
+		t.Fatalf("body = %q, want exported snapshot", got)
 	}
-	if !strings.Contains(w.Header().Get("Content-Disposition"), "filter.sqlite") {
-		t.Fatalf("missing attachment filename: %q", w.Header().Get("Content-Disposition"))
+	if exporter.calls != 1 {
+		t.Fatalf("Export calls = %d, want 1", exporter.calls)
 	}
-	if bytes.Contains(w.Body.Bytes(), []byte(secret)) {
-		t.Fatal("secret bytes remain in downloaded snapshot")
+	if exporter.ctx != req.Context() {
+		t.Fatal("request context was not forwarded to exporter")
 	}
-
-	snapshotPath := filepath.Join(t.TempDir(), "download.sqlite")
-	if err := os.WriteFile(snapshotPath, w.Body.Bytes(), 0o600); err != nil {
-		t.Fatalf("write response: %v", err)
+	if exporter.reader == nil || !exporter.reader.closed {
+		t.Fatal("exported snapshot was not closed after streaming")
 	}
-	snapshot := openTestDB(t, snapshotPath)
-	defer closeTestDB(t, snapshot)
-
-	var secretCount, publicCount int64
-	if err := snapshot.Table("settings").Where("key = ?", "virustotal_key").Count(&secretCount).Error; err != nil {
-		t.Fatalf("count secret: %v", err)
+	if got := w.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Fatalf("Content-Type = %q, want application/octet-stream", got)
 	}
-	if err := snapshot.Table("settings").Where("key = ? AND value = ?", "log_level", "WARN").Count(&publicCount).Error; err != nil {
-		t.Fatalf("count public setting: %v", err)
-	}
-	if secretCount != 0 || publicCount != 1 {
-		t.Fatalf("snapshot rows: secret=%d public=%d", secretCount, publicCount)
+	if got := w.Header().Get("Content-Disposition"); !strings.Contains(got, "filter.sqlite") {
+		t.Fatalf("Content-Disposition = %q, want attachment filename", got)
 	}
 	if len(log.errs) != 0 || len(log.infos) != 1 {
 		t.Fatalf("unexpected logs: errors=%v infos=%v", log.errs, log.infos)
 	}
 }
 
-func TestDownloadDb_SnapshotFailureReturns500AndLogs(t *testing.T) {
+func TestDownloadDb_ExporterFailureReturns500AndLogs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	db := openTestDB(t, filepath.Join(t.TempDir(), "source.sqlite"))
-	closeTestDB(t, db)
-
+	exporter := &fakeSnapshotExporter{err: errors.New("sqlite unavailable")}
 	log := &testLogger{}
-	h := &Handlers{
-		DB:         db,
-		DBPath:     "source.sqlite",
-		Log:        log,
-		SecretKeys: func() []string { return nil },
-	}
+	h := &Handlers{Exporter: exporter, Log: log}
 	r := gin.New()
 	r.GET("/download", h.DownloadDb)
 	w := httptest.NewRecorder()
+
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/download", nil))
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
 	}
-	if len(log.errs) != 1 || !strings.Contains(log.errs[0].Error(), "snapshot") {
-		t.Fatalf("expected snapshot error log, got %v", log.errs)
+	if len(log.errs) != 1 || !strings.Contains(log.errs[0].Error(), "export snapshot") {
+		t.Fatalf("expected exporter error log, got %v", log.errs)
+	}
+	if strings.Contains(w.Header().Get("Content-Disposition"), "filter.sqlite") {
+		t.Fatalf("failed export returned an attachment: %q", w.Header().Get("Content-Disposition"))
 	}
 }
 
 func TestDownloadDb_IncompleteWiringFailsClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	db := openTestDB(t, filepath.Join(t.TempDir(), "source.sqlite"))
-	t.Cleanup(func() { closeTestDB(t, db) })
-	if err := db.Exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)").Error; err != nil {
-		t.Fatalf("create settings: %v", err)
-	}
-	const secret = "must-not-leak"
-	if err := db.Exec("INSERT INTO settings(key, value) VALUES (?, ?)", "virustotal_key", secret).Error; err != nil {
-		t.Fatalf("seed secret: %v", err)
-	}
-
 	tests := []struct {
 		name string
 		h    *Handlers
 	}{
 		{name: "nil handlers"},
-		{
-			name: "missing secret provider",
-			h:    &Handlers{DB: db, DBPath: "source.sqlite", Log: &testLogger{}},
-		},
-		{
-			name: "missing database",
-			h: &Handlers{
-				DBPath:     "source.sqlite",
-				Log:        &testLogger{},
-				SecretKeys: func() []string { return []string{"virustotal_key"} },
-			},
-		},
-		{
-			name: "missing logger",
-			h: &Handlers{
-				DB:         db,
-				DBPath:     "source.sqlite",
-				SecretKeys: func() []string { return []string{"virustotal_key"} },
-			},
-		},
+		{name: "missing exporter", h: &Handlers{Log: &testLogger{}}},
+		{name: "missing logger", h: &Handlers{Exporter: &fakeSnapshotExporter{body: []byte("must-not-stream")}}},
 	}
 
 	for _, tc := range tests {
@@ -188,9 +157,6 @@ func TestDownloadDb_IncompleteWiringFailsClosed(t *testing.T) {
 
 			if w.Code != http.StatusInternalServerError {
 				t.Fatalf("expected 500, got %d", w.Code)
-			}
-			if bytes.Contains(w.Body.Bytes(), []byte(secret)) {
-				t.Fatal("incomplete wiring leaked secret bytes")
 			}
 			if strings.Contains(w.Header().Get("Content-Disposition"), "filter.sqlite") {
 				t.Fatalf("incomplete wiring returned an attachment: %q", w.Header().Get("Content-Disposition"))

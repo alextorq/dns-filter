@@ -30,6 +30,7 @@ import (
 	"github.com/alextorq/dns-filter/config"
 	app_db "github.com/alextorq/dns-filter/db"
 	"github.com/alextorq/dns-filter/db/migrate"
+	db_snapshot "github.com/alextorq/dns-filter/db/snapshot"
 	db_web "github.com/alextorq/dns-filter/db/web"
 	"github.com/alextorq/dns-filter/dns"
 	dns_cache "github.com/alextorq/dns-filter/dns-cache"
@@ -316,6 +317,10 @@ func main() {
 		inspectCredentials: inspectCredentials,
 		trafficRetention:   trafficRetention,
 	})
+	snapshotExporter, err := db_snapshot.NewExporter(conn, settingsModule.SecretKeys)
+	if err != nil {
+		panic(fmt.Errorf("create database snapshot exporter: %w", err))
+	}
 	filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
 	if err := filter.RestoreState(settingsRepo, filterRuntimeState); err != nil {
 		// Non-fatal: a failed restore leaves the filter at its compiled default
@@ -431,10 +436,8 @@ func main() {
 		},
 		Settings: &settingsWeb.Handlers{Service: settingsModule},
 		Database: &db_web.Handlers{
-			DB:         conn,
-			DBPath:     conf.DbPath,
-			Log:        chanLogger,
-			SecretKeys: settingsModule.SecretKeys,
+			Exporter: snapshotExporter,
+			Log:      chanLogger,
 		},
 		// Per-device traffic dashboard (read-only). Vendor enrichment uses the
 		// pure, local OUI lookup; hostname enrichment reads the mDNS collector's

@@ -368,7 +368,7 @@ A typed KV store of runtime configuration persisted in the DB. It solves the pro
 
 **Secrets in KV (`Type: "secret"`).** The pipeline above does not scale to API keys directly: dumps and UI screenshots leak the plain value. So the secret type gets two protections:
 - in `effectiveViewLocked` the value and default are masked to `••••<last 4 characters>`; the UI renders a password input, the mask goes into the placeholder, and the draft starts empty (nothing to submit "by accident");
-- `db/web/download.go::DownloadDb` does a `VACUUM INTO` to a temp file and a `DELETE FROM settings WHERE key IN (m.SecretKeys())` in the copy. The live DB is untouched; secret keys never leave the host via `/api/config/db/download`. `Apply` itself receives the original raw — the provider check reads the atomic without the mask.
+- `main` resolves the registered secret-key set into `db/snapshot.Exporter` and injects that adapter behind the consumer-owned `db/web.SnapshotExporter` port. The adapter does `VACUUM INTO` inside a private temporary directory, deletes `settings` rows matching the copied key set, then runs a final `VACUUM` to scrub free pages. Its response reader owns cleanup of the snapshot and SQLite sidecars; `db/web.DownloadDb` only streams it. Missing/empty secret metadata fails during construction instead of falling back to an unsanitized export. The live DB is untouched; secret keys never leave the host via `/api/config/db/download`. `Apply` itself receives the original raw — the provider check reads the atomic without the mask.
 
 **A DB-free hot path.** All dynamic settings are read on the hot path from memory (atomics), the DB is persistence only. Specifically: `ChanLogger.level` (`atomic.Int32`, which also removed a race with the logger goroutine), `DnsServer.swrEnabled` (`atomic.Bool`), `Cache.staleGrace/staleTTL` (`atomic.Int64`), the injected `suggest_inspect.EnabledState` (`atomic.Bool`), provider keys in the injected `checks.Credentials` (`atomic.Pointer[string]`), the upstream — via `dns.ReloadableResolver` (`atomic.Pointer[DoHResolver]`, swapped without a restart; the same instance is visible to both the server and the refresh worker), the refresh pool — a rebuildable semaphore behind an `atomic.Pointer` (an in-flight refresh releases its token back into the semaphore it took it from).
 
@@ -674,11 +674,13 @@ func main() {
     // 8. settings: descriptor declaration (incl. traffic_retention_days), restore
     //    of the filter state, HydrateAll — strictly before Serve. Then source sync in the background.
     settingsModule := settings.NewModule(settingsRepo)
-    registerDynamicSettings(settingsModule, dynamicSettingsDeps{
+	registerDynamicSettings(settingsModule, dynamicSettingsDeps{
         /* conf, logr, resolver, cache, dnsServer, inspectEnabled, inspectCredentials, */
-        trafficRetention: trafficRetention,
-    })
-    filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
+		trafficRetention: trafficRetention,
+	})
+	snapshotExporter, err := db_snapshot.NewExporter(conn, settingsModule.SecretKeys)
+	if err != nil { panic(err) }
+	filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
     _ = filter.RestoreState(settingsRepo, filterState)
     _ = settingsModule.HydrateAll()
     // Every job starts through one process-owned runner ONLY after HydrateAll:
@@ -702,8 +704,9 @@ func main() {
         Filter:   &filterWeb.Handlers{Module: filterModule},
         Suggest:  &suggestWeb.Handlers{Repo: suggestRepo, BlockRepo: blockRepo, Filter: filterModule, Log: chanLogger},
         Source:   &sourceWeb.Handlers{Repo: sourceRepo, BlockRepo: blockRepo, Filter: filterModule, Log: chanLogger},
-        Settings: &settingsWeb.Handlers{Service: settingsModule},
-        Traffic:  trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, hostnamesRepo.AllAsMap, chanLogger),
+		Settings: &settingsWeb.Handlers{Service: settingsModule},
+		Database: &dbWeb.Handlers{Exporter: snapshotExporter, Log: chanLogger},
+		Traffic:  trafficWeb.NewHandlers(trafficRepo, discovery.LookupVendor, hostnamesRepo.AllAsMap, chanLogger),
     })
     go func() { reportHTTPServerError(httpServer.ListenAndServe(), chanLogger) }()
 

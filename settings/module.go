@@ -48,7 +48,7 @@ type Repo interface {
 // административного UI, DevTools и (в порядке углубления защиты) дамп БД через
 // /api/config/db/download не утаскивали ключи. Сам апдейт ставит plain-значение
 // — UI отправляет новое значение, маска НЕ редактируется. См. также SecretKeys
-// и обработчик db/web/download.go.
+// и adapter db/snapshot.Exporter.
 type Setting struct {
 	Key      string
 	Type     string // UI hint: "enum" | "url" | "ip-list" | "bool" | "duration" | "int" | "secret"
@@ -264,8 +264,8 @@ func (m *Module) effectiveViewLocked(key string) (Effective, error) {
 }
 
 // SecretKeys возвращает ключи всех зарегистрированных секретных настроек в
-// порядке регистрации. Используется обработчиком /api/config/db/download
-// (db/web/download.go), чтобы исключить эти строки из выгружаемой копии БД.
+// порядке регистрации. Используется adapter-ом db/snapshot.Exporter, чтобы
+// исключить эти строки из копии БД для /api/config/db/download.
 func (m *Module) SecretKeys() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()

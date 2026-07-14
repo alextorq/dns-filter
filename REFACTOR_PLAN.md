@@ -423,13 +423,28 @@ filter state создаётся отдельно через `runtime_state.New(t
 
 ---
 
+### Этап 10.11 — DB snapshot exporter отделён от HTTP
+
+- `db/web.Handlers` получает consumer-owned `SnapshotExporter`; handler только
+  передаёт request context, маппит ошибку в 500 и стримит attachment.
+- `db/snapshot.Exporter` владеет `VACUUM INTO`, приватным temp-каталогом,
+  вторым SQLite connection, удалением secret settings и финальным `VACUUM` для
+  зачистки free pages.
+- Результат export-а — `io.ReadCloser`; его `Close` идемпотентно закрывает файл
+  и удаляет весь temp-каталог вместе с возможными journal/WAL sidecar-файлами.
+- Exporter собирается в `main` после регистрации settings descriptors. Nil,
+  пустой или некорректный secret-key provider отклоняется при старте — неполный
+  wiring не может деградировать в несанационированный export.
+- Handler-тесты не поднимают SQLite; integration-тесты adapter-а закрепляют
+  сохранение public settings, отсутствие secret rows/bytes, неизменность live DB
+  и cleanup временных файлов.
+
 ## Следующий DI этап
 
-**Выделить DB snapshot exporter из HTTP handler.** `db/web.DownloadDb` пока сам
-создаёт temp directory, выполняет `VACUUM INTO`, открывает snapshot через GORM,
-удаляет secrets и повторно vacuum'ит файл. Следующий DI PR должен оставить в
-handler только HTTP orchestration, а filesystem/SQLite export собрать в
-injected `SnapshotExporter` с package-owned production-фабрикой.
+**Внедрить Clock и TokenGenerator в auth.** Выпуск/проверка сессий и cleanup
+пока читают системное время напрямую, а token создаётся через `crypto/rand`
+внутри business package. Следующий точечный DI PR должен передать эти зависимости
+через `auth.Deps`, сохранив per-module LRU и явно закрепив expiry boundary.
 
 ## Следующий lifecycle-рефакторинг
 
@@ -587,7 +602,7 @@ injected `SnapshotExporter` с package-owned production-фабрикой.
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, db/web, auth, clients и LAN discovery, dns-cache, полного domain-inspect checks catalog, bloom и verdict LRU. **Остаток:** DB snapshot exporter и точечные clock/generator seams |
+| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, DB snapshot export, db/web, auth, clients и LAN discovery, dns-cache, полного domain-inspect checks catalog, bloom и verdict LRU. **Остаток:** точечные clock/generator seams |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |
@@ -596,6 +611,6 @@ injected `SnapshotExporter` с package-owned production-фабрикой.
 | 9 | Graceful shutdown (HTTP + DNS + workers) | **следующий кандидат** |
 | 10 | Hot path не читает глобальный config | **готово**: hot path читает injected `RuntimeState`, `config.Load()` не singleton |
 
-В DI-потоке следующий шаг — DB snapshot exporter; lifecycle п.9 можно вести
+В DI-потоке следующий шаг — auth clock/token generator; lifecycle п.9 можно вести
 независимо. Пункты 1, 6, 7 и 8 также независимы и могут
 включаться по мере касания соответствующих файлов.

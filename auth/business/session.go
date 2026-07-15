@@ -1,8 +1,6 @@
 package business
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"time"
 
@@ -14,20 +12,12 @@ const SessionTTL = 7 * 24 * time.Hour
 
 var ErrSessionExpired = errors.New("session expired")
 
-func generateToken() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
-}
-
 func (m *Module) IssueSession(userID uint) (*authDb.Session, error) {
-	token, err := generateToken()
+	token, err := m.tokens.Generate()
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
+	now := m.clock.Now()
 	s := &authDb.Session{
 		Token:     token,
 		UserID:    userID,
@@ -50,7 +40,7 @@ func (m *Module) ResolveSession(token string) (*authDb.Session, *authDb.User, er
 	}
 
 	if cached, ok := m.lookupCachedSession(token); ok {
-		if time.Now().After(cached.ExpiresAt) {
+		if sessionExpired(m.clock.Now(), cached.ExpiresAt) {
 			if err := m.repo.DeleteSession(token); err == nil {
 				m.dropCachedSession(token)
 			}
@@ -71,7 +61,7 @@ func (m *Module) ResolveSession(token string) (*authDb.Session, *authDb.User, er
 	if err != nil {
 		return nil, nil, err
 	}
-	if time.Now().After(s.ExpiresAt) {
+	if sessionExpired(m.clock.Now(), s.ExpiresAt) {
 		_ = m.repo.DeleteSession(token)
 		return nil, nil, ErrSessionExpired
 	}
@@ -81,6 +71,12 @@ func (m *Module) ResolveSession(token string) (*authDb.Session, *authDb.User, er
 		return nil, nil, err
 	}
 	return s, user, nil
+}
+
+// A session is valid strictly before ExpiresAt. At the boundary itself it is
+// expired, matching conventional expiration semantics and DB cleanup.
+func sessionExpired(now, expiresAt time.Time) bool {
+	return !now.Before(expiresAt)
 }
 
 func (m *Module) RevokeSession(token string) error {

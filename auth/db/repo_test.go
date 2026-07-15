@@ -63,6 +63,7 @@ func TestRepo_SessionLifecycleAndExpiryCleanup(t *testing.T) {
 	now := time.Now()
 	for _, session := range []*Session{
 		{Token: "active", UserID: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour)},
+		{Token: "boundary", UserID: 1, CreatedAt: now.Add(-time.Hour), ExpiresAt: now},
 		{Token: "expired", UserID: 1, CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour)},
 	} {
 		if err := repo.CreateSession(session); err != nil {
@@ -79,6 +80,9 @@ func TestRepo_SessionLifecycleAndExpiryCleanup(t *testing.T) {
 	}
 	if _, err := repo.GetSessionByToken("expired"); err == nil {
 		t.Fatal("expired session still exists")
+	}
+	if _, err := repo.GetSessionByToken("boundary"); err == nil {
+		t.Fatal("session at expiry boundary still exists")
 	}
 	if _, err := repo.GetSessionByToken("active"); err != nil {
 		t.Fatalf("active session was deleted: %v", err)

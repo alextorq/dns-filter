@@ -2,6 +2,7 @@ package business
 
 import (
 	"errors"
+	"reflect"
 	"time"
 
 	authDb "github.com/alextorq/dns-filter/auth/db"
@@ -22,19 +23,60 @@ type Repo interface {
 	DeleteExpiredSessions(now time.Time) error
 }
 
+// Clock supplies wall time for behavior that depends on the session lifetime.
+type Clock interface {
+	Now() time.Time
+}
+
+// TokenGenerator creates opaque session credentials.
+type TokenGenerator interface {
+	Generate() (string, error)
+}
+
+// Deps is the complete construction contract for the auth module. The session
+// cache remains instance-owned; only external sources of persistence, time and
+// randomness cross the module boundary.
+type Deps struct {
+	Repo           Repo
+	Clock          Clock
+	TokenGenerator TokenGenerator
+	AdminLogin     string
+	AdminPassword  string
+}
+
 type Module struct {
 	repo          Repo
+	clock         Clock
+	tokens        TokenGenerator
 	cache         *lru.LRUCache[cachedSession]
 	adminLogin    string
 	adminPassword string
 }
 
-func NewModule(repo Repo, adminLogin, adminPassword string) *Module {
+func NewModule(deps Deps) *Module {
+	requireDependency("repo", deps.Repo)
+	requireDependency("clock", deps.Clock)
+	requireDependency("token generator", deps.TokenGenerator)
 	return &Module{
-		repo:          repo,
+		repo:          deps.Repo,
+		clock:         deps.Clock,
+		tokens:        deps.TokenGenerator,
 		cache:         newSessionCache(),
-		adminLogin:    adminLogin,
-		adminPassword: adminPassword,
+		adminLogin:    deps.AdminLogin,
+		adminPassword: deps.AdminPassword,
+	}
+}
+
+func requireDependency(name string, dependency any) {
+	if dependency == nil {
+		panic("auth/business: " + name + " is required")
+	}
+	v := reflect.ValueOf(dependency)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if v.IsNil() {
+			panic("auth/business: " + name + " is required")
+		}
 	}
 }
 

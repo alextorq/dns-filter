@@ -123,7 +123,13 @@ func main() {
 	if err := metric.RegisterRuntimeCollectors(registry, chanLogger.DroppedCount); err != nil {
 		chanLogger.Error(fmt.Errorf("register runtime metrics: %w", err))
 	}
-	authModule := authBusiness.NewModule(auth_db.NewRepo(conn), conf.AdminLogin, conf.AdminPassword)
+	authModule := authBusiness.NewModule(authBusiness.Deps{
+		Repo:           auth_db.NewRepo(conn),
+		Clock:          authBusiness.NewSystemClock(),
+		TokenGenerator: authBusiness.NewCryptoTokenGenerator(),
+		AdminLogin:     conf.AdminLogin,
+		AdminPassword:  conf.AdminPassword,
+	})
 	if err := authModule.BootstrapAdmin(); err != nil {
 		panic(err)
 	}

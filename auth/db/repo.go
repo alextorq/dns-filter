@@ -70,5 +70,5 @@ func (r *Repo) DeleteSession(token string) error {
 }
 
 func (r *Repo) DeleteExpiredSessions(now time.Time) error {
-	return r.db.Where("expires_at < ?", now).Delete(&Session{}).Error
+	return r.db.Where("expires_at <= ?", now).Delete(&Session{}).Error
 }

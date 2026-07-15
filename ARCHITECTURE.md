@@ -585,7 +585,13 @@ func main() {
     migrate.Migrate(conn)
 
     // 2. Admin bootstrap
-    authModule := authBusiness.NewModule(auth_db.NewRepo(conn), conf.AdminLogin, conf.AdminPassword)
+    authModule := authBusiness.NewModule(authBusiness.Deps{
+        Repo:           auth_db.NewRepo(conn),
+        Clock:          authBusiness.NewSystemClock(),
+        TokenGenerator: authBusiness.NewCryptoTokenGenerator(),
+        AdminLogin:     conf.AdminLogin,
+        AdminPassword:  conf.AdminPassword,
+    })
     if err := authModule.BootstrapAdmin(); err != nil { panic(err) }
 
     // 3. Repos (one per feature) — the only place where *gorm.DB appears
@@ -750,7 +756,7 @@ Load-bearing ordering:
    coordinates concurrent start/wait and does not resolve feature dependencies.
 
 6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. It owns the Prometheus registry and component metrics bundles, calls `db.Open` exactly once with `OpenDeps` (path, logger, DB metrics and a unique pool name), and passes the resulting connection to migrations and explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`); orchestration is a `*Module`. DNS cache is instantiated directly; domain-inspect uses a package-owned default catalog factory so `main` supplies its handler, local ports, URLScan key and runtime credentials without knowing the internal HTTP/DNS/clock/endpoint graph:
-   - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/web.Handlers` receives it as a narrow service port.
+   - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/business.Deps` supplies the repository, wall clock and cryptographic token generator explicitly. A session is valid strictly before `ExpiresAt`, and the same injected clock drives issuance, resolution and cleanup. `auth/web.Handlers` receives the module as a narrow service port.
    - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`; it receives the process-local `filter/runtime-state.State`, while filter use-cases depend on narrow consumer-owned state ports and do not import `config`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.
    - `suggest_to_block.Module` — `Collect` and `Start(ctx)` (12h ticker).

@@ -439,12 +439,31 @@ filter state создаётся отдельно через `runtime_state.New(t
   сохранение public settings, отсутствие secret rows/bytes, неизменность live DB
   и cleanup временных файлов.
 
+---
+
+### Этап 10.12 — Clock и TokenGenerator внедрены в auth
+
+- `auth/business.Deps` явно принимает `Repo`, `Clock`, `TokenGenerator` и
+  bootstrap credentials; неполный wiring отклоняется при создании модуля.
+- Production composition root передаёт `NewSystemClock()` и
+  `NewCryptoTokenGenerator()`; session business logic больше не импортирует
+  `crypto/rand` и не читает `time.Now` напрямую.
+- Один injected clock управляет `CreatedAt`, семидневным TTL, проверкой cached и
+  persisted sessions и временем periodic cleanup. Per-module LRU остался
+  внутренним состоянием `Module`.
+- Граница expiry закреплена явно: сессия валидна только при
+  `now < ExpiresAt`; runtime и SQLite cleanup одинаково считают
+  `now == ExpiresAt` истёкшим.
+- Детерминированные тесты покрывают TTL, обе resolve-ветки по обе стороны
+  границы, ошибку token generator, cleanup timestamp и формат production token.
+
 ## Следующий DI этап
 
-**Внедрить Clock и TokenGenerator в auth.** Выпуск/проверка сессий и cleanup
-пока читают системное время напрямую, а token создаётся через `crypto/rand`
-внутри business package. Следующий точечный DI PR должен передать эти зависимости
-через `auth.Deps`, сохранив per-module LRU и явно закрепив expiry boundary.
+**Добавить clock seams только в оставшиеся поведенчески значимые места.** В
+первую очередь: создание/восстановление паузы фильтра, TTL/retry/RDAP cache в
+suggest-inspect, hostname retention, переход timestamp трафика через локальную
+полночь и inspect/traffic prune callbacks. Простые use-case'ы могут принимать
+явный `now time.Time`; долгоживущие module/repo — небольшой `Clock`.
 
 ## Следующий lifecycle-рефакторинг
 
@@ -602,7 +621,7 @@ filter state создаётся отдельно через `runtime_state.New(t
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, DB snapshot export, db/web, auth, clients и LAN discovery, dns-cache, полного domain-inspect checks catalog, bloom и verdict LRU. **Остаток:** точечные clock/generator seams |
+| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, DB snapshot export, db/web, auth clock/token, clients и LAN discovery, dns-cache, полного domain-inspect checks catalog, bloom и verdict LRU. **Остаток:** точечные clock seams вне auth |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |
@@ -611,6 +630,7 @@ filter state создаётся отдельно через `runtime_state.New(t
 | 9 | Graceful shutdown (HTTP + DNS + workers) | **следующий кандидат** |
 | 10 | Hot path не читает глобальный config | **готово**: hot path читает injected `RuntimeState`, `config.Load()` не singleton |
 
-В DI-потоке следующий шаг — auth clock/token generator; lifecycle п.9 можно вести
-независимо. Пункты 1, 6, 7 и 8 также независимы и могут
-включаться по мере касания соответствующих файлов.
+В DI-потоке следующий шаг — поведенческие clock seams в filter,
+suggest/inspect, hostnames и traffic; lifecycle п.9 можно вести независимо.
+Пункты 1, 6, 7 и 8 также независимы и могут включаться по мере касания
+соответствующих файлов.

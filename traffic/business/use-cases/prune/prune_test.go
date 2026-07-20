@@ -22,6 +22,37 @@ type pruneTestLogger struct{}
 
 func (pruneTestLogger) Error(error) {}
 
+type fakeClock struct {
+	now   time.Time
+	after func()
+}
+
+func (c fakeClock) Now() time.Time {
+	if c.after != nil {
+		c.after()
+	}
+	return c.now
+}
+
+func TestRun_RejectsMissingClock(t *testing.T) {
+	var typedNil *fakeClock
+	for name, clock := range map[string]Clock{
+		"nil":       nil,
+		"typed nil": typedNil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			defer func() {
+				if recover() == nil {
+					t.Fatal("missing clock must fail during construction")
+				}
+			}()
+			Run(ctx, &fakeRepo{}, NewRetentionState(), clock, pruneTestLogger{})
+		})
+	}
+}
+
 func TestRetentionState_InstancesAreIndependent(t *testing.T) {
 	first := NewRetentionState()
 	second := NewRetentionState()
@@ -217,9 +248,27 @@ func TestRun_PreCanceledContextSkipsRepo(t *testing.T) {
 	cancel()
 	repo := &fakeRepo{}
 
-	Run(ctx, repo, state, pruneTestLogger{})
+	Run(ctx, repo, state, fakeClock{now: time.Date(2026, 5, 26, 12, 0, 0, 0, time.Local)}, pruneTestLogger{})
 
 	if repo.calls != 0 {
 		t.Fatalf("DeleteOlderThan calls = %d, want 0", repo.calls)
+	}
+}
+
+func TestRun_UsesInjectedClock(t *testing.T) {
+	state := NewRetentionState()
+	state.Set(30)
+	repo := &fakeRepo{}
+	now := time.Date(2026, 5, 26, 23, 30, 0, 0, time.Local)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	Run(ctx, repo, state, fakeClock{now: now, after: cancel}, pruneTestLogger{})
+
+	if repo.calls != 1 {
+		t.Fatalf("DeleteOlderThan calls = %d, want 1", repo.calls)
+	}
+	want := cutoffForIn(now, 30, time.Local)
+	if !repo.cutoff.Equal(want) {
+		t.Fatalf("cutoff = %v, want injected-clock cutoff %v", repo.cutoff, want)
 	}
 }

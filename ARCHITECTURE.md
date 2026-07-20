@@ -570,8 +570,9 @@ The filter state (`Enabled`, `PausedUntil`) is also persisted in the same KV tab
 
 ```go
 func main() {
-    // 1. Process-owned config, logger and DB
+	// 1. Process-owned config, logger and DB
 	conf := config.Load()
+    appClock := clock.NewSystem()
     chanLogger := logger.NewChanLogger(1000, conf.LogLevel)
     chanLogger.AddHandler(&console.ConsoleHandler{})
     registry := prometheus.NewRegistry()
@@ -587,7 +588,7 @@ func main() {
     // 2. Admin bootstrap
     authModule := authBusiness.NewModule(authBusiness.Deps{
         Repo:           auth_db.NewRepo(conn),
-        Clock:          authBusiness.NewSystemClock(),
+        Clock:          appClock,
         TokenGenerator: authBusiness.NewCryptoTokenGenerator(),
         AdminLogin:     conf.AdminLogin,
         AdminPassword:  conf.AdminPassword,
@@ -600,13 +601,14 @@ func main() {
     suggestRepo  := suggest_to_block_db.NewRepo(conn)
     settingsRepo := settings_db.NewRepo(conn)
     trafficRepo  := traffic_db.NewRepo(conn)
+    hostnamesRepo := hostnames_db.NewRepo(conn, appClock)
     clientRepo   := clients_db.NewRepo(conn)
 
     // 4. filter.Module: owns explicit process-local bloom + verdict cache instances
     bloom := filter_bloom.NewFilter()
     cache := filter_cache.NewCacheWithMetrics(1500)
     filterState := runtime_state.New(true)
-    filterModule := filter.NewModule(blockRepo, bloom, cache, filterState, chanLogger)
+    filterModule := filter.NewModule(blockRepo, bloom, cache, filterState, appClock, chanLogger)
 
     // 5. Sources: main owns HTTP policy; the feature owns source/format/URL mapping.
     sourceHTTPClient := &http.Client{Timeout: 60 * time.Second}
@@ -665,7 +667,7 @@ func main() {
     cacheWithMetric := dns_cache.NewCacheWithMetricsAndSWR(1500, conf.CacheStaleGrace, conf.CacheStaleTTL, cacheMetrics)
     dnsMetrics, err := dns.NewMetrics(registry)
     if err != nil { panic(err) }
-    trafficWorker := traffic_record.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
+    trafficWorker := traffic_record.NewTrafficEventStore(trafficRepo, chanLogger, appClock, 2000)
     trafficRetention := traffic_prune.NewRetentionState()
     resolver := dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)
     dnsServer := dns.NewServer(dns.ServerDeps{
@@ -687,13 +689,13 @@ func main() {
 	snapshotExporter, err := db_snapshot.NewExporter(conn, settingsModule.SecretKeys)
 	if err != nil { panic(err) }
 	filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
-    _ = filter.RestoreState(settingsRepo, filterState)
+    _ = filter.RestoreState(settingsRepo, filterState, appClock.Now())
     _ = settingsModule.HydrateAll()
     // Every job starts through one process-owned runner ONLY after HydrateAll:
     // immediate runs see effective settings, not pre-hydrate seed values.
     backgroundJobs = append(backgroundJobs,
         background.JobFunc(func(ctx context.Context) {
-            traffic_prune.Run(ctx, trafficRepo, trafficRetention, chanLogger)
+            traffic_prune.Run(ctx, trafficRepo, trafficRetention, appClock, chanLogger)
         }),
     )
     sourceSyncJob, _ := background_sourcesync.New(sourceModule, filterModule, chanLogger)
@@ -727,7 +729,7 @@ Load-bearing ordering:
 - `clientModule.Sync()` — after Migrate, before DNS Serve (a local DB read, no network).
 - `trafficWorker` (`traffic_record.NewTrafficEventStore`) is assigned to `dnsServer.Traffic` BEFORE `Serve()` — it is the single verdict recorder after the event stores were removed. The two former `clear-events` tasks and their event stores are gone; the replacement traffic prune joins every other feature worker in the injected `background.Runner`. The runner starts **after `HydrateAll`** so every immediate job run sees effective settings rather than seed values, and waits for all jobs when its shared context is canceled. The same injected `trafficRetention` instance is captured by the settings Apply hook and read by every prune tick. The current `backgroundCtx` becomes the signal-derived application context in the graceful-shutdown step. suggest reads allowed domains through `NewAllowFilterAdapter`; domain-inspect's `NewLocalStats(blockRepo, trafficRepo)` receives both local readers directly; block stats use `NewBlockStatsAdapter`.
 - The DNS server is built with `dns.NewServer(dns.ServerDeps{...})`: the upstream, client exclusion store and initial SWR settings are explicit dependencies rather than package-level config/store lookups. The `dns.NewReloadableResolver(conf.DoHUpstream, conf.DoHBootstrapIPs...)` instance is passed once and shared by the hot path and refresh worker, so a runtime swap re-points both.
-- **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, conf)` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
+- **`settings` comes up after all sinks and strictly before `dnsServer.Serve()`**: `settings.NewModule(settingsRepo)` → `registerDynamicSettings(...)` (needs the already-built `chanLogger`, `resolver`, `cacheWithMetric`, `dnsServer`) → `filterModule.SetStateSink(filter.PersistHook(...))` → `filter.RestoreState(settingsRepo, filterState, appClock.Now())` (restore on/off and the pause) → `settingsModule.HydrateAll()` (apply the effective values). `RestoreState` and `HydrateAll` are **not fatal** — an error leaves values at their compiled default rather than killing an already-healthy start.
 - `web.NewServer` only builds `*http.Server`; `main` owns the handle, starts `ListenAndServe` explicitly and logs unexpected serve errors. The blocking `dnsServer.Serve()` still keeps main alive until the common lifecycle/shutdown orchestrator is added.
 
 ---
@@ -755,14 +757,22 @@ Load-bearing ordering:
    of context-aware feature jobs into one `background.Runner`; the runner only
    coordinates concurrent start/wait and does not resolve feature dependencies.
 
+   Wall time follows the same ownership rule: `main` creates one concrete
+   `clock.System`, while each consumer declares only the `Clock` method set it
+   needs. Long-lived filter/inspect/hostname/traffic components retain that
+   dependency; one-shot pause/restore/prune helpers receive an explicit
+   `time.Time`. Feature behavior therefore has deterministic boundary tests
+   without mutable package clocks. Tickers and cancelable timers that only
+   control cadence remain local implementation details.
+
 6. **Dependency injection (incremental).** `main.go` is the composition root for migrated features. It owns the Prometheus registry and component metrics bundles, calls `db.Open` exactly once with `OpenDeps` (path, logger, DB metrics and a unique pool name), and passes the resulting connection to migrations and explicit repos (`auth/db.Repo`, `blocked-domain/db.Repo`, `clients/db.Repo`, `traffic/db.Repo`, `source/db.Repo`, `suggest-to-block/db.Repo`); orchestration is a `*Module`. DNS cache is instantiated directly; domain-inspect uses a package-owned default catalog factory so `main` supplies its handler, local ports, URLScan key and runtime credentials without knowing the internal HTTP/DNS/clock/endpoint graph:
    - `auth.Module` — bootstrap, credential verification, session lifecycle and its per-instance LRU cache; `auth/business.Deps` supplies the repository, wall clock and cryptographic token generator explicitly. A session is valid strictly before `ExpiresAt`, and the same injected clock drives issuance, resolution and cleanup. `auth/web.Handlers` receives the module as a narrow service port.
-   - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`; it receives the process-local `filter/runtime-state.State`, while filter use-cases depend on narrow consumer-owned state ports and do not import `config`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
+   - `filter.Module` — `CheckExist`, `UpdateFromDb`, `ChangeStatus`, `Pause/Resume`; it receives the process-local `filter/runtime-state.State` and wall clock, while filter use-cases depend on narrow consumer-owned state ports, accept explicit `now` values and do not import `config`. The DNS hot path — `filterModule.CheckExist` — is passed to `dns.NewServer` through `ServerDeps`.
    - `source.Module` — `Seed` + `Sync`; called at startup.
    - `suggest_to_block.Module` — `Collect` and `Start(ctx)` (12h ticker).
    - `clients.Module` — CRUD, exclusion-snapshot synchronization and discovery annotation; it receives a consumer-owned `Discoverer`, while `discovery.NewDefaultScanner` owns the platform-adapter assembly. `clients/web.Handlers`, the DNS hot path and ARP watcher receive explicit instances from `main`.
 
-   The use-cases (`*/business/use-cases/*`) are functions that depend on **narrow output ports** declared next to the consumer (e.g. `create_domain.Repo interface{ DomainNotExist; CreateDomain }`, `check_exist_domain.Deps{Repo, Cache, Bloom, Conf, Log}`). The concrete `*Repo` satisfies all ports through structural typing — "accept interfaces, return structs". Use-case tests run on fakes without sqlite; the repositories are covered by separate integration tests with an in-memory `:memory:` sqlite.
+   The use-cases (`*/business/use-cases/*`) are functions that depend on **narrow output ports** declared next to the consumer (e.g. `create_domain.Repo interface{ DomainNotExist; CreateDomain }`, `check_exist_domain.Deps{Repo, Cache, Bloom, State, Log}`). The concrete `*Repo` satisfies all ports through structural typing — "accept interfaces, return structs". Use-case tests run on fakes without sqlite; the repositories are covered by separate integration tests with an in-memory `:memory:` sqlite.
 
 7. **Canonical domain form.** `block_lists.url`, the bloom filter and the LRU verdict cache store domains in a single FQDN form — lowercase, exactly one trailing dot (`example.com.`). Normalization is done by `utils.CanonicalDomain` at every boundary: user input (`create_domain.CreateDomain`), the source parsers (EasyList, Steven Black/HaGeZi) and the read hot path (`filter.Module.CheckExist`). The name from miekg/dns (`q.Name`) arrives in FQDN form but with no case guarantee (DNS 0x20 encoding), so normalization is needed on read too, not just on write — otherwise `Example.com` added by hand would not match the query and would not be blocked (#30).
 

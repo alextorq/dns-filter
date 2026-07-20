@@ -51,6 +51,29 @@ type recordingLog struct {
 	errs  atomic.Int32
 }
 
+type fixedClock struct{ now time.Time }
+
+func (c fixedClock) Now() time.Time { return c.now }
+
+var recordTestClock = fixedClock{now: time.Date(2026, time.July, 20, 0, 5, 0, 0, time.Local)}
+
+func TestNewTrafficEventStore_RejectsMissingClock(t *testing.T) {
+	var typedNil *fixedClock
+	for name, clock := range map[string]Clock{
+		"nil":       nil,
+		"typed nil": typedNil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("missing clock must fail during construction")
+				}
+			}()
+			NewTrafficEventStore(&fakeRepo{}, &recordingLog{}, clock, 100)
+		})
+	}
+}
+
 func (l *recordingLog) Warn(args ...any) { l.warns.Add(1) }
 func (l *recordingLog) Error(err error)  { l.errs.Add(1) }
 
@@ -71,7 +94,7 @@ func waitFor(t *testing.T, timeout time.Duration, msg string, cond func() bool) 
 func TestAccumulatesDuplicateKeys(t *testing.T) {
 	repo := &fakeRepo{}
 	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
-	store := newWithChannelSize(repo, &recordingLog{}, 1000, 100)
+	store := newWithChannelSize(repo, &recordingLog{}, recordTestClock, 1000, 100)
 
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: at})
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: at})
@@ -92,7 +115,7 @@ func TestAccumulatesDuplicateKeys(t *testing.T) {
 
 func TestRecordCanonicalizesDomain(t *testing.T) {
 	repo := &fakeRepo{}
-	store := newWithChannelSize(repo, &recordingLog{}, 1000, 100)
+	store := newWithChannelSize(repo, &recordingLog{}, recordTestClock, 1000, 100)
 
 	store.Record("mac", "aa:bb", "10.0.0.5", " Ads.Example.. ", false)
 	store.flushNow()
@@ -104,6 +127,9 @@ func TestRecordCanonicalizesDomain(t *testing.T) {
 	if rows[0].Domain != "ads.example." {
 		t.Errorf("domain must be stored as canonical FQDN: got %q", rows[0].Domain)
 	}
+	if !rows[0].LastSeen.Equal(recordTestClock.now) {
+		t.Errorf("LastSeen = %v, want injected now %v", rows[0].LastSeen, recordTestClock.now)
+	}
 }
 
 // TestDistinctKeysSeparateRows: events differing in any key dimension produce
@@ -111,7 +137,7 @@ func TestRecordCanonicalizesDomain(t *testing.T) {
 func TestDistinctKeysSeparateRows(t *testing.T) {
 	repo := &fakeRepo{}
 	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
-	store := newWithChannelSize(repo, &recordingLog{}, 1000, 100)
+	store := newWithChannelSize(repo, &recordingLog{}, recordTestClock, 1000, 100)
 
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: at})
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: false, At: at}) // verdict differs
@@ -132,7 +158,7 @@ func TestDistinctKeysSeparateRows(t *testing.T) {
 func TestFlushOnTicker(t *testing.T) {
 	repo := &fakeRepo{}
 	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
-	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, 10*time.Millisecond)
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, recordTestClock, 1000, 100, 10*time.Millisecond)
 
 	store.record(Event{Kind: "ip", Value: "10.0.0.9", IP: "10.0.0.9", Domain: "example.", Blocked: false, At: at})
 
@@ -149,7 +175,7 @@ func TestFlushOnCapacity(t *testing.T) {
 	repo := &fakeRepo{}
 	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
 	// capacity=2 distinct keys; long ticker so only capacity can trigger.
-	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 2, 100, time.Hour)
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, recordTestClock, 2, 100, time.Hour)
 
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "one.example.", Blocked: true, At: at})
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "two.example.", Blocked: true, At: at})
@@ -167,7 +193,7 @@ func TestLastSeenTracksMax(t *testing.T) {
 	repo := &fakeRepo{}
 	early := time.Date(2026, 5, 25, 8, 0, 0, 0, time.Local)
 	late := time.Date(2026, 5, 25, 20, 0, 0, 0, time.Local)
-	store := newWithChannelSize(repo, &recordingLog{}, 1000, 100)
+	store := newWithChannelSize(repo, &recordingLog{}, recordTestClock, 1000, 100)
 
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: late})
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: early})
@@ -190,7 +216,7 @@ func TestLatestIPWins(t *testing.T) {
 	repo := &fakeRepo{}
 	t1 := time.Date(2026, 5, 25, 8, 0, 0, 0, time.Local)
 	t2 := time.Date(2026, 5, 25, 20, 0, 0, 0, time.Local)
-	store := newWithChannelSize(repo, &recordingLog{}, 1000, 100)
+	store := newWithChannelSize(repo, &recordingLog{}, recordTestClock, 1000, 100)
 
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: t1})
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.99", Domain: "ads.example.", Blocked: true, At: t2})
@@ -235,7 +261,7 @@ func TestDayBucketLocalMidnight(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &fakeRepo{}
-			store := newWithChannelSize(repo, &recordingLog{}, 1000, 100)
+			store := newWithChannelSize(repo, &recordingLog{}, recordTestClock, 1000, 100)
 			store.record(Event{Kind: "ip", Value: "10.0.0.1", IP: "10.0.0.1", Domain: "x.", Blocked: false, At: tc.at})
 			store.flushNow()
 			waitFor(t, time.Second, "flush", func() bool { return len(repo.snapshot()) >= 1 })
@@ -269,7 +295,7 @@ func TestDayRolloverDistinctKeys(t *testing.T) {
 	repo := &fakeRepo{}
 	day1 := time.Date(2026, 5, 25, 13, 0, 0, 0, time.Local)
 	day2 := time.Date(2026, 5, 26, 13, 0, 0, 0, time.Local)
-	store := newWithChannelSize(repo, &recordingLog{}, 1000, 100)
+	store := newWithChannelSize(repo, &recordingLog{}, recordTestClock, 1000, 100)
 
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: day1})
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "ads.example.", Blocked: true, At: day2})
@@ -303,7 +329,7 @@ func TestRecordDropsWhenChannelFull(t *testing.T) {
 	log := &recordingLog{}
 	// capacity=1 forces a flush after the first distinct key; chanSize=1 means a
 	// single extra send saturates the inbox while the worker is parked in flush.
-	store := newWithChannelSize(repo, log, 1, 1)
+	store := newWithChannelSize(repo, log, recordTestClock, 1, 1)
 
 	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "first.", Blocked: true, At: at})
@@ -324,7 +350,7 @@ func TestRecordDropsWhenChannelFull(t *testing.T) {
 func TestLogsRepoError(t *testing.T) {
 	repo := &fakeRepo{err: errAlwaysFails}
 	log := &recordingLog{}
-	store := newWithChannelSize(repo, log, 1, 100)
+	store := newWithChannelSize(repo, log, recordTestClock, 1, 100)
 
 	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "x.", Blocked: true, At: at})
@@ -384,7 +410,7 @@ func (f *flakyRepo) allRows() []traffic_db.DomainTraffic {
 func TestFlushRetainsCountsOnError(t *testing.T) {
 	repo := &flakyRepo{failing: true}
 	// Long ticker so only our explicit flushNow calls drive the worker.
-	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, recordTestClock, 1000, 100, time.Hour)
 	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
 
 	// One event, then a flush that the DB rejects: the count must be retained.
@@ -420,7 +446,7 @@ func TestFlushBoundedDuringOutage(t *testing.T) {
 	const capacity = 3
 	repo := &flakyRepo{failing: true}
 	log := &recordingLog{}
-	store := newWithChannelSizeAndInterval(repo, log, capacity, 1000, time.Hour)
+	store := newWithChannelSizeAndInterval(repo, log, recordTestClock, capacity, 1000, time.Hour)
 	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
 
 	// Pump far more distinct keys than capacity while the DB is down.
@@ -449,7 +475,7 @@ func TestFlushBoundedDuringOutage(t *testing.T) {
 
 func TestStopFlushesBufferedEvents(t *testing.T) {
 	repo := &fakeRepo{}
-	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, recordTestClock, 1000, 100, time.Hour)
 	at := time.Date(2026, 5, 25, 12, 0, 0, 0, time.Local)
 
 	store.record(Event{Kind: "mac", Value: "aa:bb", IP: "10.0.0.5", Domain: "one.example.", At: at})
@@ -468,7 +494,7 @@ func TestStopFlushesBufferedEvents(t *testing.T) {
 
 func TestStopIsIdempotent(t *testing.T) {
 	repo := &fakeRepo{}
-	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, recordTestClock, 1000, 100, time.Hour)
 	store.record(Event{Kind: "ip", Value: "10.0.0.5", IP: "10.0.0.5", Domain: "one.example.", At: time.Now()})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -488,7 +514,7 @@ func TestStopIsIdempotent(t *testing.T) {
 func TestRecordAfterStopIsDropped(t *testing.T) {
 	repo := &fakeRepo{}
 	log := &recordingLog{}
-	store := newWithChannelSizeAndInterval(repo, log, 1000, 100, time.Hour)
+	store := newWithChannelSizeAndInterval(repo, log, recordTestClock, 1000, 100, time.Hour)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := store.Stop(ctx); err != nil {
@@ -508,7 +534,7 @@ func TestRecordAfterStopIsDropped(t *testing.T) {
 
 func TestConcurrentStopIsSafe(t *testing.T) {
 	repo := &fakeRepo{}
-	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, recordTestClock, 1000, 100, time.Hour)
 	store.record(Event{Kind: "ip", Value: "10.0.0.5", IP: "10.0.0.5", Domain: "one.example.", At: time.Now()})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -536,7 +562,7 @@ func TestConcurrentStopIsSafe(t *testing.T) {
 
 func TestStopReturnsFinalFlushError(t *testing.T) {
 	repo := &flakyRepo{failing: true}
-	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, recordTestClock, 1000, 100, time.Hour)
 	store.record(Event{Kind: "ip", Value: "10.0.0.5", IP: "10.0.0.5", Domain: "one.example.", At: time.Now()})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -548,7 +574,7 @@ func TestStopReturnsFinalFlushError(t *testing.T) {
 
 func TestStopHonorsContextWhileFinalFlushIsBlocked(t *testing.T) {
 	repo := &blockingRepo{enter: make(chan struct{}, 1), exit: make(chan struct{})}
-	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, 1000, 100, time.Hour)
+	store := newWithChannelSizeAndInterval(repo, &recordingLog{}, recordTestClock, 1000, 100, time.Hour)
 	store.record(Event{Kind: "ip", Value: "10.0.0.5", IP: "10.0.0.5", Domain: "one.example.", At: time.Now()})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -574,7 +600,7 @@ func TestStopHonorsContextWhileFinalFlushIsBlocked(t *testing.T) {
 }
 
 func TestConcurrentRecordAndStopDoesNotPanic(t *testing.T) {
-	store := newWithChannelSizeAndInterval(&fakeRepo{}, &recordingLog{}, 1000, 1000, time.Hour)
+	store := newWithChannelSizeAndInterval(&fakeRepo{}, &recordingLog{}, recordTestClock, 1000, 1000, time.Hour)
 	var writers sync.WaitGroup
 	for i := range 8 {
 		writers.Add(1)

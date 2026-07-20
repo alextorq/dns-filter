@@ -17,6 +17,7 @@ package db
 
 import (
 	"net"
+	"reflect"
 	"strings"
 	"time"
 
@@ -37,13 +38,37 @@ type HostName struct {
 	LastSeen time.Time `json:"last_seen"`
 }
 
+// Clock supplies wall time for sightings and retention cutoffs.
+type Clock interface {
+	Now() time.Time
+}
+
+func isNilClock(clock Clock) bool {
+	if clock == nil {
+		return true
+	}
+	v := reflect.ValueOf(clock)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
 // Repo is the DI adapter over the host_names table. Construct at the
 // composition root and pass to the hostname collector and the traffic handler.
 type Repo struct {
-	db *gorm.DB
+	db    *gorm.DB
+	clock Clock
 }
 
-func NewRepo(conn *gorm.DB) *Repo { return &Repo{db: conn} }
+func NewRepo(conn *gorm.DB, clock Clock) *Repo {
+	if isNilClock(clock) {
+		panic("hostnames db: clock is required")
+	}
+	return &Repo{db: conn, clock: clock}
+}
 
 // Upsert records (or refreshes) the hostname for a MAC. The MAC is normalized
 // to the canonical lowercase colon form so it matches the keys traffic stores
@@ -56,7 +81,7 @@ func (r *Repo) Upsert(mac, hostname string) error {
 	if mac == "" || hostname == "" {
 		return nil
 	}
-	now := time.Now()
+	now := r.clock.Now()
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "mac"}},
 		DoUpdates: clause.AssignmentColumns([]string{"hostname", "last_seen", "updated_at"}),
@@ -86,7 +111,7 @@ func (r *Repo) PruneOlderThan(window time.Duration) error {
 	if window <= 0 {
 		return nil
 	}
-	cutoff := time.Now().Add(-window)
+	cutoff := r.clock.Now().Add(-window)
 	return r.db.Where("last_seen < ?", cutoff).Delete(&HostName{}).Error
 }
 

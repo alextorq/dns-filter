@@ -14,10 +14,12 @@ func (nopLog) Info(args ...any) {}
 
 func freshState() *runtime_state.State { return runtime_state.New(true) }
 
+var pauseTestNow = time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
+
 func TestPauseFilter_RejectsInvalidDuration(t *testing.T) {
 	state := freshState()
 	for _, m := range []int{0, 1, 4, 6, 31, -5} {
-		if _, err := PauseFilter(state, nopLog{}, m); err != ErrInvalidDuration {
+		if _, err := PauseFilter(state, nopLog{}, m, pauseTestNow); err != ErrInvalidDuration {
 			t.Fatalf("expected ErrInvalidDuration for %d minutes, got %v", m, err)
 		}
 	}
@@ -29,19 +31,16 @@ func TestPauseFilter_RejectsInvalidDuration(t *testing.T) {
 func TestPauseFilter_AcceptsAllowedDurations(t *testing.T) {
 	for _, m := range AllowedMinutes {
 		state := freshState()
-		before := time.Now().Unix()
-		until, err := PauseFilter(state, nopLog{}, m)
-		after := time.Now().Unix()
+		until, err := PauseFilter(state, nopLog{}, m, pauseTestNow)
 		if err != nil {
 			t.Fatalf("PauseFilter(%d) failed: %v", m, err)
 		}
-		minExpected := before + int64(m*60)
-		maxExpected := after + int64(m*60)
-		if until < minExpected || until > maxExpected {
-			t.Fatalf("PauseFilter(%d): until=%d outside [%d,%d]", m, until, minExpected, maxExpected)
+		expected := pauseTestNow.Add(time.Duration(m) * time.Minute).Unix()
+		if until != expected {
+			t.Fatalf("PauseFilter(%d): until=%d, want %d", m, until, expected)
 		}
 		if stored := state.PausedUntil(); stored != until {
-				t.Fatalf("runtime state not updated: got %d, want %d", stored, until)
+			t.Fatalf("runtime state not updated: got %d, want %d", stored, until)
 		}
 	}
 }
@@ -50,7 +49,7 @@ func TestPauseFilter_RejectsWhenFilterDisabled(t *testing.T) {
 	state := freshState()
 	state.SetEnabled(false)
 
-	if _, err := PauseFilter(state, nopLog{}, 5); err != ErrFilterDisabled {
+	if _, err := PauseFilter(state, nopLog{}, 5, pauseTestNow); err != ErrFilterDisabled {
 		t.Fatalf("expected ErrFilterDisabled, got %v", err)
 	}
 	if got := state.PausedUntil(); got != 0 {
@@ -60,7 +59,7 @@ func TestPauseFilter_RejectsWhenFilterDisabled(t *testing.T) {
 
 func TestResumeFilter_ClearsPause(t *testing.T) {
 	state := freshState()
-	if _, err := PauseFilter(state, nopLog{}, 5); err != nil {
+	if _, err := PauseFilter(state, nopLog{}, 5, pauseTestNow); err != nil {
 		t.Fatalf("PauseFilter failed: %v", err)
 	}
 	ResumeFilter(state, nopLog{})
@@ -73,14 +72,19 @@ func TestResumeFilter_ClearsPause(t *testing.T) {
 
 func TestGetPausedUntil_TreatsExpiredAsZero(t *testing.T) {
 	state := freshState()
-	state.SetPausedUntil(time.Now().Unix() - 1)
-	if got := GetPausedUntil(state); got != 0 {
+	state.SetPausedUntil(pauseTestNow.Unix())
+	if got := GetPausedUntil(state, pauseTestNow); got != 0 {
+		t.Fatalf("pause ending at now should return 0, got %d", got)
+	}
+
+	state.SetPausedUntil(pauseTestNow.Unix() - 1)
+	if got := GetPausedUntil(state, pauseTestNow); got != 0 {
 		t.Fatalf("expired pause should return 0, got %d", got)
 	}
 
-	future := time.Now().Add(5 * time.Minute).Unix()
+	future := pauseTestNow.Add(5 * time.Minute).Unix()
 	state.SetPausedUntil(future)
-	if got := GetPausedUntil(state); got != future {
+	if got := GetPausedUntil(state, pauseTestNow); got != future {
 		t.Fatalf("active pause should return deadline %d, got %d", future, got)
 	}
 }
@@ -97,7 +101,7 @@ func TestPauseFilter_ConcurrentSafe(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range 100 {
-				_, _ = PauseFilter(state, nopLog{}, 5)
+				_, _ = PauseFilter(state, nopLog{}, 5, pauseTestNow)
 			}
 		}()
 		go func() {
@@ -110,7 +114,7 @@ func TestPauseFilter_ConcurrentSafe(t *testing.T) {
 	wg.Wait()
 
 	got := state.PausedUntil()
-	if got != 0 && got < time.Now().Unix() {
+	if got != 0 && got < pauseTestNow.Unix() {
 		t.Fatalf("final pause deadline is in the past: %d", got)
 	}
 }
@@ -133,7 +137,7 @@ func TestPauseFilter_RaceWithEnabledToggle_NoTornState(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for range 200 {
-				_, _ = PauseFilter(state, nopLog{}, 5)
+				_, _ = PauseFilter(state, nopLog{}, 5, pauseTestNow)
 			}
 		}()
 		go func() {
@@ -146,7 +150,7 @@ func TestPauseFilter_RaceWithEnabledToggle_NoTornState(t *testing.T) {
 	wg.Wait()
 
 	until := state.PausedUntil()
-	if until != 0 && until < time.Now().Unix() {
+	if until != 0 && until < pauseTestNow.Unix() {
 		t.Fatalf("final pause deadline is in the past: %d", until)
 	}
 }

@@ -8,7 +8,9 @@ package filter
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
+	"time"
 
 	changefilter "github.com/alextorq/dns-filter/filter/business/use-cases/change-filter-dns-records"
 	checkexist "github.com/alextorq/dns-filter/filter/business/use-cases/check-exist"
@@ -45,12 +47,32 @@ type Logger interface {
 	Error(err error)
 }
 
+// Clock supplies wall time for pause deadlines and hot-path pause checks.
+// Production injects the process clock; tests use a fixed clock.
+type Clock interface {
+	Now() time.Time
+}
+
+func isNilClock(clock Clock) bool {
+	if clock == nil {
+		return true
+	}
+	v := reflect.ValueOf(clock)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
 // Module is the wired-up filter feature.
 type Module struct {
 	repo  BlockChecker
 	bloom Bloom
 	cache Cache
 	state *runtime_state.State
+	clock Clock
 	log   Logger
 	// persist, when set, is invoked after every successful toggle with the new
 	// (enabled, pausedUntil) state so it survives a restart. nil disables
@@ -58,11 +80,14 @@ type Module struct {
 	persist func(enabled bool, pausedUntil int64)
 }
 
-func NewModule(repo BlockChecker, bloom Bloom, cache Cache, state *runtime_state.State, log Logger) *Module {
+func NewModule(repo BlockChecker, bloom Bloom, cache Cache, state *runtime_state.State, clock Clock, log Logger) *Module {
 	if state == nil {
 		panic("filter: runtime state is required")
 	}
-	return &Module{repo: repo, bloom: bloom, cache: cache, state: state, log: log}
+	if isNilClock(clock) {
+		panic("filter: clock is required")
+	}
+	return &Module{repo: repo, bloom: bloom, cache: cache, state: state, clock: clock, log: log}
 }
 
 // SetStateSink installs the persistence hook. Wire it at the composition root
@@ -94,7 +119,7 @@ func (m *Module) CheckExist(domain string) bool {
 		Bloom: m.bloom,
 		State: m.state,
 		Log:   m.log,
-	}, utils.CanonicalDomain(domain))
+	}, utils.CanonicalDomain(domain), m.clock.Now())
 }
 
 // UpdateFromDb rebuilds the bloom from the active block list and discards the
@@ -120,7 +145,7 @@ func (m *Module) ChangeStatus() bool {
 
 // Pause pauses filtering for the given number of minutes.
 func (m *Module) Pause(minutes int) (int64, error) {
-	until, err := pausefilter.PauseFilter(m.state, m.log, minutes)
+	until, err := pausefilter.PauseFilter(m.state, m.log, minutes, m.clock.Now())
 	if err != nil {
 		return until, err
 	}
@@ -136,7 +161,7 @@ func (m *Module) Resume() {
 
 // PausedUntil returns the active pause deadline (unix seconds), or 0.
 func (m *Module) PausedUntil() int64 {
-	return pausefilter.GetPausedUntil(m.state)
+	return pausefilter.GetPausedUntil(m.state, m.clock.Now())
 }
 
 // Enabled returns the current global toggle.

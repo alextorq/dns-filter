@@ -8,6 +8,10 @@ import (
 	"gorm.io/gorm"
 )
 
+type fixedClock struct{ now time.Time }
+
+func (c fixedClock) Now() time.Time { return c.now }
+
 func newConn(t *testing.T) *gorm.DB {
 	t.Helper()
 	conn, err := gorm.Open(sqlite.Open("file::memory:?cache=private"), &gorm.Config{})
@@ -18,6 +22,23 @@ func newConn(t *testing.T) *gorm.DB {
 		t.Fatalf("migrate: %v", err)
 	}
 	return conn
+}
+
+func TestNewRepo_RejectsMissingClock(t *testing.T) {
+	var typedNil *fixedClock
+	for name, clock := range map[string]Clock{
+		"nil":       nil,
+		"typed nil": typedNil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("missing clock must fail during construction")
+				}
+			}()
+			NewRepo(nil, clock)
+		})
+	}
 }
 
 // TestUpsertCandidate_InsertThenPreserve pins the central invariant: a repeated
@@ -226,7 +247,7 @@ func TestUpdateMissingDomain_NoOp(t *testing.T) {
 // must prune stale rows from BOTH tables while keeping recent ones.
 func TestRepoDeleteOlderThan_PrunesBothTables(t *testing.T) {
 	conn := newConn(t)
-	r := NewRepo(conn)
+	r := NewRepo(conn, fixedClock{now: time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)})
 
 	now := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
 	old := now.Add(-30 * 24 * time.Hour)
@@ -263,6 +284,62 @@ func TestRepoDeleteOlderThan_PrunesBothTables(t *testing.T) {
 	var rc RDAPCache
 	if err := conn.First(&rc, "registrable = ?", "recent.net").Error; err != nil {
 		t.Errorf("recent rdap row must survive, got %v", err)
+	}
+}
+
+func TestRepo_UsesInjectedClockForTTLRetryAndRDAP(t *testing.T) {
+	conn := newConn(t)
+	now := time.Date(2026, 7, 20, 12, 30, 0, 0, time.FixedZone("UTC+3", 3*60*60))
+	repo := NewRepo(conn, fixedClock{now: now})
+	stale := now.Add(-2 * time.Hour)
+
+	if err := conn.Create(&InspectCandidate{
+		Domain:       "clock.example",
+		LexicalScore: 20,
+		CheckedAt:    &stale,
+	}).Error; err != nil {
+		t.Fatalf("seed candidate: %v", err)
+	}
+
+	got, err := repo.PickForInspection(time.Hour, 1)
+	if err != nil {
+		t.Fatalf("pick: %v", err)
+	}
+	if len(got) != 1 || got[0].Domain != "clock.example" {
+		t.Fatalf("injected now must make stale candidate eligible, got %+v", got)
+	}
+
+	if err := repo.SaveResult("clock.example", "unknown"); err != nil {
+		t.Fatalf("save result: %v", err)
+	}
+	if err := repo.ScheduleRetry("clock.example", 30*time.Minute); err != nil {
+		t.Fatalf("schedule retry: %v", err)
+	}
+
+	var candidate InspectCandidate
+	if err := conn.First(&candidate, "domain = ?", "clock.example").Error; err != nil {
+		t.Fatalf("load candidate: %v", err)
+	}
+	if candidate.CheckedAt == nil || !candidate.CheckedAt.Equal(now) {
+		t.Fatalf("CheckedAt = %v, want injected now %v", candidate.CheckedAt, now)
+	}
+	wantRetry := now.Add(30 * time.Minute)
+	if candidate.NextRetryAt == nil || !candidate.NextRetryAt.Equal(wantRetry) {
+		t.Fatalf("NextRetryAt = %v, want %v", candidate.NextRetryAt, wantRetry)
+	}
+
+	if err := repo.PutRDAP("example.com", 42); err != nil {
+		t.Fatalf("put RDAP: %v", err)
+	}
+	var cached RDAPCache
+	if err := conn.First(&cached, "registrable = ?", "example.com").Error; err != nil {
+		t.Fatalf("load RDAP: %v", err)
+	}
+	if !cached.CheckedAt.Equal(now) {
+		t.Fatalf("RDAP CheckedAt = %v, want injected now %v", cached.CheckedAt, now)
+	}
+	if _, found, err := repo.GetRDAP("example.com", time.Hour); err != nil || !found {
+		t.Fatalf("fresh RDAP lookup = found %v, err %v", found, err)
 	}
 }
 

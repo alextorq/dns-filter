@@ -6,12 +6,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/alextorq/dns-filter/filter"
 	runtime_state "github.com/alextorq/dns-filter/filter/runtime-state"
 
 	"github.com/gin-gonic/gin"
 )
+
+type fixedClock struct{ now time.Time }
+
+func (c fixedClock) Now() time.Time { return c.now }
 
 // stubRepo / stubBloom / stubCache satisfy the narrow filter.* ports without
 // touching a DB. Pause / Resume / Status handlers don't read from any of them
@@ -40,7 +45,7 @@ func (stubLog) Error(err error)   {}
 
 func newTestHandlers() (*Handlers, *runtime_state.State) {
 	state := runtime_state.New(true)
-	module := filter.NewModule(stubRepo{}, stubBloom{}, stubCache{}, state, stubLog{})
+	module := filter.NewModule(stubRepo{}, stubBloom{}, stubCache{}, state, fixedClock{now: time.Now()}, stubLog{})
 	return &Handlers{Module: module}, state
 }
 

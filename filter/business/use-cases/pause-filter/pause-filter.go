@@ -35,14 +35,14 @@ func isAllowed(minutes int) bool {
 // if the duration is not whitelisted, or ErrFilterDisabled if the filter is
 // already off (pause has no meaning then). Last writer wins under concurrent
 // successful calls.
-func PauseFilter(state RuntimeState, log Logger, minutes int) (int64, error) {
+func PauseFilter(state RuntimeState, log Logger, minutes int, now time.Time) (int64, error) {
 	if !isAllowed(minutes) {
 		return 0, ErrInvalidDuration
 	}
 	if !state.Enabled() {
 		return 0, ErrFilterDisabled
 	}
-	until := time.Now().Add(time.Duration(minutes) * time.Minute).Unix()
+	until := now.Add(time.Duration(minutes) * time.Minute).Unix()
 	state.SetPausedUntil(until)
 	log.Info("Filter paused for", minutes, "minutes, until unix:", until)
 	return until, nil
@@ -57,9 +57,9 @@ func ResumeFilter(state RuntimeState, log Logger) {
 
 // GetPausedUntil returns the active pause deadline (unix seconds), or 0 if no
 // pause is active or the deadline has already passed.
-func GetPausedUntil(state RuntimeState) int64 {
+func GetPausedUntil(state RuntimeState, now time.Time) int64 {
 	until := state.PausedUntil()
-	if until <= time.Now().Unix() {
+	if until <= now.Unix() {
 		return 0
 	}
 	return until

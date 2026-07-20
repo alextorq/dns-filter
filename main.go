@@ -27,6 +27,7 @@ import (
 	"github.com/alextorq/dns-filter/clients/identifier"
 	clients_store "github.com/alextorq/dns-filter/clients/store"
 	clientsWeb "github.com/alextorq/dns-filter/clients/web"
+	app_clock "github.com/alextorq/dns-filter/clock"
 	"github.com/alextorq/dns-filter/config"
 	app_db "github.com/alextorq/dns-filter/db"
 	"github.com/alextorq/dns-filter/db/migrate"
@@ -103,6 +104,7 @@ func reportServerError(name string, err error, log serverLogger) {
 
 func main() {
 	conf := config.Load()
+	appClock := app_clock.NewSystem()
 	chanLogger := logger.NewChanLogger(1000, conf.LogLevel)
 	chanLogger.AddHandler(&consoleHandler.ConsoleHandler{})
 	registry := prometheus.NewRegistry()
@@ -125,7 +127,7 @@ func main() {
 	}
 	authModule := authBusiness.NewModule(authBusiness.Deps{
 		Repo:           auth_db.NewRepo(conn),
-		Clock:          authBusiness.NewSystemClock(),
+		Clock:          appClock,
 		TokenGenerator: authBusiness.NewCryptoTokenGenerator(),
 		AdminLogin:     conf.AdminLogin,
 		AdminPassword:  conf.AdminPassword,
@@ -143,13 +145,13 @@ func main() {
 	suggestRepo := suggest_to_block_db.NewRepo(conn)
 	settingsRepo := settings_db.NewRepo(conn)
 	trafficRepo := traffic_db.NewRepo(conn)
-	hostnamesRepo := hostnames_db.NewRepo(conn)
+	hostnamesRepo := hostnames_db.NewRepo(conn, appClock)
 	clientRepo := clients_db.NewRepo(conn)
 
 	bloom := filter_bloom.NewFilter()
 	cache := filter_cache.NewCacheWithMetrics(1500)
 	filterRuntimeState := filter_state.New(true)
-	filterModule := filter.NewModule(blockRepo, bloom, cache, filterRuntimeState, chanLogger)
+	filterModule := filter.NewModule(blockRepo, bloom, cache, filterRuntimeState, appClock, chanLogger)
 
 	sourceHTTPClient := &http.Client{Timeout: 60 * time.Second}
 	sourceLoaders, err := source_sync.NewDefaultLoaders(sourceHTTPClient)
@@ -206,7 +208,7 @@ func main() {
 	// Запуск горутин suggest/inspect перенесён ниже HydrateAll, чтобы оба
 	// runtime-состояния уже соответствовали БД-override до первого тика; иначе zero-value
 	// gate (false) погасил бы первый Collect/RunOnce даже при включённой фиче.
-	inspectRepo := inspect_db.NewRepo(conn)
+	inspectRepo := inspect_db.NewRepo(conn, appClock)
 	inspectMetrics, err := suggest_inspect.NewMetrics(registry)
 	if err != nil {
 		panic(fmt.Errorf("create inspect metrics: %w", err))
@@ -285,7 +287,7 @@ func main() {
 	// block/allow verdicts now that the legacy event stores are gone. Capacity
 	// bounds DISTINCT aggregation keys held in RAM between flushes, not raw
 	// events, so it can be sized generously.
-	trafficWorker := traffic_record_uc.NewTrafficEventStore(trafficRepo, chanLogger, 2000)
+	trafficWorker := traffic_record_uc.NewTrafficEventStore(trafficRepo, chanLogger, appClock, 2000)
 	trafficRetention := traffic_prune_uc.NewRetentionState()
 
 	// Reloadable upstream: constructed from env defaults, then re-pointed by the
@@ -328,7 +330,7 @@ func main() {
 		panic(fmt.Errorf("create database snapshot exporter: %w", err))
 	}
 	filterModule.SetStateSink(filter.PersistHook(settingsRepo, chanLogger))
-	if err := filter.RestoreState(settingsRepo, filterRuntimeState); err != nil {
+	if err := filter.RestoreState(settingsRepo, filterRuntimeState, appClock.Now()); err != nil {
 		// Non-fatal: a failed restore leaves the filter at its compiled default
 		// (enabled) rather than aborting an otherwise-healthy boot.
 		chanLogger.Error(fmt.Errorf("restore filter state: %w", err))
@@ -350,7 +352,7 @@ func main() {
 		background.JobFunc(suggestModule.Start),
 		background.JobFunc(inspectWorker.Start),
 		background.JobFunc(func(ctx context.Context) {
-			suggest_inspect.StartPrune(ctx, inspectRepo, 4*conf.SuggestInspectCacheTTL, chanLogger)
+			suggest_inspect.StartPrune(ctx, inspectRepo, 4*conf.SuggestInspectCacheTTL, appClock, chanLogger)
 		}),
 	)
 
@@ -362,7 +364,7 @@ func main() {
 	// (immediate) prune already sees the effective window — otherwise it could
 	// hard-delete rows using the pre-hydrate seed (see traffic_prune.RetentionState).
 	backgroundJobs = append(backgroundJobs, background.JobFunc(func(ctx context.Context) {
-		traffic_prune_uc.Run(ctx, trafficRepo, trafficRetention, chanLogger)
+		traffic_prune_uc.Run(ctx, trafficRepo, trafficRetention, appClock, chanLogger)
 	}))
 
 	// Pull the block lists in the background and refresh the filter once done.

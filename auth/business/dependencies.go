@@ -3,15 +3,7 @@ package business
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"time"
 )
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now() }
-
-// NewSystemClock returns the production wall clock for auth wiring.
-func NewSystemClock() Clock { return systemClock{} }
 
 type cryptoTokenGenerator struct{}
 

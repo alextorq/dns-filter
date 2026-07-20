@@ -26,6 +26,10 @@ func (silentLog) Info(args ...any)  {}
 func (silentLog) Debug(args ...any) {}
 func (silentLog) Error(err error)   {}
 
+type testClock struct{ now time.Time }
+
+func (c testClock) Now() time.Time { return c.now }
+
 type harness struct {
 	t            *testing.T
 	conn         *gorm.DB
@@ -69,7 +73,7 @@ func newHarness(t *testing.T) *harness {
 	bloom := &filter_bloom.Filter{}
 	bloom.UpdateFilter(nil) // initialise so DomainExist is safe
 	cache := filter_cache.NewCacheWithMetrics(1500)
-	filterModule := filter.NewModule(blockRepo, bloom, cache, state, log)
+	filterModule := filter.NewModule(blockRepo, bloom, cache, state, testClock{now: time.Now()}, log)
 
 	module := NewModule(blockRepo, allowRepo, sourceRepo, filterModule, suggestRepo, log)
 	return &harness{t: t, conn: conn, module: module, filterModule: filterModule}

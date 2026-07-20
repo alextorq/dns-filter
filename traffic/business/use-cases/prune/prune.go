@@ -12,6 +12,7 @@ package traffic_use_cases_prune
 
 import (
 	"context"
+	"reflect"
 	"sync/atomic"
 	"time"
 
@@ -56,12 +57,33 @@ type Repo interface {
 	DeleteOlderThan(cutoff time.Time) error
 }
 
+// Clock supplies wall time for daily retention cutoffs.
+type Clock interface {
+	Now() time.Time
+}
+
+func isNilClock(clock Clock) bool {
+	if clock == nil {
+		return true
+	}
+	v := reflect.ValueOf(clock)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
 // Run prunes once immediately and then every 24h (matching the legacy
 // clear-events cadence). Cancellation stops future runs after any in-flight DB
 // cleanup finishes; call from a goroutine.
-func Run(ctx context.Context, repo Repo, state *RetentionState, log periodic.Logger) {
+func Run(ctx context.Context, repo Repo, state *RetentionState, clock Clock, log periodic.Logger) {
+	if isNilClock(clock) {
+		panic("traffic prune: clock is required")
+	}
 	periodic.Run(ctx, "prune old domain_traffic rows", 24*time.Hour, log, func() error {
-		return pruneTaskAt(repo, state, time.Now())
+		return pruneTaskAt(repo, state, clock.Now())
 	})
 }
 

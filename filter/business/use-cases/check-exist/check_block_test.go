@@ -68,6 +68,8 @@ func freshState(t *testing.T) *runtime_state.State {
 	return runtime_state.New(true)
 }
 
+var checkTestNow = time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
+
 func newDeps(repo *fakeRepo, cache *mapCache, bloom *setBloom, state *runtime_state.State) (Deps, *silentLog) {
 	log := &silentLog{}
 	return Deps{Repo: repo, Cache: cache, Bloom: bloom, State: state, Log: log}, log
@@ -82,7 +84,7 @@ func TestCheckBlock_DisabledShortCircuits(t *testing.T) {
 	bloom := &setBloom{known: map[string]struct{}{"x.example": {}}}
 	d, _ := newDeps(repo, newMapCache(), bloom, state)
 
-	if got := CheckBlock(d, "x.example"); got {
+	if got := CheckBlock(d, "x.example", checkTestNow); got {
 		t.Fatal("disabled filter must return false")
 	}
 	if repo.calls != 0 {
@@ -93,19 +95,31 @@ func TestCheckBlock_DisabledShortCircuits(t *testing.T) {
 // CheckBlock must respect an active pause even when the domain is in bloom + DB.
 func TestCheckBlock_PauseSuppressesBlocking(t *testing.T) {
 	state := freshState(t)
-	state.SetPausedUntil(time.Now().Add(5 * time.Minute).Unix())
+	state.SetPausedUntil(checkTestNow.Add(5 * time.Minute).Unix())
 
 	repo := &fakeRepo{verdict: map[string]bool{"x.example": true}}
 	bloom := &setBloom{known: map[string]struct{}{"x.example": {}}}
 	d, _ := newDeps(repo, newMapCache(), bloom, state)
 
-	if got := CheckBlock(d, "x.example"); got {
+	if got := CheckBlock(d, "x.example", checkTestNow); got {
 		t.Fatal("paused filter must return false even for an actively blocked domain")
 	}
 
 	state.SetPausedUntil(0)
-	if got := CheckBlock(d, "x.example"); !got {
+	if got := CheckBlock(d, "x.example", checkTestNow); !got {
 		t.Fatal("after clearing pause, blocked domain must be reported as blocked")
+	}
+}
+
+func TestCheckBlock_PauseEndingAtNowIsExpired(t *testing.T) {
+	state := freshState(t)
+	state.SetPausedUntil(checkTestNow.Unix())
+	repo := &fakeRepo{verdict: map[string]bool{"x.example": true}}
+	bloom := &setBloom{known: map[string]struct{}{"x.example": {}}}
+	d, _ := newDeps(repo, newMapCache(), bloom, state)
+
+	if got := CheckBlock(d, "x.example", checkTestNow); !got {
+		t.Fatal("pause ending exactly at now must no longer suppress blocking")
 	}
 }
 
@@ -116,7 +130,7 @@ func TestCheckBlock_BloomMissSkipsDB(t *testing.T) {
 	bloom := &setBloom{known: map[string]struct{}{}} // empty
 	d, _ := newDeps(repo, newMapCache(), bloom, state)
 
-	if got := CheckBlock(d, "x.example"); got {
+	if got := CheckBlock(d, "x.example", checkTestNow); got {
 		t.Fatal("bloom miss must return false")
 	}
 	if repo.calls != 0 {
@@ -133,10 +147,10 @@ func TestCheckBlock_BloomHitConsultsDBAndCachesVerdict(t *testing.T) {
 	cache := newMapCache()
 	d, _ := newDeps(repo, cache, bloom, state)
 
-	if !CheckBlock(d, "x.example") {
+	if !CheckBlock(d, "x.example", checkTestNow) {
 		t.Fatal("expected blocked verdict")
 	}
-	if !CheckBlock(d, "x.example") {
+	if !CheckBlock(d, "x.example", checkTestNow) {
 		t.Fatal("second call must still report blocked")
 	}
 	if repo.calls != 1 {
@@ -153,7 +167,7 @@ func TestCheckBlock_DeactivatedDomainNotBlocked(t *testing.T) {
 	cache := newMapCache()
 	d, _ := newDeps(repo, cache, bloom, state)
 
-	if CheckBlock(d, "deactivated.example") {
+	if CheckBlock(d, "deactivated.example", checkTestNow) {
 		t.Fatal("deactivated domain must not be reported as blocked (issue #25)")
 	}
 	// Negative verdict is allowed in the cache (the regression was about

@@ -65,11 +65,11 @@ func CheckCacheOrDb(d Deps, domain string) bool {
 // CheckBlock is the hot-path entry: respects the global Enabled flag and any
 // active pause, then consults bloom → cache → DB. Bloom miss short-circuits
 // without touching the DB; bloom hit defers to CheckCacheOrDb.
-func CheckBlock(d Deps, domain string) bool {
+func CheckBlock(d Deps, domain string, now time.Time) bool {
 	if !d.State.Enabled() {
 		return false
 	}
-	if until := d.State.PausedUntil(); until > time.Now().Unix() {
+	if until := d.State.PausedUntil(); until > now.Unix() {
 		return false
 	}
 	if d.Bloom.DomainExist(domain) {

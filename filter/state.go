@@ -49,7 +49,7 @@ func PersistHook(store StateStore, log Logger) func(enabled bool, pausedUntil in
 // compiled default (Enabled=true). A missing row leaves state untouched. An
 // already-expired pause deadline is normalized to 0 (no pause). A malformed
 // stored value is ignored (leaves the default) rather than failing startup.
-func RestoreState(store StateStore, state *runtime_state.State) error {
+func RestoreState(store StateStore, state *runtime_state.State, now time.Time) error {
 	if state == nil {
 		return fmt.Errorf("load filter state: runtime state is required")
 	}
@@ -65,7 +65,7 @@ func RestoreState(store StateStore, state *runtime_state.State) error {
 		return fmt.Errorf("load filter pause state: %w", err)
 	} else if found {
 		if until, perr := strconv.ParseInt(raw, 10, 64); perr == nil {
-			if until > time.Now().Unix() {
+			if until > now.Unix() {
 				state.SetPausedUntil(until)
 			} else {
 				state.SetPausedUntil(0)

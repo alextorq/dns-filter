@@ -24,7 +24,8 @@ main.go
 │                 ├─ suggest_to_block_db.NewRepo(conn)  suggestRepo
 │                 └─ settings_db.NewRepo(conn) ───────── settingsRepo
 │
-├── filter.NewModule(blockRepo, bloom, cache, conf, log)  → filterModule
+├── filter.NewModule(blockRepo, bloom, cache, state, clock, log)
+│                                                        → filterModule
 ├── source.NewModule(sourceRepo, blockRepo, sourceLoaders, log)
 │                                                        → sourceModule
 └── suggest_to_block.NewModule(blockRepo, trafficAllowAdapter,
@@ -445,7 +446,7 @@ filter state создаётся отдельно через `runtime_state.New(t
 
 - `auth/business.Deps` явно принимает `Repo`, `Clock`, `TokenGenerator` и
   bootstrap credentials; неполный wiring отклоняется при создании модуля.
-- Production composition root передаёт `NewSystemClock()` и
+- Production composition root передаёт общий `clock.System` и
   `NewCryptoTokenGenerator()`; session business logic больше не импортирует
   `crypto/rand` и не читает `time.Now` напрямую.
 - Один injected clock управляет `CreatedAt`, семидневным TTL, проверкой cached и
@@ -457,13 +458,30 @@ filter state создаётся отдельно через `runtime_state.New(t
 - Детерминированные тесты покрывают TTL, обе resolve-ветки по обе стороны
   границы, ошибку token generator, cleanup timestamp и формат production token.
 
+### Этап 10.13 — поведенческие clock seams завершены
+
+- `main` создаёт один нейтральный `clock.System`; consumer packages объявляют
+  собственные узкие `Clock { Now() time.Time }` порты без общей domain-интерфейса.
+- `filter.Module` использует clock для hot-path проверки паузы и создания новых
+  дедлайнов; `RestoreState` и простые pause/check helpers принимают явный `now`.
+- `suggest-to-block/inspect/db.Repo` вычисляет candidate/RDAP TTL, `CheckedAt` и
+  retry deadline только через injected clock. Inspect prune callback получает
+  тот же clock явно.
+- `clients/hostnames/db.Repo` штампует `LastSeen`/`UpdatedAt` и вычисляет cutoff
+  retention через clock.
+- `TrafficEventStore.Record` штампует событие clock-временем до вычисления
+  local-midnight bucket; daily traffic prune callback также использует clock.
+- `NewTicker`/cancelable timers оставлены внутри feature loops: они управляют
+  cadence, а не календарным бизнес-временем, и уже имеют context/test seams.
+- Детерминированные тесты закрепляют точные pause boundaries, восстановление,
+  inspect TTL/backoff/RDAP timestamps, hostname retention, traffic `LastSeen` и
+  оба prune cutoff; обязательные clock dependencies проверяются при сборке.
+
 ## Следующий DI этап
 
-**Добавить clock seams только в оставшиеся поведенчески значимые места.** В
-первую очередь: создание/восстановление паузы фильтра, TTL/retry/RDAP cache в
-suggest-inspect, hostname retention, переход timestamp трафика через локальную
-полночь и inspect/traffic prune callbacks. Простые use-case'ы могут принимать
-явный `now time.Time`; долгоживущие module/repo — небольшой `Clock`.
+Отдельного широкого DI-этапа сейчас нет. При касании оставшихся фич продолжать
+consumer-owned ports и явные adapters; следующий приоритет архитектуры — общий
+lifecycle/graceful shutdown ниже.
 
 ## Следующий lifecycle-рефакторинг
 
@@ -621,7 +639,7 @@ suggest-inspect, hostname retention, переход timestamp трафика ч�
 |---|---|---|
 | 1 | Схлопнуть «папку-на-каждый use-case» | не начат |
 | 2 | Удалить фасадные прослойки | **готово** (`blocked_domain.go`, `filter_facade.go` → `module.go`, `source/sync.go` упрощён) |
-| 3 | DI вместо singleton'ов | **готово для** core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, DB snapshot export, db/web, auth clock/token, clients и LAN discovery, dns-cache, полного domain-inspect checks catalog, bloom и verdict LRU. **Остаток:** точечные clock seams вне auth |
+| 3 | DI вместо singleton'ов | **готово** для core, bootstrap DB/logger, component metrics, config/filter state, source loaders, background jobs, DB snapshot export, db/web, auth clock/token, clients и LAN discovery, dns-cache, полного domain-inspect checks catalog, bloom/verdict LRU и поведенческого wall-clock времени |
 | 4 | Разделить ORM-модель / domain / HTTP DTO | не начат |
 | 5 | Каждая фича сама регистрирует роуты | **готово** (этап 4: `RegisterRoutes` в каждом `*/web/routes.go`, `web/server.go` ужат до cross-cutting wiring, snapshot-тест роутов в `web/server_test.go`) |
 | 6 | `source.Sync()` не паникует в `main` | не начат |
@@ -630,7 +648,5 @@ suggest-inspect, hostname retention, переход timestamp трафика ч�
 | 9 | Graceful shutdown (HTTP + DNS + workers) | **следующий кандидат** |
 | 10 | Hot path не читает глобальный config | **готово**: hot path читает injected `RuntimeState`, `config.Load()` не singleton |
 
-В DI-потоке следующий шаг — поведенческие clock seams в filter,
-suggest/inspect, hostnames и traffic; lifecycle п.9 можно вести независимо.
-Пункты 1, 6, 7 и 8 также независимы и могут включаться по мере касания
-соответствующих файлов.
+Следующий приоритет — lifecycle п.9 (graceful shutdown). Пункты 1, 6, 7 и 8
+также независимы и могут включаться по мере касания соответствующих файлов.

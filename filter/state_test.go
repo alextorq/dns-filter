@@ -40,6 +40,12 @@ func (nopLogger) Info(...any)  {}
 func (nopLogger) Debug(...any) {}
 func (nopLogger) Error(error)  {}
 
+var stateTestNow = time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
+
+type moduleTestClock struct{ now time.Time }
+
+func (c moduleTestClock) Now() time.Time { return c.now }
+
 func TestPersistHook_WritesBothKeys(t *testing.T) {
 	store := newFakeStore()
 	hook := PersistHook(store, nopLogger{})
@@ -60,11 +66,28 @@ func TestNewModule_RejectsMissingRuntimeState(t *testing.T) {
 			t.Fatal("missing runtime state must fail during construction")
 		}
 	}()
-	NewModule(nil, nil, nil, nil, nopLogger{})
+	NewModule(nil, nil, nil, nil, nil, nopLogger{})
+}
+
+func TestNewModule_RejectsMissingClock(t *testing.T) {
+	var typedNil *moduleTestClock
+	for name, clock := range map[string]Clock{
+		"nil":       nil,
+		"typed nil": typedNil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("missing clock must fail during construction")
+				}
+			}()
+			NewModule(nil, nil, nil, runtime_state.New(true), clock, nopLogger{})
+		})
+	}
 }
 
 func TestRestoreState_RejectsMissingRuntimeState(t *testing.T) {
-	if err := RestoreState(newFakeStore(), nil); err == nil {
+	if err := RestoreState(newFakeStore(), nil, stateTestNow); err == nil {
 		t.Fatal("missing runtime state must return an error")
 	}
 }
@@ -85,7 +108,7 @@ func TestRestoreState_DisabledSurvivesRestart(t *testing.T) {
 
 	state := runtime_state.New(true) // compiled default
 
-	if err := RestoreState(store, state); err != nil {
+	if err := RestoreState(store, state, stateTestNow); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	if state.Enabled() {
@@ -98,7 +121,7 @@ func TestRestoreState_MissingRowKeepsDefault(t *testing.T) {
 
 	state := runtime_state.New(true)
 
-	if err := RestoreState(store, state); err != nil {
+	if err := RestoreState(store, state, stateTestNow); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	if !state.Enabled() {
@@ -109,11 +132,11 @@ func TestRestoreState_MissingRowKeepsDefault(t *testing.T) {
 func TestRestoreState_ExpiredPauseNormalizedToZero(t *testing.T) {
 	store := newFakeStore()
 	store.data[StateKeyEnabled] = "true"
-	store.data[StateKeyPausedUntil] = strconv.FormatInt(time.Now().Add(-time.Hour).Unix(), 10)
+	store.data[StateKeyPausedUntil] = strconv.FormatInt(stateTestNow.Add(-time.Hour).Unix(), 10)
 
 	state := runtime_state.New(true)
 
-	if err := RestoreState(store, state); err != nil {
+	if err := RestoreState(store, state, stateTestNow); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	if got := state.PausedUntil(); got != 0 {
@@ -121,14 +144,27 @@ func TestRestoreState_ExpiredPauseNormalizedToZero(t *testing.T) {
 	}
 }
 
+func TestRestoreState_PauseAtNowNormalizedToZero(t *testing.T) {
+	store := newFakeStore()
+	store.data[StateKeyPausedUntil] = strconv.FormatInt(stateTestNow.Unix(), 10)
+	state := runtime_state.New(true)
+
+	if err := RestoreState(store, state, stateTestNow); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if got := state.PausedUntil(); got != 0 {
+		t.Fatalf("pause at now must be expired, got %d", got)
+	}
+}
+
 func TestRestoreState_FuturePauseRestored(t *testing.T) {
 	store := newFakeStore()
-	future := time.Now().Add(time.Hour).Unix()
+	future := stateTestNow.Add(time.Hour).Unix()
 	store.data[StateKeyPausedUntil] = strconv.FormatInt(future, 10)
 
 	state := runtime_state.New(true)
 
-	if err := RestoreState(store, state); err != nil {
+	if err := RestoreState(store, state, stateTestNow); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	if got := state.PausedUntil(); got != future {
@@ -143,7 +179,7 @@ func TestRestoreState_MalformedValueIgnored(t *testing.T) {
 
 	state := runtime_state.New(true)
 
-	if err := RestoreState(store, state); err != nil {
+	if err := RestoreState(store, state, stateTestNow); err != nil {
 		t.Fatalf("restore must not fail on malformed value: %v", err)
 	}
 	if !state.Enabled() {
@@ -157,7 +193,7 @@ func TestRestoreState_ReadErrorSurfaces(t *testing.T) {
 	store.getErr = errors.New("db down")
 
 	state := runtime_state.New(true)
-	if err := RestoreState(store, state); err == nil {
+	if err := RestoreState(store, state, stateTestNow); err == nil {
 		t.Error("expected read error to surface")
 	}
 }
@@ -173,7 +209,7 @@ func TestFilterState_RoundTripsAcrossRestart(t *testing.T) {
 
 	// "Restart": a brand-new runtime state that defaults to enabled.
 	restarted := runtime_state.New(true)
-	if err := RestoreState(store, restarted); err != nil {
+	if err := RestoreState(store, restarted, stateTestNow); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	if restarted.Enabled() {

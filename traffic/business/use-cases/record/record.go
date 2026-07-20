@@ -9,6 +9,7 @@ package traffic_use_cases_record
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,8 +28,26 @@ type Logger interface {
 	Error(err error)
 }
 
+// Clock supplies the query timestamp recorded off the DNS hot path.
+type Clock interface {
+	Now() time.Time
+}
+
+func isNilClock(clock Clock) bool {
+	if clock == nil {
+		return true
+	}
+	v := reflect.ValueOf(clock)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
 // Event is one observed DNS query, ready to be aggregated. At is stamped by the
-// caller at query time (the public Record method stamps time.Now()).
+// caller at query time (the public Record method uses the injected clock).
 type Event struct {
 	Kind    string // identifier kind: "mac" | "ip"
 	Value   string // the stable device key (MAC preferred, else IP)
@@ -82,6 +101,7 @@ type inboxMsg struct {
 type TrafficEventStore struct {
 	repo     Repo
 	log      Logger
+	clock    Clock
 	ch       chan inboxMsg
 	buf      map[aggKey]*aggVal
 	capacity int // flush when len(buf) reaches this many distinct keys
@@ -100,23 +120,27 @@ type TrafficEventStore struct {
 // NewTrafficEventStore starts a background worker that aggregates traffic events
 // and flushes them to the repo when capacity (distinct keys) is reached or on a
 // 20s ticker. The hot DNS path must never block on a DB write — see Record.
-func NewTrafficEventStore(repo Repo, log Logger, capacity int) *TrafficEventStore {
-	return newWithChannelSizeAndInterval(repo, log, capacity, defaultChannelSize, defaultFlushInterval)
+func NewTrafficEventStore(repo Repo, log Logger, clock Clock, capacity int) *TrafficEventStore {
+	return newWithChannelSizeAndInterval(repo, log, clock, capacity, defaultChannelSize, defaultFlushInterval)
 }
 
 // newWithChannelSize is a test seam: exposes the inbox buffer so a unit test can
 // force the "channel full → drop" branch deterministically. Uses the default
 // flush interval.
-func newWithChannelSize(repo Repo, log Logger, capacity, chanSize int) *TrafficEventStore {
-	return newWithChannelSizeAndInterval(repo, log, capacity, chanSize, defaultFlushInterval)
+func newWithChannelSize(repo Repo, log Logger, clock Clock, capacity, chanSize int) *TrafficEventStore {
+	return newWithChannelSizeAndInterval(repo, log, clock, capacity, chanSize, defaultFlushInterval)
 }
 
 // newWithChannelSizeAndInterval is the full test seam: exposes both the inbox
 // buffer and the flush interval so a test can drive the ticker fast.
-func newWithChannelSizeAndInterval(repo Repo, log Logger, capacity, chanSize int, interval time.Duration) *TrafficEventStore {
+func newWithChannelSizeAndInterval(repo Repo, log Logger, clock Clock, capacity, chanSize int, interval time.Duration) *TrafficEventStore {
+	if isNilClock(clock) {
+		panic("traffic record: clock is required")
+	}
 	s := &TrafficEventStore{
 		repo:     repo,
 		log:      log,
+		clock:    clock,
 		ch:       make(chan inboxMsg, chanSize),
 		buf:      make(map[aggKey]*aggVal),
 		capacity: capacity,
@@ -307,7 +331,7 @@ func (s *TrafficEventStore) Record(kind, value, ip, domain string, blocked bool)
 		IP:      ip,
 		Domain:  utils.CanonicalDomain(domain),
 		Blocked: blocked,
-		At:      time.Now(),
+		At:      s.clock.Now(),
 	})
 }
 

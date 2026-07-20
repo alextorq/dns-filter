@@ -8,6 +8,12 @@ import (
 	"gorm.io/gorm"
 )
 
+var hostnamesTestNow = time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
+
+type fixedClock struct{ now time.Time }
+
+func (c fixedClock) Now() time.Time { return c.now }
+
 func newTestRepo(t *testing.T) *Repo {
 	t.Helper()
 	conn, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -22,7 +28,24 @@ func newTestRepo(t *testing.T) *Repo {
 	if err := conn.AutoMigrate(&HostName{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return NewRepo(conn)
+	return NewRepo(conn, fixedClock{now: hostnamesTestNow})
+}
+
+func TestNewRepo_RejectsMissingClock(t *testing.T) {
+	var typedNil *fixedClock
+	for name, clock := range map[string]Clock{
+		"nil":       nil,
+		"typed nil": typedNil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("missing clock must fail during construction")
+				}
+			}()
+			NewRepo(nil, clock)
+		})
+	}
 }
 
 func TestUpsert_InsertThenLookup(t *testing.T) {
@@ -54,7 +77,7 @@ func TestUpsert_UpdatesHostnameAndLastSeen(t *testing.T) {
 
 	// Force a measurable gap so the LastSeen bump is observable.
 	if err := repo.db.Model(&HostName{}).Where("mac = ?", "aa:bb:cc:dd:ee:ff").
-		Update("last_seen", time.Now().Add(-time.Hour)).Error; err != nil {
+		Update("last_seen", hostnamesTestNow.Add(-time.Hour)).Error; err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
 
@@ -72,8 +95,8 @@ func TestUpsert_UpdatesHostnameAndLastSeen(t *testing.T) {
 	if rows[0].Hostname != "new-name" {
 		t.Fatalf("hostname = %q, want new-name", rows[0].Hostname)
 	}
-	if !rows[0].LastSeen.After(time.Now().Add(-time.Minute)) {
-		t.Fatalf("LastSeen was not refreshed on re-upsert: %v", rows[0].LastSeen)
+	if !rows[0].LastSeen.Equal(hostnamesTestNow) {
+		t.Fatalf("LastSeen = %v, want injected now %v", rows[0].LastSeen, hostnamesTestNow)
 	}
 }
 
@@ -150,7 +173,7 @@ func TestPruneOlderThan(t *testing.T) {
 	}
 	// Backdate the stale row well past the retention window.
 	if err := repo.db.Model(&HostName{}).Where("mac = ?", "11:22:33:44:55:66").
-		Update("last_seen", time.Now().Add(-48*time.Hour)).Error; err != nil {
+		Update("last_seen", hostnamesTestNow.Add(-48*time.Hour)).Error; err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
 
@@ -178,7 +201,7 @@ func TestPruneOlderThan_NonPositiveWindowIsNoOp(t *testing.T) {
 	}
 	// Backdate far into the past; a zero/negative window must NOT wipe it.
 	if err := repo.db.Model(&HostName{}).Where("mac = ?", "aa:bb:cc:dd:ee:ff").
-		Update("last_seen", time.Now().Add(-1000*time.Hour)).Error; err != nil {
+		Update("last_seen", hostnamesTestNow.Add(-1000*time.Hour)).Error; err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
 
